@@ -175,7 +175,7 @@ export default class Changes {
     const target = targetFor(this.root, file.path, false, this.on, window()?.platform);
     if (!target) return;
     Object.assign(target, { kind: "changes", xy: file.xy, deleted: file.deleted });
-    openOverlay({ mod: "files-plus", kind: "popup", width: 252, height: 0.85, props: { role: "menu", target } });
+    openOverlay({ mod: "files-plus", kind: "popup", width: 252, height: menuHeight(target, undefined, globalThis.window.viewport_size().height / (settings().zoom || 1) * 0.85), props: { role: "menu", target } });
   }
 
   consumeChange(cx) {

@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import test from "node:test";
 import { cloneLayout, install } from "../install.mjs";
+import { LAYOUT_NAME } from "../layout-name.mjs";
 
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), "herdr-files-plus-install-"));
@@ -38,6 +39,7 @@ function fixture(t) {
 test("installs a separate Files and Changes mod with Files selected, preserving all source settings", (t) => {
   const f = fixture(t);
   const result = install(f);
+  assert.equal(basename(result.layout), `${LAYOUT_NAME}.json`);
   const actual = JSON.parse(readFileSync(result.layout, "utf8"));
   const expected = structuredClone(f.document);
   expected.children[1].hidden = false;
@@ -91,7 +93,7 @@ test("invalid JSON or a layout with neither Files nor Changes writes no targets"
     writeFileSync(join(f.home, "layouts", "main.json"), value);
     assert.throws(() => install(f));
     assert.equal(existsSync(join(f.home, "mods", "files-plus")), false);
-    assert.equal(existsSync(join(f.home, "layouts", "files-plus.json")), false);
+    assert.equal(existsSync(join(f.home, "layouts", `${LAYOUT_NAME}.json`)), false);
   }
 });
 
@@ -118,7 +120,7 @@ test("a failed copy removes only its partial installation", { skip: process.getu
   t.after(() => { if (existsSync(locked)) chmodSync(locked, 0o600); });
   assert.throws(() => install(f), /EACCES|EPERM/);
   assert.deepEqual(readdirSync(join(f.home, "mods")), []);
-  assert.equal(existsSync(join(f.home, "layouts", "files-plus.json")), false);
+  assert.equal(existsSync(join(f.home, "layouts", `${LAYOUT_NAME}.json`)), false);
   assert.equal(readFileSync(join(f.home, "layouts", "main.json"), "utf8"), f.original);
 });
 
@@ -227,7 +229,7 @@ test("an existing Sessions mod prevents all installation writes", t => {
   const f = fixture(t); mkdirSync(join(f.home, "mods", "sessions-plus"));
   assert.throws(() => install({ ...f, sessions: true }), /Refusing to overwrite/);
   assert(!existsSync(join(f.home, "mods", "files-plus")));
-  assert(!existsSync(join(f.home, "layouts", "files-plus.json")));
+  assert(!existsSync(join(f.home, "layouts", `${LAYOUT_NAME}.json`)));
 });
 
 test("a custom Files-only layout gains Sessions while keeping its external block id", () => {
@@ -236,4 +238,46 @@ test("a custom Files-only layout gains Sessions while keeping its external block
   assert.equal(actual.id, "files"); assert.equal(actual.type, "column"); assert.deepEqual(actual.size, source.size);
   assert.equal(actual.children[0].content.mod, "files-plus"); assert.equal(actual.children[1].content.mod, "sessions-plus");
   assert.equal(source.type, "block");
+});
+
+test("a first installation of the full workspace puts Sessions in the stack with toolbar and full footer roles", t => {
+  const f = fixture(t);
+  const original = {
+    ...f.document,
+    titlebar: "none", traffic_lights: [12, 16],
+    children: [
+      { id: "sidebar", type: "block", size: { px: 268 }, content: { mod: "spaces" } },
+      { id: "work", type: "column", children: [
+        { id: "tabs", type: "block", size: { px: 42 }, window_drag: true, content: { mod: "tabs", props: { nativeSetting: true } } },
+        { id: "work-body", type: "row", gap: 8, children: f.document.children },
+        { id: "status", type: "block", size: { px: 28 }, content: { mod: "workspace-status" } },
+      ] },
+    ],
+  };
+  const serialized = JSON.stringify(original, null, 2) + "\n";
+  writeFileSync(join(f.home, "layouts", "main.json"), serialized);
+  const cloned = cloneLayout(original, { sessions: true });
+  const result = install({ ...f, sessions: true });
+  const actual = JSON.parse(readFileSync(result.layout, "utf8"));
+  assert.deepEqual(actual, cloned);
+  const work = actual.children[1], header = work.children[0], panel = work.children[1].children[1], footer = work.children[2];
+  assert.equal(header.children[0].id, "tabs");
+  assert.equal(header.type, "row");
+  assert.equal(header.window_drag, true);
+  assert.deepEqual(header.size, { px: 42 });
+  assert.deepEqual(header.children[0].content, original.children[1].children[0].content);
+  assert.equal(header.children[1].content.props.role, "toolbar");
+  assert.equal(header.children[1].content.props.child, "files-plus-sessions");
+  assert.deepEqual(panel.children.map(node => node.id), ["panel-body"]);
+  assert.deepEqual(panel.children[0].children.map(node => node.content.mod), ["files-plus", "files-plus", "sessions-plus"]);
+  assert.equal(panel.children[0].children[2].content.props.role, "sessions");
+  assert.equal(footer.id, "status");
+  assert.equal(footer.content.mod, "sessions-plus");
+  assert.equal(footer.content.props.role, "footer");
+  assert.equal(footer.children, undefined);
+  assert.deepEqual(footer.size, { px: 28 });
+  assert.deepEqual(actual.custom, original.custom);
+  assert.equal(readFileSync(result.sourceLayout, "utf8"), serialized);
+  assert.equal(readFileSync(join(f.home, "shared.json"), "utf8"), '{"layout":"main","workspace.panels":["changes"]}\n');
+  assert.equal(readFileSync(join(f.home, "keys.json"), "utf8"), '{"global":{}}\n');
 });

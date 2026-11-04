@@ -2,7 +2,7 @@ import { div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { closeOverlay, openOverlay, theme, exec, shared, setShared, settings } from "herdr";
 import { createFilesystem } from "./filesystem.js";
-import { CHANGE_KEY, menuItems, copyValue, localActions, parentPath, menuHeight } from "./model.js";
+import { CHANGE_KEY, SHOW_HIDDEN_KEY, menuItems, copyValue, localActions, parentPath, menuHeight } from "./model.js";
 
 export function changed(target, action, name) {
   setShared(CHANGE_KEY, { target, action, name, revision: (shared(CHANGE_KEY)?.revision ?? 0) + 1 });
@@ -12,7 +12,8 @@ export default class Menu {
   init(p, cx) {
     this.p = p;
     this.target = p.target;
-    this.items = menuItems(this.target);
+    this.options = { preferences: p.preferences === true, showHidden: shared(SHOW_HIDDEN_KEY) === true };
+    this.items = menuItems(this.target, this.options);
     this.at = 0;
     this.busy = false;
     this.error = "";
@@ -26,6 +27,9 @@ export default class Menu {
     const action = item.id, target = this.target;
     if (action.startsWith("copy")) {
       cx.write_to_clipboard(copyValue(action, target));
+      closeOverlay(this.p.overlay);
+    } else if (action === "toggleHidden") {
+      setShared(SHOW_HIDDEN_KEY, shared(SHOW_HIDDEN_KEY) !== true);
       closeOverlay(this.p.overlay);
     } else if (action === "refresh") {
       changed(target, action);
@@ -51,9 +55,9 @@ export default class Menu {
   render() {
     const t = theme();
     const available = globalThis.window.viewport_size().height / (settings().zoom || 1) * 0.85;
-    const height = Math.min(menuHeight(this.target), available);
+    const height = menuHeight(this.target, this.options, available);
     const hint = localActions(this.target) ? "↑ ↓ select · Enter run · Esc close" : "File actions require local macOS";
-    return v_flex().id("files-plus-menu").w_full().h(height).min_h(0).p(5).bg(t.popover).text_size(12.8).text_color(t.foreground)
+    return v_flex().id("files-plus-menu").w_full().h(height).min_h(0).p(4).bg(t.popover).text_size(12.8).text_color(t.foreground)
       .track_focus(this.handle)
       .on_key_down((event, cx) => {
         if (this.busy || !this.items.length) return;
@@ -64,15 +68,16 @@ export default class Menu {
         else return;
         cx.stop_propagation(); cx.notify();
       })
-      .child(div().h(28).flex_none().px(8).pt(5).truncate().text_size(11).text_color(t.dim).child(this.target?.name ?? "Files Plus"))
+      .child(div().h(22).flex_none().px(8).pt(2).truncate().text_size(11).text_color(t.dim).child(this.target?.name ?? "Files"))
       .child(v_flex().id("files-plus-menu-items").flex_1().min_h(0).overflow_y_scrollbar().children(this.items.map((item, i) => v_flex().flex_none()
-        .when(item.separator, el => el.child(div().mx(8).my(4).h(1).bg(t.border)))
+        .when(item.separator, el => el.child(div().mx(8).my(3).h(1).bg(t.border)))
         .child(h_flex().id(`files-plus-${item.id}`).h(30).px(8).rounded(6).items_center().cursor_pointer()
           .text_color(item.danger ? t.ansi1 : t.foreground)
           .when(i === this.at, el => el.bg(t.selected))
           .on_mouse_move((_event, cx) => { if (!this.busy && this.at !== i) { this.at = i; cx.notify(); } })
-          .on_click((_event, cx) => this.choose(i, cx)).child(item.label)))))
-      .child(div().h(38).flex_none().overflow_y_scrollbar().px(8).pt(8).text_size(10.5)
+          .on_click((_event, cx) => this.choose(i, cx)).child(div().flex_1().child(item.label))
+          .when(item.checked === true, el => el.child(div().flex_none().child("✓")))))))
+      .child(div().h(22).flex_none().overflow_y_scrollbar().px(8).pt(3).text_size(10.5)
         .text_color(this.error ? t.ansi1 : t.dim).child(this.error || (this.busy ? "Working…" : hint)));
   }
 }

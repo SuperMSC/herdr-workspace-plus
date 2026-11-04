@@ -36,7 +36,7 @@ export function codexWindows(data) {
 export function agyWindows(envelope) {
   if (envelope?.status !== "SUCCESS" || envelope.command?.name !== "usage" || !Array.isArray(envelope.command.data?.groups)) return null;
   return envelope.command.data.groups.flatMap(group => (Array.isArray(group.buckets) ? group.buckets : []).flatMap(bucket => {
-    const name = `${label(group.name || "agy")}${bucket.name ? " · " + label(bucket.name) : ""}`;
+    const name = `${label(group.name || "Antigravity")}${bucket.name ? " · " + label(bucket.name) : ""}`;
     if (bucket.disabled === true) return [{ id: label(bucket.id), label: name, unlimited: true, used: null, remaining: null, resetAt: null, minutes: null }];
     const fraction = bucket.remaining_fraction;
     if (!finite(fraction) || fraction < 0 || fraction > 1) return [];

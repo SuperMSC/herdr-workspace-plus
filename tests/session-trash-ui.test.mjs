@@ -12,10 +12,11 @@ const session = () => {
 const entry = () => ({ ...session(), token: "owned-trash-entry", trashedAt: Date.now(), restorable: true, location: "trash", status: "trashed" });
 
 function element() {
-  const node = { events: {}, childNodes: [], attributes: {} };
+  const node = { events: {}, childNodes: [], attributes: {}, slots: {} };
   const proxy = new Proxy(node, { get(target, name) {
     if (name === "child") return child => { target.childNodes.push(child); return proxy; };
     if (name === "children") return children => { target.childNodes.push(...children); return proxy; };
+    if (name === "trigger" || name === "content") return child => { target.slots[name] = child; return proxy; };
     if (name === "when") return (condition, callback) => condition ? callback(proxy) : proxy;
     if (name.startsWith("on_")) return (...args) => { target.events[`${name}:${args.length > 1 ? args[0] : ""}`] = args.at(-1); return proxy; };
     if (name in target) return target[name];
@@ -30,7 +31,7 @@ function viewClass(file, dependencies) {
   return new Function(...Object.keys(dependencies), source)(...Object.values(dependencies));
 }
 
-const nodes = node => !node || typeof node !== "object" ? [] : [node, ...node.childNodes.flatMap(nodes)];
+const nodes = node => !node || typeof node !== "object" ? [] : [node, ...node.childNodes.flatMap(nodes), ...Object.values(node.slots).flatMap(nodes)];
 const find = (tree, id) => nodes(tree).find(node => node.attributes.id === id);
 const text = node => typeof node === "string" ? node : (node?.childNodes ?? []).map(text).join(" ");
 
@@ -42,7 +43,8 @@ function harness({ state = {}, target = session(), role, action = "trash", platf
     spawn(task) { if (defer) queued.push(task); else tasks.push(task(cx)); },
     timer: { every(ms, callback) { timers.push({ ms, callback }); }, after(ms, callback) { timers.push({ ms, callback }); } } };
   const dependencies = { ...model, createTrashClient, View: class {}, div: element, h_flex: element, v_flex: element,
-    InputState: { new: () => ({ on() {}, value: () => "", focus() {} }) }, Input: { new: element }, providerIcon: element,
+    InputState: { new: () => ({ on() {}, value: () => "", focus() {} }) }, Input: { new: element }, providerIcon: (provider, size) => element().id(`provider-icon-${provider}`).size(size),
+    Popover: { new: id => element().id(id) },
     theme: () => ({}), window: () => ({ platform }), appHome: () => "/fixture/herdr", props: () => p,
     focused: () => ({ cwd: "/fixture/project" }), spaces: () => [], panes: () => [], terminals: () => running,
     shared: key => state[key], setShared: (key, value) => { state[key] = value; },
@@ -57,6 +59,9 @@ function harness({ state = {}, target = session(), role, action = "trash", platf
         : action === "list" ? { entries: [entry()] } : action === "restore" ? { row: target } : { entry: target };
       return { code: 0, stdout: JSON.stringify(data) };
     },
+    Toolbar: class { init() {} render() { return element().id("toolbar-role"); } },
+    Footer: class { init() {} render() { return element().id("footer-role"); } },
+    StatusBar: class { init() {} render() { return element().id("statusbar-role"); } },
     Quota: class { init() { this.initialized = true; } render() { return element().id("quota-preserved"); } refresh() {} },
   };
   dependencies.Rename = viewClass("rename", dependencies);
@@ -253,4 +258,120 @@ test("helper errors and malformed output are visible without executing shell com
     await assert.rejects(read("restore", "token '$()`"), /Bundle is missing|Node.js/);
     assert.equal(calls[0][1][3], "token '$()`"); assert.equal(calls[0][0], "/fixture/node");
   }
+});
+
+
+test("the integrated Sessions panel renders the list without legacy page tabs", async () => {
+  const f = harness({ role: "sessions" }), panel = f.panel(); await f.finish();
+  const tree = panel.render(f.cx);
+  assert(find(tree, "sessions-list"));
+  assert.equal(find(tree, "sessions-page-sessions"), undefined);
+  assert.equal(find(tree, "sessions-page-status"), undefined);
+});
+
+for (const role of ["toolbar", "statusbar", "footer"]) {
+  test(`the ${role} role does not initialize a separate history scanner`, () => {
+    const f = harness({ role }), panel = f.panel();
+    assert(find(panel.render(f.cx), `${role}-role`));
+    assert.deepEqual(f.calls, []);
+    assert.deepEqual(f.timers, []);
+  });
+}
+
+test("Scope and Agent filters open real menus, then select directly without launching or mutating sessions", async () => {
+  const f = harness({ role: "sessions" }), panel = f.panel(); await f.finish();
+  panel.history = [session(), ...["codex", "agy"].map(provider => {
+    const row = { ...session(), provider, title: `${provider} session`, cwd: provider === "codex" ? "/fixture/other" : "/fixture/project" };
+    return { ...row, key: model.sessionKey(row) };
+  })];
+  const rowIds = () => nodes(find(panel.render(f.cx), "sessions-list")).filter(node => node.attributes.id?.startsWith("session-[")).map(node => node.attributes.id);
+  const open = id => find(panel.render(f.cx), `${id}-popover`).events["on_open_change:"](true, f.cx);
+  const choose = (id, value) => find(panel.render(f.cx), `${id}-option-${value}`).events["on_click:"]({}, f.cx);
+  assert.equal(rowIds().length, 2);
+  let tree = panel.render(f.cx), scope = find(tree, "sessions-scope-popover"), agents = find(tree, "sessions-provider-popover");
+  assert.match(text(scope.slots.trigger), /This folder.*▾/);
+  assert.match(text(agents.slots.trigger), /All agents.*▾/);
+  assert.equal(scope.attributes.anchor, "top_left");
+  assert.equal(scope.slots.trigger.events["on_click:"], undefined);
+  assert.match(text(find(tree, "sessions-scope-option-current")), /✓.*This folder/);
+  for (const [provider, label] of Object.entries(model.PROVIDERS)) {
+    const option = find(tree, `sessions-provider-option-${provider}`);
+    assert.match(text(option), new RegExp(label));
+    assert(find(option, `provider-icon-${provider}`));
+  }
+  panel.visible = 180;
+  open("sessions-scope");
+  assert.equal(panel.all, false);
+  assert.equal(panel.visible, 180);
+  assert.equal(rowIds().length, 2);
+  assert.equal(find(panel.render(f.cx), "sessions-scope-popover").attributes.open, true);
+  choose("sessions-scope", "all");
+  assert.equal(panel.all, true);
+  assert.equal(panel.visible, 60);
+  assert.equal(panel.filterMenu, null);
+  assert.equal(rowIds().length, 3);
+  open("sessions-provider");
+  assert.equal(panel.provider, "all");
+  choose("sessions-provider", "agy");
+  assert.equal(panel.provider, "agy");
+  assert.equal(panel.filterMenu, null);
+  assert.deepEqual(rowIds(), [`session-${panel.history[2].key}`]);
+  tree = panel.render(f.cx);
+  assert.match(text(find(tree, "sessions-provider-option-agy")), new RegExp(`✓.*${model.PROVIDERS.agy}`));
+  assert.doesNotMatch(text(find(tree, "sessions-provider-option-all")), /✓/);
+  assert(find(find(tree, "sessions-provider"), "provider-icon-agy"));
+  open("sessions-provider"); choose("sessions-provider", "codex");
+  assert.deepEqual(rowIds(), [`session-${panel.history[1].key}`]);
+  open("sessions-provider"); choose("sessions-provider", "all");
+  open("sessions-scope"); choose("sessions-scope", "current");
+  assert.equal(rowIds().length, 2);
+  assert.deepEqual(f.calls.map(call => call.args[1]), ["scan"]);
+  assert.deepEqual(f.launches, []);
+  assert.deepEqual(f.overlays, []);
+  assert.deepEqual(f.state, {});
+  for (const id of ["sessions-scope", "sessions-provider"]) {
+    const popover = find(panel.render(f.cx), `${id}-popover`);
+    for (const style of ["w_full", "size_full", "w", "h", "bg"]) assert.equal(popover.attributes[style], undefined);
+  }
+});
+
+test("only one filter menu stays open and a late close event cannot close the other menu", async () => {
+  const f = harness({ role: "sessions" }), panel = f.panel(); await f.finish();
+  const scope = find(panel.render(f.cx), "sessions-scope-popover").events["on_open_change:"];
+  scope(true, f.cx);
+  const provider = find(panel.render(f.cx), "sessions-provider-popover").events["on_open_change:"];
+  provider(true, f.cx);
+  scope(false, f.cx);
+  assert.equal(panel.filterMenu, "sessions-provider");
+  const tree = panel.render(f.cx);
+  assert.equal(find(tree, "sessions-scope-popover").attributes.open, false);
+  assert.equal(find(tree, "sessions-provider-popover").attributes.open, true);
+  provider(false, f.cx);
+  assert.equal(panel.filterMenu, null);
+  assert.equal(panel.provider, "all");
+  assert.equal(panel.all, false);
+  assert.deepEqual(f.calls.map(call => call.args[1]), ["scan"]);
+});
+
+test("filter menus support keyboard selection while retaining the query and scan lifecycle", async () => {
+  const f = harness({ role: "sessions" }), panel = f.panel(); await f.finish();
+  panel.query = "keep my search";
+  panel.visible = 120;
+  find(panel.render(f.cx), "sessions-provider-popover").events["on_open_change:"](true, f.cx);
+  let key = find(panel.render(f.cx), "sessions-provider-menu").events["on_key_down:"];
+  key({ key: "down" }, f.cx); key({ key: "ArrowDown" }, f.cx);
+  assert.equal(panel.provider, "all");
+  key({ key: "enter" }, f.cx);
+  assert.equal(panel.provider, "codex");
+  assert.equal(panel.filterMenu, null);
+  assert.equal(panel.visible, 60);
+  assert.equal(panel.query, "keep my search");
+  find(panel.render(f.cx), "sessions-scope-popover").events["on_open_change:"](true, f.cx);
+  key = find(panel.render(f.cx), "sessions-scope-menu").events["on_key_down:"];
+  key({ key: "up" }, f.cx); key({ key: "Enter" }, f.cx);
+  assert.equal(panel.all, true);
+  assert.deepEqual(f.calls.map(call => call.args[1]), ["scan"]);
+  assert.deepEqual(f.launches, []);
+  assert.deepEqual(f.overlays, []);
+  assert(f.timers.some(timer => timer.ms === 30000));
 });

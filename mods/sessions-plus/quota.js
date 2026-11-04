@@ -34,7 +34,9 @@ export default class Quota {
     if (window()?.platform !== "macos") return;
     for (const provider of this.visibleProviders()) {
       if (onlyProvider && provider !== onlyProvider) continue;
-      if (this.pending.has(provider) || Date.now() - (this.started[provider] ?? 0) < 60000 || (automatic && this.data[provider]?.state === "unavailable")) continue;
+      const previous = this.data[provider];
+      const paused = ["missing-cli", "signed-out"].includes(previous?.reason) || Boolean(previous?.blockedVersion);
+      if (this.pending.has(provider) || Date.now() - (this.started[provider] ?? 0) < 60000 || (automatic && paused)) continue;
       this.pending.add(provider);
       cx.spawn(async cx => {
         try {
@@ -47,7 +49,7 @@ export default class Quota {
           if (next.blockedVersion) setShared("sessions-plus.agy-usage-blocked", next.blockedVersion);
           const previous = this.data[provider];
           const removed = ["missing-cli", "signed-out"].includes(next.reason);
-          this.data[provider] = !removed && next.state !== "ok" && previous?.windows.length ? { ...previous, state: "stale", message: next.message } : next;
+          this.data[provider] = !removed && next.state !== "ok" && previous?.windows.length ? { ...previous, state: "stale", message: next.message, ...(next.blockedVersion ? { blockedVersion: next.blockedVersion } : {}) } : next;
         } catch {
           const previous = this.data[provider];
           this.data[provider] = previous?.windows.length ? { ...previous, state: "stale", message: "Refresh failed; showing the previous reading." } : { provider, state: "unavailable", windows: [], message: "Quota reader unavailable. Check Node.js and CLI sign-in." };
@@ -95,6 +97,6 @@ export default class Quota {
           !hidden.has(provider), (_e, cx) => this.toggleProvider(provider, cx)).flex_1().min_w(0))))))
       .child(v_flex().id("quota-cards").flex_1().min_h(0).overflow_y_scrollbar().p(8).gap(9).children(available.map(card))
         .when(!available.length, el => el.child(div().p(10).text_color(t.muted).child(!visible.length ? "All agents are hidden. Open Agents to show account quota." : loading ? "Reading account quota…" : "No account quota to show."))))
-      .child(div().px(10).py(7).text_size(10.5).text_color(t.dim).flex_none().child(window()?.platform === "macos" ? "Local accounts · Refreshes every 5 min while Status is shown" : "Account quota currently requires macOS"));
+      .child(div().px(10).py(7).text_size(10.5).text_color(t.dim).flex_none().child(window()?.platform === "macos" ? this.p.statusbar ? "Local accounts · Refreshes every 5 min" : "Local accounts · Refreshes every 5 min while Status is shown" : "Account quota currently requires macOS"));
   }
 }

@@ -1,5 +1,10 @@
 // Pure menu/target helpers. Targets are captured before focus moves to an overlay.
 export const CHANGE_KEY = "files-plus.change";
+export const SHOW_HIDDEN_KEY = "files-plus.show-hidden";
+
+export function visibleEntry(name, showHidden = false) {
+  return showHidden || !String(name).startsWith(".");
+}
 
 export function targetFor(root, relative = "", dir = true, on = null, platform = "") {
   if (!root) return null;
@@ -19,7 +24,7 @@ export function parentPath(path) {
   return end === 0 ? "/" : path.slice(0, end);
 }
 
-export function menuItems(target) {
+export function menuItems(target, { preferences = false, showHidden = false } = {}) {
   if (!target) return [];
   if (target.kind === "changes") {
     const local = localActions(target), xy = target.xy ?? "  ";
@@ -54,6 +59,7 @@ export function menuItems(target) {
       ] : []),
     ] : []),
     { id: "refresh", label: "Refresh", separator: true },
+    ...(preferences || target.isRoot ? [{ id: "toggleHidden", label: "Show Hidden Files", checked: showHidden, separator: true }] : []),
   ];
 }
 
@@ -68,9 +74,10 @@ export function creationFolder(target) {
   return target.dir ? target.path : parentPath(target.path);
 }
 
-export function menuHeight(target) {
-  const items = menuItems(target);
-  return 38 + items.length * 30 + items.filter(item => item.separator).length * 9 + 44;
+export function menuHeight(target, options, maximum = Infinity) {
+  const items = menuItems(target, options);
+  // Padding (8), title (22), hint (22), rows (30), separators (7).
+  return Math.min(52 + items.length * 30 + items.filter(item => item.separator).length * 7, maximum);
 }
 
 export function applyPathChange(path, change) {

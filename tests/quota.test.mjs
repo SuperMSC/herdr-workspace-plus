@@ -189,7 +189,7 @@ function quotaFixture(state = {}, { deferredSpawn = false } = {}) {
     theme: () => ({ selected: "selected", surface: "surface" }), window: () => ({ platform: "macos" }), appHome: () => "/fixture/herdr",
     shared: key => state[key], setShared: (key, value) => { state[key] = value; },
     providerIcon: provider => ({ provider, nodes: [] }),
-    exec: (program, args) => new Promise(resolve => { calls.push({ program, args, provider: args[1], resolve }); }),
+    exec: (program, args) => new Promise((resolve, reject) => { calls.push({ program, args, provider: args[1], resolve, reject }); }),
   };
   const Quota = new Function(...Object.keys(dependencies), source)(...Object.values(dependencies));
   const cx = { notify() {}, spawn(task) { if (deferredSpawn) queued.push(task); else tasks.push(task(cx)); } };
@@ -203,6 +203,10 @@ function quotaFixture(state = {}, { deferredSpawn = false } = {}) {
     tick(ms) { now += ms; },
     refresh(automatic = false) { quota.refresh(cx, automatic); },
     startQueued() { while (queued.length) tasks.push(queued.shift()(cx)); },
+    async fail(error = new Error("Temporary executor failure")) {
+      for (const call of calls) call.reject(error);
+      await Promise.all(tasks);
+    },
     async finish(overrides = {}) {
       for (const call of calls) call.resolve({ code: 0, stdout: JSON.stringify({ provider: call.provider, state: "ok", updatedAt: now,
         windows: [{ label: `${call.provider} usage`, used: 25, remaining: 75, resetAt: now + 3600000 }], ...overrides[call.provider] }) });
@@ -338,4 +342,56 @@ test("uninstalling or signing out clears cached cards while temporary failures r
   assert.deepEqual(f.quota.data.claude.windows, []); assert.deepEqual(f.quota.data.codex.windows, []);
   assert.equal(f.quota.data.agy.state, "stale"); assert.match(quotaText(f.find("quota-cards")), /Stale/);
   assert.doesNotMatch(quotaText(f.find("quota-cards")), /Install Claude|Sign in to Codex/);
+});
+
+
+test("temporary initial quota failures retry automatically while preserving the refresh cooldown", async () => {
+  const f = quotaFixture();
+  await f.finish(Object.fromEntries(Object.keys(PROVIDERS).map(provider => [provider, { state: "unavailable", windows: [], message: "Temporary service failure" }])));
+  assert.deepEqual(f.providers(), []);
+  f.tick(59999); f.refresh(true);
+  assert.equal(f.calls.length, 3);
+  f.tick(240001); f.refresh(true);
+  assert.deepEqual(f.calls.slice(3).map(call => call.provider), ["claude", "codex", "agy"]);
+  await f.finish();
+  assert.deepEqual(f.providers(), ["claude", "codex", "agy"]);
+});
+
+test("an initial exec rejection without cached readings recovers on the next automatic refresh", async () => {
+  const f = quotaFixture();
+  await f.fail();
+  assert.deepEqual(f.providers(), []);
+  assert(Object.values(f.quota.data).every(data => data.state === "unavailable"));
+  f.tick(300000); f.refresh(true);
+  assert.equal(f.calls.length, 6);
+  await f.finish();
+  assert.deepEqual(f.providers(), ["claude", "codex", "agy"]);
+});
+
+test("only missing CLI, signed-out, or explicitly blocked versions pause automatic reads", async () => {
+  const f = quotaFixture();
+  await f.finish({
+    claude: { state: "unavailable", windows: [], reason: "missing-cli" },
+    codex: { state: "unavailable", windows: [], reason: "signed-out" },
+    agy: { state: "unavailable", windows: [], blockedVersion: "1.1.11" },
+  });
+  f.tick(300000); f.refresh(true);
+  assert.equal(f.calls.length, 3);
+  f.click("quota-refresh");
+  assert.equal(f.calls.length, 6);
+  await f.finish();
+  f.tick(300000); f.refresh(true);
+  assert.equal(f.calls.length, 9);
+  await f.finish();
+});
+
+test("an explicitly blocked version also pauses automatic reads when a prior reading remains stale", async () => {
+  const f = quotaFixture(); await f.finish();
+  f.tick(60000); f.click("quota-refresh");
+  await f.finish({ agy: { state: "unavailable", windows: [], blockedVersion: "1.1.11", message: "Version paused" } });
+  assert.equal(f.quota.data.agy.state, "stale");
+  assert.equal(f.quota.data.agy.blockedVersion, "1.1.11");
+  f.tick(300000); f.refresh(true);
+  assert.deepEqual(f.calls.slice(6).map(call => call.provider), ["claude", "codex"]);
+  await f.finish();
 });

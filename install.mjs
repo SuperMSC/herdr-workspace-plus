@@ -4,9 +4,11 @@ import { constants, closeSync, copyFileSync, lstatSync, mkdirSync, openSync, rea
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { integrateWorkspace } from "./workspace-layout.mjs";
+import { DISPLAY_NAME, installedLayoutName } from "./layout-name.mjs";
 
 const packageRoot = dirname(fileURLToPath(import.meta.url));
-const displayName = "Herdr Workspace Plus";
+const displayName = DISPLAY_NAME;
 const modName = "files-plus";
 
 function present(path) {
@@ -83,7 +85,10 @@ export function cloneLayout(source, { sessions = false } = {}) {
     return found;
   }
   reveal(layout);
-  if (sessions) attachSessions(layout, preferred);
+  if (sessions) {
+    attachSessions(layout, preferred);
+    return integrateWorkspace(layout).layout;
+  }
   return layout;
 }
 
@@ -127,10 +132,11 @@ export function install({
   directory(mods, "Herdr mods directory");
   directory(layouts, "Herdr layouts directory");
   const modTarget = join(mods, modName);
-  const layoutTarget = join(layouts, `${modName}.json`);
+  const layoutName = installedLayoutName(layouts);
+  const layoutTarget = join(layouts, `${layoutName}.json`);
   const sessionTarget = join(mods, "sessions-plus");
   for (const target of [modTarget, layoutTarget, ...(sessions ? [sessionTarget] : [])]) {
-    if (present(target)) throw new Error(`Refusing to overwrite ${target}. Keep it, or move/remove it yourself before installing.`);
+    if (present(target)) throw new Error(`Refusing to overwrite ${target}. Use node update.mjs to replace installed mods without backups and preserve an existing layout.`);
   }
 
   directory(source, "Files Plus source");
@@ -165,7 +171,7 @@ export function install({
     ownLayout = true;
     try { writeFileSync(layoutFile, serialized); }
     finally { closeSync(layoutFile); }
-    return { home, mod: modTarget, sessions: sessions ? sessionTarget : null, layout: layoutTarget, sourceLayout };
+    return { home, mod: modTarget, sessions: sessions ? sessionTarget : null, layout: layoutTarget, layoutName, sourceLayout };
   } catch (error) {
     // Never remove a pre-existing target, including one created during installation.
     if (ownLayout) rmSync(layoutTarget);
@@ -181,7 +187,7 @@ function usage() {
     "",
     "Usage: node install.mjs [--home PATH] [--layout NAME] [--files-only]",
     "",
-    "Copies mods/files-plus and mods/sessions-plus, and creates layouts/files-plus.json.",
+    "Copies mods/files-plus and mods/sessions-plus, and creates layouts/Agent-Workspace.json (legacy names are preserved).",
     "--files-only omits the Sessions panel. History requires Node.js at runtime.",
     "Default home: HERDR_APP_HOME, otherwise ~/.config/herdr-app.",
     "Default source layout: main. Neither target may already exist.",
@@ -208,7 +214,7 @@ function main(argv) {
   console.log(displayName);
   console.log(`Installed mod: ${result.mod}\nCreated personal layout: ${result.layout}\nOriginal layout unchanged: ${result.sourceLayout}`);
   if (result.sessions) console.log(`Installed sessions mod: ${result.sessions}`);
-  console.log('Next: run herdr-app check on the installed mod, then select the files-plus layout.');
+  console.log(`Next: run herdr-app check on each installed mod, then select the ${result.layoutName} layout.`);
 }
 
 const invoked = process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url;

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { targetFor, localActions, menuItems, menuHeight, copyValue, creationFolder, applyPathChange, CHANGE_KEY } from "../mods/files-plus/model.js";
+import { targetFor, localActions, menuItems, menuHeight, copyValue, creationFolder, applyPathChange, CHANGE_KEY, SHOW_HIDDEN_KEY, visibleEntry } from "../mods/files-plus/model.js";
 import { validateName } from "../mods/files-plus/filesystem.js";
 
 globalThis.window = { viewport_size: () => ({ width: 1280, height: 800 }) };
@@ -51,7 +51,7 @@ function menuHarness(target) {
     exec: (...args) => executions.push(args), shared: () => state, setShared: (_key, value) => { state = value; changes.push(value); },
     createFilesystem: () => ({ reveal: async path => executions.push(["reveal", path]) }),
     createGitActions: () => ({ stage: async path => executions.push(["stage", path]), unstage: async path => executions.push(["unstage", path]) }),
-    settings: () => ({ zoom: 1 }), CHANGE_KEY, menuItems, menuHeight, copyValue, localActions, parentPath: path => path.slice(0, path.lastIndexOf("/")) || "/" });
+    settings: () => ({ zoom: 1 }), CHANGE_KEY, SHOW_HIDDEN_KEY, menuItems, menuHeight, copyValue, localActions, parentPath: path => path.slice(0, path.lastIndexOf("/")) || "/" });
   const env = context(), menu = new Menu();
   menu.init({ target, overlay: "menu1" }, env.cx);
   return { ...env, menu, overlays, closed, changes, executions };
@@ -217,7 +217,7 @@ function browserHarness({ readTextFile = async () => "", exec = async () => ({ c
     Editor: { new: element }, EditorState: { new: options => ({ ...options, release() {} }) },
     spaces: () => [{ active: true, id: "s", folder: root }], panes: () => [], focused: () => ({ pane: null, terminal: "t1", cwd: root }),
     exec, readTextFile, watchFolder() {}, theme: () => ({}), settings: () => ({}), window: () => ({ platform: "macos" }),
-    openOverlay() {}, shared: () => change, CHANGE_KEY, targetFor, menuHeight, applyPathChange });
+    openOverlay() {}, shared: () => change, CHANGE_KEY, SHOW_HIDDEN_KEY, visibleEntry, targetFor, menuHeight, applyPathChange });
   const browser = new Browser();
   Object.assign(browser, { context: { ...location, key: JSON.stringify(location) }, root, on: null,
     entries: new Map(), folders: new Set(), pending: new Set(), folderRequests: new Map() });

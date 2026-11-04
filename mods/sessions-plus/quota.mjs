@@ -121,19 +121,19 @@ export function supportsAgyUsage(version) {
   return major > 1 || major === 1 && (minor > 1 || minor === 1 && patch >= 11);
 }
 export function agyQuota({ executable = command("agy"), run = spawnSync, hasCredentials = () => keychain("gemini", false, "antigravity"), blockedVersion } = {}) {
-  if (!executable) return unavailable("agy", "Install and sign in to agy, then refresh.", { reason: "missing-cli" });
+  if (!executable) return unavailable("agy", "Install and sign in to the Antigravity CLI, then refresh.", { reason: "missing-cli" });
   const options = { encoding: "utf8", maxBuffer: MAX, timeout: 4000, cwd: homedir(), stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, AGY_CLI_DISABLE_AUTO_UPDATE: "true" } };
   const check = run(executable, ["--version"], options), version = (check.stdout || check.stderr || "").trim();
-  if (check.error?.code === "ENOENT") return unavailable("agy", "Install and sign in to agy, then refresh.", { reason: "missing-cli" });
-  if (check.status !== 0 || !supportsAgyUsage(version) || blockedVersion === version) return unavailable("agy", "agy 1.1.11+ with the local /usage command is required. Update agy before retrying.");
-  if (!hasCredentials()) return unavailable("agy", "Sign in to agy outside Herdr, then refresh.", { reason: "signed-out" });
+  if (check.error?.code === "ENOENT") return unavailable("agy", "Install and sign in to the Antigravity CLI, then refresh.", { reason: "missing-cli" });
+  if (check.status !== 0 || !supportsAgyUsage(version) || blockedVersion === version) return unavailable("agy", "Antigravity CLI 1.1.11+ with the local /usage command is required. Update Antigravity before retrying.");
+  if (!hasCredentials()) return unavailable("agy", "Sign in to the Antigravity CLI outside Herdr, then refresh.", { reason: "signed-out" });
   const output = run(executable, ["-p", "/usage", "--output-format", "json", "--print-timeout", "15s"], { ...options, timeout: 19000 });
-  if (output.error?.code === "ENOENT") return unavailable("agy", "Install and sign in to agy, then refresh.", { reason: "missing-cli" });
+  if (output.error?.code === "ENOENT") return unavailable("agy", "Install and sign in to the Antigravity CLI, then refresh.", { reason: "missing-cli" });
   const envelopes = (output.stdout ?? "").split("\n").map(parse).filter(Boolean);
   const valid = envelopes.map(agyWindows).find(windows => windows !== null);
   if (output.status === 0 && valid) return reading("agy", valid);
-  if (envelopes.some(value => value.num_turns > 0 || Boolean(value.conversation_id))) return unavailable("agy", "This agy version treated /usage as a conversation. Quota checks are paused until agy changes.", { blockedVersion: version });
-  return unavailable("agy", output.error?.code === "ETIMEDOUT" ? "agy quota query timed out." : "agy did not return quota. Open agy to check sign-in, then refresh.");
+  if (envelopes.some(value => value.num_turns > 0 || Boolean(value.conversation_id))) return unavailable("agy", "This Antigravity version treated /usage as a conversation. Quota checks are paused until Antigravity changes.", { blockedVersion: version });
+  return unavailable("agy", output.error?.code === "ETIMEDOUT" ? "Antigravity quota query timed out." : "Antigravity did not return quota. Open the Antigravity CLI to check sign-in, then refresh.");
 }
 
 export async function quota(provider, options = {}) {

@@ -1,4 +1,4 @@
-# Herdr Workspace Plus
+# Agent Workspace
 
 [中文使用说明](使用说明.md)
 
@@ -8,13 +8,13 @@ A workspace enhancement pack for Herdr: Files and Changes context menus, plus Se
 
 *Native component preview with sample data. Menus are displayed inline and actions are disabled; this is a rendering preview, not an end-to-end interaction capture.*
 
-Herdr Workspace Plus is an independent mod pack. It does not modify Herdr's shipped Files or Changes mods or require a change to Herdr's core.
+Agent Workspace is an independent mod pack. It does not modify Herdr's shipped Files or Changes mods or require a change to Herdr's core.
 
-Previously released as **Files Plus**. The pack contains the **Files Plus** and **Sessions Plus** components. Their `files-plus` / `sessions-plus` mod identifiers, the `files-plus` layout, and shared-state keys are retained for compatibility with existing layouts and saved session names. The package and archive use the new **Herdr Workspace Plus** name.
+Previously released as **Files Plus** and **Herdr Workspace Plus**. The workspace is now **Agent Workspace**; Herdr uses the layout identifier **Agent-Workspace** because layout names cannot contain spaces. The `files-plus` / `sessions-plus` mod identifiers and shared-state keys remain compatible; the updater recognizes both the new layout name and an existing `files-plus` layout. Preview images below show earlier versions of the interface.
 
 ## Sessions
 
-The installer adds **Sessions** below Files / Changes in the right panel. Drag the divider to adjust their heights. Click **This folder / All folders**, cycle **All agents / Claude Code / Codex / agy**, or search by title, directory, provider, or session ID.
+In the standard Herdr layout, **Sessions** appears immediately after **Changes** in the top bar. Click it to use the full right panel for sessions; click it again to close the panel. Files, Changes, and Sessions share that panel. Use the **Scope** and **Agent** dropdown menus to choose **This folder / All folders** and **All agents / Claude Code / Codex / agy**, or search by title, directory, provider, or session ID.
 
 - A running Herdr agent offers **Switch**. A saved conversation offers **Resume**, opening the original directory in a local Herdr tab. If that directory has no local space, a new local space is created. Missing directories and unavailable CLIs produce an error.
 - Right-click a row, or click **⋯**, and choose **Rename** to set a local display name. Names belong to Sessions Plus and are saved in Herdr's local shared state, keyed by provider, data directory, and session ID. Resuming that history entry preserves its name. An empty name restores its original title. Renaming leaves provider transcripts and provider-native names unchanged.
@@ -39,11 +39,11 @@ Recovery records live in `session-trash/` inside the Herdr app home, outside the
 
 ## Status quota
 
-The **Status** tab beside Sessions shows Claude Code, Codex, and agy with their brand icons. **Remaining** and **Used** switch the same quota data between complementary percentages. Each supplied quota window or model pool keeps its own label, progress bar, reset countdown, local reset time, and last-update time. Tools with no usable quota data have no card, including missing CLIs and signed-out accounts. Unknown values are not invented. A past reset does not automatically restore 100% quota. Failed refreshes mark any previous reading **Stale**.
+The bottom quota strip follows the device, optional branch, and agent count on the left—for example, **This computer · 0 agents** followed by **Remaining** and the account readings. The command-palette shortcut stays at the far right. Mode labels, settings, and tooltips are in English. Claude Code, Codex, and agy each show a slim progress bar and up to two quota windows with percentages and reset countdowns, matching the compact Orca-style strip. The bar represents the lowest remaining window; hover for all windows, or click the readings for the full quota panel. A small curved-arrow refresh button sits at the end. Open the readings and choose **Agents** in the full quota panel to control which accounts appear. As space narrows, the strip shortens its readings and hides progress bars before collapsing to a clickable **Quota** label; the mode and refresh button remain available. **Remaining** and **Used** switch the same quota data between complementary percentages. Each supplied quota window or model pool keeps its own label, progress bar, reset countdown, local reset time, and last-update time. Tools with no usable quota data have no card, including missing CLIs and signed-out accounts. Unknown values are not invented. A past reset does not automatically restore 100% quota. Failed refreshes mark any previous reading **Stale**.
 
-Opening Status queries the visible local logged-in accounts; it refreshes every five minutes while that tab is selected. Manual refresh has a one-minute cooldown. This is account quota, not per-project token counts or estimated monetary cost. Remote workspace selection does not change which local accounts are queried.
+The status bar queries visible local logged-in accounts on loading and every five minutes. Its popup reuses the same in-memory readings, so opening it does not start duplicate queries. Manual refresh has a one-minute cooldown. This is account quota, not per-project token counts or estimated monetary cost. Remote workspace selection does not change which local accounts are queried.
 
-Open **Agents** in Status to show or hide Claude, Codex, and agy individually. A check mark means shown. The selection is saved locally and applies after reopening Herdr. Hidden tools are skipped on initial load, manual refresh, and automatic polling; a query already in progress may finish. Showing a tool again refreshes it subject to the normal cooldown. You can hide every tool and restore any of them from the same Agents control. This preference affects quota cards; the Sessions list has its own filters. After installing a CLI or signing in, use Refresh to check it again.
+Click the quota readings, or the **Quota** entry when no readings are shown, then use **Agents** in the full quota panel to show or hide Claude, Codex, and agy individually. A check mark means shown. The selection is saved locally and applies after reopening Herdr. Hidden tools are skipped on initial load, manual refresh, and automatic polling; a query already in progress may finish. Showing a tool again refreshes it subject to the normal cooldown. When every tool is hidden or no usable quota data is available, the **Quota** entry remains accessible so you can reopen **Agents** and restore the selection. This preference affects quota cards; the Sessions list has its own filters. After installing a CLI or signing in, use Refresh to check it again.
 
 - Claude reads the existing OAuth login from its scoped macOS Keychain item or credentials file and sends it only to `https://api.anthropic.com/api/oauth/usage`. Redirects are rejected. The helper never prints or stores tokens, emails, account IDs, raw error bodies, or credential-bearing subprocess output. API-key-only setups may have no subscription quota to report. Expired access is handled by reopening Claude Code; the mod does not refresh or rewrite its credentials.
 - Codex uses the official [`account/rateLimits/read` app-server method](https://learn.chatgpt.com/docs/app-server#6-rate-limits-chatgpt). Codex handles its own authentication. The client only initializes and requests quota; it never starts a thread or sends a turn. Its temporary app-server and log directory are closed and removed after the query.
@@ -70,6 +70,8 @@ Quota results stay in memory. The Remaining/Used preference, hidden-agent select
 | Move a stopped session to Trash / restore it | Yes; data must be on the home volume | Not offered |
 
 Right-click a file or folder to act on that item. Right-click empty tree space to act on the current folder. The header's **⋯** button opens the menu for the previewed file, or for the current folder while the tree is shown.
+
+The **Files** header shows the current directory name on its right. Open **⋯ → Show Hidden Files** to include dot-prefixed names, including `.git`; they are hidden by default. The preference persists across spaces and applies to nested folders before listing limits. It is based on names, not Windows hidden-file attributes.
 
 New items go inside the selected folder, or beside the selected file. **Copy Relative Path** is relative to the file browser's current folder; the folder itself copies as `.`. The browser root cannot be renamed or trashed. Existing destinations are never overwritten.
 
@@ -98,7 +100,7 @@ Start Herdr at least once so that its home contains `mods/` and `layouts/`. Open
 node install.mjs
 ```
 
-The installer reads `HERDR_APP_HOME`, or defaults to `~/.config/herdr-app`. It copies `mods/files-plus/` and `mods/sessions-plus/`, adds Sessions below the right panel, and makes `layouts/files-plus.json` from your `main` layout. The copy replaces Files and Changes mod references while preserving other node properties. It initially reveals Files, or Changes if the source layout only contains Changes. It does not change your original layout, keybindings, shared state, or selected layout.
+The installer reads `HERDR_APP_HOME`, or defaults to `~/.config/herdr-app`. It copies `mods/files-plus/` and `mods/sessions-plus/`, places Sessions in the top bar and quota in the bottom status bar for the standard layout, and makes `layouts/Agent-Workspace.json` from your `main` layout. The copy replaces Files and Changes mod references while preserving other node properties. It initially reveals Files, or Changes if the source layout only contains Changes. It does not change your original layout, keybindings, shared state, or selected layout.
 
 For another Herdr home or personal source layout:
 
@@ -106,7 +108,7 @@ For another Herdr home or personal source layout:
 node install.mjs --home /path/to/herdr-home --layout my-layout
 ```
 
-If any destination already exists, installation stops without replacing it. Preserve or move that existing copy before installing again. The installer does not download dependencies or create a missing Herdr home.
+If any destination already exists, installation stops without replacing it. Use `node update.mjs` to update installed mods without backups. The installer does not download dependencies or create a missing Herdr home.
 
 Validate the installed mod, then select the personal layout:
 
@@ -114,14 +116,41 @@ Validate the installed mod, then select the personal layout:
 app_home="${HERDR_APP_HOME:-$HOME/.config/herdr-app}"
 HERDR_APP_HOME="$app_home" herdr-app check "$app_home/mods/files-plus"
 HERDR_APP_HOME="$app_home" herdr-app check "$app_home/mods/sessions-plus"
-HERDR_APP_HOME="$app_home" herdr-app do layout.switch '{"name":"files-plus"}'
+HERDR_APP_HOME="$app_home" herdr-app do layout.switch '{"name":"Agent-Workspace"}'
 ```
 
 If you used `--home`, use that same path for `app_home`. Click Herdr's **Files** or **Changes** button if the panel is hidden: the shipped tabs mod remembers panel visibility separately for each space. If a panel was disabled during Herdr's setup, enable it in your workspace settings first.
 
 You can also install manually: copy `mods/files-plus/` to your Herdr home without overwriting an existing name and duplicate your layout. For Files, change `"mod": "files"` to `"mod": "files-plus"` and remove any old `content.props.role` so that the default browser role is used. For Changes, change `"mod": "changes"` to `"mod": "files-plus"` and merge `"role": "changes"` into its `content.props`. Check the mod before selecting the copied layout. The recipe and screenshot stay in this repository.
 
-To remove it, switch back to your previous layout and delete only the installed `mods/files-plus/`, `mods/sessions-plus/`, and `layouts/files-plus.json` after preserving any edits you made there. Your original Files and Changes mods and layout are unchanged.
+To remove it, switch back to your previous layout and delete only the installed `mods/files-plus/`, `mods/sessions-plus/`, and `layouts/Agent-Workspace.json` after preserving any edits you made there. Your original Files and Changes mods and layout are unchanged.
+
+## Update
+
+From this package directory, run:
+
+```sh
+node update.mjs
+```
+
+The updater copies the current local source into the installed `files-plus` and `sessions-plus` mods. It replaces their contents, including local edits, and removes obsolete files. **No backups are created.** Existing layouts, shared state (session names, quota preferences, and hidden agents), and `session-trash/` recovery records are preserved. It also supports a first installation: when `layouts/Agent-Workspace.json` is absent, it creates it from `main`.
+
+It does not fetch code. To update this plugin repository from GitHub first, run `git pull --ff-only`, then `node update.mjs`. For local development, just run `node update.mjs` after editing. Herdr's own source checkout is not required.
+
+```sh
+node update.mjs --home /path/to/herdr-home --layout my-layout
+node update.mjs --files-only
+```
+
+For an older split-panel installation, run `node update.mjs --integrate-layout` once to move Sessions into the top bar and Status into the footer. This explicitly updates a supported personal layout while preserving its other settings. Ordinary updates leave the layout unchanged. Unsupported custom layouts keep their existing split-panel interface; the explicit integration flag reports an error before replacing anything.
+
+The home default is the same as the installer. `--layout` is used only when creating a missing plugin layout; an existing layout is preserved byte for byte. `--files-only` leaves any installed Sessions mod untouched. An existing Files-only layout is not automatically extended with a Sessions panel.
+
+The updater validates and prepares all new mod files before removing old ones. Its temporary new-file staging directory is removed on completion or a handled error. No old version is retained; if replacement fails after it begins, the error reports that some mods may already have been updated. Resolve the error and rerun the updater. It rejects overlapping source/target directories and symbolic links at the source or target roots.
+
+Temporary quota failures are retried automatically; absent CLIs, signed-out accounts, and explicitly blocked agy versions remain paused until a manual refresh or relevant setting change.
+
+Run the `herdr-app check` commands above after updating. The script does not start Herdr or switch layouts. Select **Agent-Workspace** after a first installation. Legacy installations keep the layout name printed by the script.
 
 ## Behavior and limits
 
@@ -130,14 +159,14 @@ To remove it, switch back to your previous layout and delete only the installed 
 - Trash requires confirmation. It uses the native macOS Trash, not permanent deletion.
 - New names are one component: empty names, `.`, `..`, separators, colons, and control characters are rejected. Spaces and Unicode are supported.
 - Renaming or trashing a symbolic link acts on the link itself. Creating inside an expanded directory link follows that directory, as ordinary folder navigation does.
-- The tree retains the shipped limits: 500 entries per folder, 5,000 entries total, a depth limit, and a bounded read-only text preview. `.git` is hidden.
+- The tree retains the shipped limits: 500 entries per folder, 5,000 entries total, a depth limit, and a bounded read-only text preview. `.git` is hidden by default and included when Show Hidden Files is enabled.
 - Local filesystem watching and a 10-second refresh supplement explicit refresh. Remote file actions remain read-only.
 - Changes preserves the bounded diff preview: up to 1,000 changed files and 1,500 displayed diff lines. Stage and Unstage operate on a whole file, not individual hunks.
 - This is the first macOS-focused version. Linux/Windows OS file actions and remote mutations are not implemented.
 
 ## Validate and share
 
-Validated on macOS with Herdr 0.1.12: all 133 automated tests passed, the browser, Changes, menus and dialogs passed native mod checks, and native sample renders were inspected. Sessions history parsing, WAL snapshots, identity matching, rename persistence, duplicate-launch guards, and installer integration have automated coverage. The Agents visibility controls have automated coverage for persistence, hidden-provider polling, pending requests, cooldowns, and restoring all-hidden views. Session Trash and Restore have fixture coverage for all three providers, WAL/SHM preservation, native macOS Trash, exclusive restoration, rollback, file conflicts, damaged records, and locks released after a killed process. Additional native component checks cover the session menus, confirmation dialogs, recovery list, and quota states. Actual agent conversations were not resumed or deleted during testing. Read-only quota queries were verified against existing Claude, Codex, and agy logins; only success states and window counts were recorded.
+Validated on macOS with Herdr 0.1.12: all 232 automated tests passed, the browser, Changes, menus and dialogs passed native mod checks, and native sample renders were inspected. The hidden-file toggle, session filters, and quota footer were also checked interactively in Herdr. Sessions history parsing, WAL snapshots, identity matching, rename persistence, duplicate-launch guards, and installer integration have automated coverage. The Agents visibility controls have automated coverage for persistence, hidden-provider polling, pending requests, cooldowns, and restoring all-hidden views. Session Trash and Restore have fixture coverage for all three providers, WAL/SHM preservation, native macOS Trash, exclusive restoration, rollback, file conflicts, damaged records, and locks released after a killed process. Additional native component checks cover the session menus, confirmation dialogs, recovery list, and quota states. Actual agent conversations were not resumed or deleted during testing. Read-only quota queries were verified against existing Claude, Codex, and agy logins; only success states and window counts were recorded.
 
 No dependency installation is needed:
 

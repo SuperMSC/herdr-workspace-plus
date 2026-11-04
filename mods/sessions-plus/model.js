@@ -5,7 +5,7 @@ export const OPERATIONS = "sessions-plus.operations";
 export const CHANGE_KEY = "sessions-plus.history-change";
 export const OPERATION_TTL = 300000;
 export const operationPending = (operations, key, now = Date.now()) => Number(operations?.[key]?.expires ?? 0) > now;
-export const PROVIDERS = { claude: "Claude Code", codex: "Codex", agy: "agy" };
+export const PROVIDERS = { claude: "Claude Code", codex: "Codex", agy: "Antigravity" };
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const base = value => String(value ?? "").split(/[\\/]/).pop();
 export const sessionKey = row => JSON.stringify([row.provider, row.store, row.id]);
@@ -45,7 +45,7 @@ export function sessionRows(history, terminals, panes, names = {}) {
     rows.push({ ...match, key, provider: match?.provider ?? identity?.provider ?? "agent", address: terminal.address,
       cwd: pane?.cwd || terminal.cwd || "", tab: pane?.tab, remote, live: true,
       status: terminal.status || pane?.status || "running", focused: pane?.focused ?? false,
-      updated: terminal.created_ms ?? 0, title: cleanTitle(names[key] || match?.title || terminal.title || terminal.name || terminal.program?.name || identity?.provider || "Agent session") });
+      updated: terminal.created_ms ?? 0, title: cleanTitle(names[key] || match?.title || terminal.title || terminal.name || terminal.program?.name || PROVIDERS[identity?.provider] || "Agent session") });
   }
   for (const row of history) if (!used.has(row.key)) rows.push({ ...row, live: false, remote: false, title: cleanTitle(names[row.key] || row.title) });
   return rows.sort((a, b) => Number(b.live) - Number(a.live) || (b.updated ?? 0) - (a.updated ?? 0));

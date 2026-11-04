@@ -5,7 +5,7 @@ import { homedir, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
-import { UUID, sessionKey, cleanTitle } from "./model.js";
+import { UUID, sessionKey, cleanTitle, PROVIDERS } from "./model.js";
 
 const MAX_FILES = 6000, MAX_ROWS = 500, MAX_READ = 256 * 1024, MAX_INDEX = 4 * 1024 * 1024;
 const json = text => { try { return JSON.parse(text); } catch { return null; } };
@@ -110,19 +110,19 @@ export function agySummaries(store, { temp = tmpdir(), sqlite = "/usr/bin/sqlite
     let stable = false;
     for (let attempt = 0; attempt < 3; attempt++) {
       const before = [stamp(source), stamp(source + "-wal")];
-      if (statSync(source).size > 32 * 1024 * 1024 || (existsSync(source + "-wal") && statSync(source + "-wal").size > 32 * 1024 * 1024)) throw new Error("agy summary index exceeds the read limit.");
+      if (statSync(source).size > 32 * 1024 * 1024 || (existsSync(source + "-wal") && statSync(source + "-wal").size > 32 * 1024 * 1024)) throw new Error("Antigravity summary index exceeds the read limit.");
       copyFileSync(source, target); rmSync(target + "-wal", { force: true });
       if (regular(source + "-wal")) copyFileSync(source + "-wal", target + "-wal");
       if (before.join("|") === [stamp(source), stamp(source + "-wal")].join("|")) { stable = true; break; }
     }
-    if (!stable) throw new Error("agy is updating its session index. Refresh again shortly.");
+    if (!stable) throw new Error("Antigravity is updating its session index. Refresh again shortly.");
     const query = "PRAGMA query_only=ON; SELECT conversation_id, title, workspace_uris, last_modified_time FROM conversation_summaries WHERE COALESCE(parent_conversation_id, '') = '' ORDER BY last_modified_time DESC LIMIT 501;";
     // A checkpointed WAL database may need fresh sidecars even for a read. The
     // disposable copy allows those; query_only rejects SQL writes to its tables.
     const result = spawnSync(sqlite, ["-json", target, query], { encoding: "utf8", timeout: 2500, maxBuffer: 4 * 1024 * 1024 });
-    if (result.status !== 0) throw new Error("Could not read the agy summary index (SQLite or schema unavailable).");
+    if (result.status !== 0) throw new Error("Could not read the Antigravity summary index (SQLite or schema unavailable).");
     const rows = json(result.stdout || "[]");
-    if (!Array.isArray(rows)) throw new Error("Invalid agy summary index.");
+    if (!Array.isArray(rows)) throw new Error("Invalid Antigravity summary index.");
     return rows;
   } finally { rmSync(scratch, { recursive: true, force: true }); }
 }
@@ -139,8 +139,8 @@ function agy(store, state, options) {
     const uris = json(row.workspace_uris);
     const folders = Array.isArray(uris) ? uris.flatMap(uri => { try { return [uri.startsWith("file:") ? fileURLToPath(uri) : uri]; } catch { return []; } }).filter(p => typeof p === "string" && isAbsolute(p)) : [];
     const cwd = folders[0] || paths.get(id);
-    if (!cwd) { state.warnings.add("Some agy sessions have no saved working directory and were skipped."); return []; }
-    return [{ provider: "agy", store, id, cwd, title: cleanTitle(row.title) || `agy ${id.slice(0, 8)}`, updated: time(row.last_modified_time) }];
+    if (!cwd) { state.warnings.add("Some Antigravity sessions have no saved working directory and were skipped."); return []; }
+    return [{ provider: "agy", store, id, cwd, title: cleanTitle(row.title) || `${PROVIDERS.agy} ${id.slice(0, 8)}`, updated: time(row.last_modified_time) }];
   });
 }
 
@@ -163,7 +163,7 @@ export function scan(options = {}) {
     const state = { warnings, visited: 0, limited: false };
     tools[provider] = executable(provider, home);
     try { rows.push(...reader(store, state, options).map(row => ({ ...row, key: sessionKey(row), defaultStore: store === resolve(defaults[provider]) }))); }
-    catch { warnings.add(`${provider}: session history could not be read. Refresh to retry.`); }
+    catch { warnings.add(`${PROVIDERS[provider] ?? provider}: session history could not be read. Refresh to retry.`); }
     limited ||= state.limited;
   }
   const byKey = new Map();
@@ -175,10 +175,10 @@ export function scan(options = {}) {
 export function validate(key, options = {}) {
   const data = scan(options), row = data.rows.find(row => row.key === key);
   if (!row) throw new Error("This session is no longer available. Refresh the list.");
-  if (row.provider === "agy" && !row.defaultStore) throw new Error("agy restore currently supports its default local data directory only.");
+  if (row.provider === "agy" && !row.defaultStore) throw new Error("Antigravity restore currently supports its default local data directory only.");
   if (!statSync(row.cwd, { throwIfNoEntry: false })?.isDirectory()) throw new Error("The original working directory no longer exists.");
   const command = data.tools[row.provider];
-  if (!command) throw new Error(`${row.provider} is not installed or is not on PATH.`);
+  if (!command) throw new Error(`${PROVIDERS[row.provider] ?? row.provider} CLI is not installed or is not on PATH.`);
   return { row, command };
 }
 

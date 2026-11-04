@@ -1,7 +1,7 @@
 import { div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { appHome, exec, terminals, panes, theme, window, shared, setShared, closeOverlay } from "herdr";
-import { NAMES, PENDING, OPERATIONS, CHANGE_KEY, OPERATION_TTL, operationPending, sessionRows } from "./model.js";
+import { NAMES, PENDING, OPERATIONS, CHANGE_KEY, OPERATION_TTL, operationPending, sessionRows, PROVIDERS } from "./model.js";
 import { createTrashClient } from "./trash-client.js";
 
 export default class TrashDialog {
@@ -82,7 +82,7 @@ export default class TrashDialog {
       .child(div().text_color(t.muted).child(trash ? "Move this session’s local history to Trash. You can restore it from Sessions → Trash until the Trash is emptied." : "Restore this session’s history to its original location. Existing files are never replaced."))
       .when(!trash && Boolean(this.target.message), el => el.child(div().text_size(11.5).text_color(t.muted).child(this.target.message)))
       .child(v_flex().flex_1().min_h(0).gap(4).overflow_y_scrollbar().text_size(11.5).text_color(t.muted)
-        .children(trash ? this.files.map(file => div().child(file)) : [div().child(`${this.target.provider} · ${this.target.id}`)])
+        .children(trash ? this.files.map(file => div().child(file)) : [div().child(`${PROVIDERS[this.target.provider] ?? this.target.provider} · ${this.target.id}`)])
         .when(this.busy, el => el.child(div().child(this.ready ? "Working…" : "Checking session files…"))))
       .when(Boolean(this.error), el => el.child(div().max_h(70).overflow_y_scrollbar().text_color(t.ansi1).child(this.error)))
       .child(h_flex().gap(8).justify_end()
