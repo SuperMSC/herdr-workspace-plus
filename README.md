@@ -17,7 +17,7 @@ Previously released as **Files Plus**. The pack contains the **Files Plus** and 
 The installer adds **Sessions** below Files / Changes in the right panel. Drag the divider to adjust their heights. Click **This folder / All folders**, cycle **All agents / Claude Code / Codex / agy**, or search by title, directory, provider, or session ID.
 
 - A running Herdr agent offers **Switch**. A saved conversation offers **Resume**, opening the original directory in a local Herdr tab. If that directory has no local space, a new local space is created. Missing directories and unavailable CLIs produce an error.
-- Right-click a row, or click **⋯**, to rename it. Names belong to Sessions Plus and are saved in Herdr's local shared state, keyed by provider, data directory, and session ID. Resuming that history entry preserves its name. An empty name restores its original title. Provider transcripts and provider-native names are unchanged.
+- Right-click a row, or click **⋯**, and choose **Rename** to set a local display name. Names belong to Sessions Plus and are saved in Herdr's local shared state, keyed by provider, data directory, and session ID. Resuming that history entry preserves its name. An empty name restores its original title. Renaming leaves provider transcripts and provider-native names unchanged.
 - History uses `claude --resume <id>`, `codex resume <id>`, and `agy --conversation <id>`. No prompt is automatically sent and no permission-bypass flags are added. The CLI's normal configuration, trust checks, and hooks still apply when you explicitly resume it.
 - Claude and Codex history comes from their local JSONL records and title index. agy history comes from a temporary snapshot of `conversation_summaries.db`, including its WAL; only summary metadata is queried. The snapshot and any SQLite sidecars are removed in `finally`. The original database and conversation bodies are not written.
 - History refreshes every 30 seconds and on Refresh. The history reader has no persistent transcript cache, hook installation, telemetry, or network requests. The scan is bounded to 6,000 directory entries and 500 recent records per provider; the panel reports when it reaches a limit. Large JSONL files are read at their beginning and end, so metadata stored only in the middle can be missed. Codex archived sessions and Claude subagents are excluded.
@@ -25,21 +25,31 @@ The installer adds **Sessions** below Files / Changes in the right panel. Drag t
 
 ![Sessions Plus native preview](sessions-preview.png)
 
-*Native components with fictional sessions. This preview does not open a real agent conversation.*
+*Native components with fictional sessions, captured before the session Trash controls were added. This preview does not open a real agent conversation.*
+
+### Move a session to Trash and restore it
+
+For a local history row, choose **Move to Trash…** from its context menu and review the confirmation. The operation moves the session's history and recognized session-specific attachments into one recovery bundle in the macOS Trash. It never deletes the working project or empties the Trash. Running Herdr sessions and sessions currently opening cannot be removed. The helper also checks for provider processes and open files; if it cannot rule out a writer, close the corresponding CLI or desktop service and retry.
+
+Open **Trash** in Sessions to see this plugin's recovery records. Choose **Restore…** to return a session's files to their original locations. Existing destination files are never overwritten. Local display names and shared provider indexes are retained, so a successful restore can reuse them. These shared indexes may still show an old entry in the provider's own interface while its history is in the Trash; this plugin removes the history row immediately after refreshing.
+
+Session Trash currently requires macOS and a data directory on the same volume as the user's home. Symbolic links and ambiguous session identities are rejected. The bundle contains the recognized Claude session transcript and its adjacent session folder, the Codex rollout, or the agy database with its WAL/SHM files and session brain folder. Shared logs, credentials, quota settings, and unrelated sessions are not part of the operation.
+
+Recovery records live in `session-trash/` inside the Herdr app home, outside the installed mod directories. Preserve this directory when upgrading or uninstalling while recoverable sessions remain. Use the plugin's **Restore** action to unpack a recovery bundle; Finder's **Put Back** alone only returns the bundle. Emptying the macOS Trash permanently removes the bundled history. A failed move attempts rollback; if a conflicting path prevents rollback, the retained recovery record lets you retry restoration after resolving the conflict.
 
 ## Status quota
 
-The **Status** tab beside Sessions shows Claude Code, Codex, and agy with their brand icons. **Remaining** and **Used** switch the same quota data between complementary percentages. Each supplied quota window or model pool keeps its own label, progress bar, reset countdown, local reset time, and last-update time. Unknown values are not invented. A past reset does not automatically restore 100% quota. Failed refreshes mark any previous reading **Stale**.
+The **Status** tab beside Sessions shows Claude Code, Codex, and agy with their brand icons. **Remaining** and **Used** switch the same quota data between complementary percentages. Each supplied quota window or model pool keeps its own label, progress bar, reset countdown, local reset time, and last-update time. Tools with no usable quota data have no card, including missing CLIs and signed-out accounts. Unknown values are not invented. A past reset does not automatically restore 100% quota. Failed refreshes mark any previous reading **Stale**.
 
 Opening Status queries the visible local logged-in accounts; it refreshes every five minutes while that tab is selected. Manual refresh has a one-minute cooldown. This is account quota, not per-project token counts or estimated monetary cost. Remote workspace selection does not change which local accounts are queried.
 
-Open **Agents** in Status to show or hide Claude, Codex, and agy individually. A check mark means shown. The selection is saved locally and applies after reopening Herdr. Hidden tools are skipped on initial load, manual refresh, and automatic polling; a query already in progress may finish. Showing a tool again refreshes it subject to the normal cooldown. You can hide every tool and restore any of them from the same Agents control. This preference affects quota cards; the Sessions list has its own filters.
+Open **Agents** in Status to show or hide Claude, Codex, and agy individually. A check mark means shown. The selection is saved locally and applies after reopening Herdr. Hidden tools are skipped on initial load, manual refresh, and automatic polling; a query already in progress may finish. Showing a tool again refreshes it subject to the normal cooldown. You can hide every tool and restore any of them from the same Agents control. This preference affects quota cards; the Sessions list has its own filters. After installing a CLI or signing in, use Refresh to check it again.
 
 - Claude reads the existing OAuth login from its scoped macOS Keychain item or credentials file and sends it only to `https://api.anthropic.com/api/oauth/usage`. Redirects are rejected. The helper never prints or stores tokens, emails, account IDs, raw error bodies, or credential-bearing subprocess output. API-key-only setups may have no subscription quota to report. Expired access is handled by reopening Claude Code; the mod does not refresh or rewrite its credentials.
 - Codex uses the official [`account/rateLimits/read` app-server method](https://learn.chatgpt.com/docs/app-server#6-rate-limits-chatgpt). Codex handles its own authentication. The client only initializes and requests quota; it never starts a thread or sends a turn. Its temporary app-server and log directory are closed and removed after the query.
-- agy uses its built-in `-p /usage --output-format json` command, with auto-updates disabled for that process. A version gate requires **1.1.11+** before the print command can run. The helper verifies a structured usage response; if it unexpectedly reports a model turn, further queries for that version are paused. The CLI may write its normal diagnostic logs. It uses the existing macOS login and displays unavailable when that login is absent.
+- agy uses its built-in `-p /usage --output-format json` command, with auto-updates disabled for that process. A version gate requires **1.1.11+** before the print command can run. The helper verifies a structured usage response; if it unexpectedly reports a model turn, further queries for that version are paused. The CLI may write its normal diagnostic logs. It uses the existing macOS login; without a usable login, its quota card is omitted.
 
-Quota results stay in memory. The Remaining/Used preference, hidden-agent selection, and any agy unsupported-version guard are stored in Herdr shared state. HTTP failures, signed-out accounts, missing CLIs, and format changes display **Unavailable**. The Claude usage endpoint is also used by Orca, but it is not a guaranteed public API; provider updates may require an adapter update.
+Quota results stay in memory. The Remaining/Used preference, hidden-agent selection, and any agy unsupported-version guard are stored in Herdr shared state. Missing CLIs and signed-out accounts are omitted from the cards. Transient failures may retain an earlier valid reading marked **Stale**; if there is no reading, no card is shown. The Claude usage endpoint is also used by Orca, but it is not a guaranteed public API; provider updates may require an adapter update.
 
 ![Sessions and Status with fictional values](status-preview.png)
 
@@ -57,6 +67,7 @@ Quota results stay in memory. The Remaining/Used preference, hidden-agent select
 | Move to Trash, with confirmation | Yes | Not offered |
 | Changes row: stage / unstage this file | Yes | Not offered |
 | Commit the repository's staged changes | Yes | Not offered |
+| Move a stopped session to Trash / restore it | Yes; data must be on the home volume | Not offered |
 
 Right-click a file or folder to act on that item. Right-click empty tree space to act on the current folder. The header's **⋯** button opens the menu for the previewed file, or for the current folder while the tree is shown.
 
@@ -126,7 +137,7 @@ To remove it, switch back to your previous layout and delete only the installed 
 
 ## Validate and share
 
-Validated on macOS with Herdr 0.1.12: all 88 automated tests passed, the browser, Changes, menus and dialogs passed native mod checks, and native sample renders were inspected. Sessions history parsing, WAL snapshots, identity matching, rename persistence, duplicate-launch guards, and installer integration have automated coverage. The Agents visibility controls have automated coverage for persistence, hidden-provider polling, pending requests, cooldowns, and restoring all-hidden views. Actual agent conversations were not resumed during testing. Read-only quota queries were verified against existing Claude, Codex, and agy logins; only success states and window counts were recorded.
+Validated on macOS with Herdr 0.1.12: all 133 automated tests passed, the browser, Changes, menus and dialogs passed native mod checks, and native sample renders were inspected. Sessions history parsing, WAL snapshots, identity matching, rename persistence, duplicate-launch guards, and installer integration have automated coverage. The Agents visibility controls have automated coverage for persistence, hidden-provider polling, pending requests, cooldowns, and restoring all-hidden views. Session Trash and Restore have fixture coverage for all three providers, WAL/SHM preservation, native macOS Trash, exclusive restoration, rollback, file conflicts, damaged records, and locks released after a killed process. Additional native component checks cover the session menus, confirmation dialogs, recovery list, and quota states. Actual agent conversations were not resumed or deleted during testing. Read-only quota queries were verified against existing Claude, Codex, and agy logins; only success states and window counts were recorded.
 
 No dependency installation is needed:
 

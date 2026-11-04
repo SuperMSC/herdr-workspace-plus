@@ -1,0 +1,256 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { readFileSync } from "node:fs";
+import * as model from "../mods/sessions-plus/model.js";
+import { createTrashClient } from "../mods/sessions-plus/trash-client.js";
+
+const id = "11111111-1111-4111-8111-111111111111";
+const session = () => {
+  const row = { id, provider: "claude", store: "/fixture/claude", defaultStore: true, cwd: "/fixture/project", title: "Original session" };
+  return { ...row, key: model.sessionKey(row) };
+};
+const entry = () => ({ ...session(), token: "owned-trash-entry", trashedAt: Date.now(), restorable: true, location: "trash", status: "trashed" });
+
+function element() {
+  const node = { events: {}, childNodes: [], attributes: {} };
+  const proxy = new Proxy(node, { get(target, name) {
+    if (name === "child") return child => { target.childNodes.push(child); return proxy; };
+    if (name === "children") return children => { target.childNodes.push(...children); return proxy; };
+    if (name === "when") return (condition, callback) => condition ? callback(proxy) : proxy;
+    if (name.startsWith("on_")) return (...args) => { target.events[`${name}:${args.length > 1 ? args[0] : ""}`] = args.at(-1); return proxy; };
+    if (name in target) return target[name];
+    return value => { target.attributes[name] = value; return proxy; };
+  } });
+  return proxy;
+}
+
+function viewClass(file, dependencies) {
+  const source = readFileSync(new URL(`../mods/sessions-plus/${file}.js`, import.meta.url), "utf8")
+    .replace(/^import .*;\n/gm, "").replace("export default class", "return class");
+  return new Function(...Object.keys(dependencies), source)(...Object.values(dependencies));
+}
+
+const nodes = node => !node || typeof node !== "object" ? [] : [node, ...node.childNodes.flatMap(nodes)];
+const find = (tree, id) => nodes(tree).find(node => node.attributes.id === id);
+const text = node => typeof node === "string" ? node : (node?.childNodes ?? []).map(text).join(" ");
+
+function harness({ state = {}, target = session(), role, action = "trash", platform = "macos", response } = {}) {
+  const calls = [], tasks = [], queued = [], timers = [], closed = [], overlays = [], launches = [], running = [];
+  let stopped = 0, notifications = 0, defer = false;
+  const p = { target, role, action, overlay: "overlay-1", node: "/fixture/node", stores: { claude: ["/fixture/claude"] } };
+  const cx = { notify() { notifications++; }, stop_propagation() { stopped++; }, focus_handle: () => ({ focus() {} }),
+    spawn(task) { if (defer) queued.push(task); else tasks.push(task(cx)); },
+    timer: { every(ms, callback) { timers.push({ ms, callback }); }, after(ms, callback) { timers.push({ ms, callback }); } } };
+  const dependencies = { ...model, createTrashClient, View: class {}, div: element, h_flex: element, v_flex: element,
+    InputState: { new: () => ({ on() {}, value: () => "", focus() {} }) }, Input: { new: element }, providerIcon: element,
+    theme: () => ({}), window: () => ({ platform }), appHome: () => "/fixture/herdr", props: () => p,
+    focused: () => ({ cwd: "/fixture/project" }), spaces: () => [], panes: () => [], terminals: () => running,
+    shared: key => state[key], setShared: (key, value) => { state[key] = value; },
+    run: (...args) => launches.push(args), closeOverlay: id => closed.push(id), openOverlay: data => overlays.push(data),
+    exec: async (program, args) => {
+      calls.push({ program, args });
+      if (response) return response(program, args, calls.length);
+      const action = args[1];
+      const data = action === "prepare" ? { row: target, files: ["projects/project/session.jsonl"] }
+        : action === "scan" ? { rows: [session()], warnings: [], limited: false }
+        : action === "validate" ? { row: target, command: "/fixture/claude-bin" }
+        : action === "list" ? { entries: [entry()] } : action === "restore" ? { row: target } : { entry: target };
+      return { code: 0, stdout: JSON.stringify(data) };
+    },
+    Quota: class { init() { this.initialized = true; } render() { return element().id("quota-preserved"); } refresh() {} },
+  };
+  dependencies.Rename = viewClass("rename", dependencies);
+  dependencies.Actions = viewClass("actions", dependencies);
+  dependencies.TrashDialog = viewClass("trash-dialog", dependencies);
+  const Panel = viewClass("main", dependencies);
+  return { ...dependencies, Panel, cx, p, state, target, calls, tasks, timers, closed, overlays, launches, running,
+    stopped: () => stopped, notifications: () => notifications,
+    defer(value) { defer = value; }, startQueued() { while (queued.length) tasks.push(queued.shift()(cx)); },
+    async finish() { for (let index = 0; index < tasks.length; index++) await tasks[index]; },
+    panel() { const panel = new Panel(); panel.init(p, cx); return panel; },
+    dialog() { const dialog = new dependencies.TrashDialog(); dialog.init(p, cx); return dialog; },
+    menu() { const menu = new dependencies.Actions(); menu.init(p, cx); return menu; },
+  };
+}
+
+test("right-click and overflow both open captured session actions, preserving Rename", async () => {
+  const f = harness(), panel = f.panel(); await f.finish();
+  const tree = panel.render(f.cx), row = panel.rows()[0];
+  find(tree, `session-${row.key}`).events["on_mouse_down:right"]({}, f.cx);
+  find(tree, `session-name-${row.key}`).events["on_click:"]({}, f.cx);
+  assert.equal(f.overlays.length, 2); assert.equal(f.stopped(), 2);
+  assert(f.overlays.every(value => value.props.role === "actions" && value.props.target.key === row.key));
+  const menu = f.menu(); f.p.target.title = "Changed focus"; menu.choose(0);
+  assert.equal(f.overlays[2].props.role, "rename"); assert.equal(f.overlays[2].props.target.title, "Original session");
+  assert.equal(f.calls.length, 1);
+});
+
+test("live, remote and unsupported-platform menus disable Trash", () => {
+  for (const options of [{ target: { ...session(), live: true } }, { target: { ...session(), remote: true } }, { platform: "linux" }]) {
+    const f = harness(options), menu = f.menu();
+    assert.equal(menu.items[1].disabled, true); menu.choose(1);
+    assert.equal(f.overlays.length, 0); assert.equal(f.calls.length, 0);
+    menu.render().events["on_key_down:"]({ key: "down" }, f.cx); assert.equal(menu.at, 0);
+  }
+});
+
+test("menu opens a modal Trash confirmation with captured target and helper settings", () => {
+  const f = harness(), menu = f.menu(); menu.choose(1);
+  assert.equal(f.overlays[0].modal, true); assert.equal(f.overlays[0].props.action, "trash");
+  assert.deepEqual(f.overlays[0].props.target, session()); assert.equal(f.overlays[0].props.node, f.p.node);
+  assert.deepEqual(f.overlays[0].props.stores, f.p.stores); assert.equal(f.calls.length, 0);
+});
+
+test("confirmation previews only helper-returned files and preserves the captured identity", async () => {
+  const f = harness(), dialog = f.dialog(); await f.finish();
+  assert.match(text(dialog.render()), /projects\/project\/session.jsonl/);
+  f.p.target.key = "changed-after-open"; dialog.submit(f.cx); await f.finish();
+  assert.deepEqual(f.calls.map(call => call.args[1]), ["prepare", "trash"]);
+  assert.equal(f.calls[1].args[3], session().key); assert.equal(f.calls[1].program, "/fixture/node");
+  assert.deepEqual(JSON.parse(f.calls[1].args[2]), { stores: f.p.stores, stateDir: "/fixture/herdr/session-trash" });
+  assert.equal(f.state[model.CHANGE_KEY], 1); assert.deepEqual(f.closed, ["overlay-1"]);
+  assert.deepEqual(f.state[model.OPERATIONS], {});
+});
+
+test("prepare failures show Retry and never skip a successful preview before mutation", async () => {
+  const f = harness({ response: async (_program, args, count) => count === 1
+    ? { code: 1, stdout: JSON.stringify({ error: "Session metadata is unreadable" }) }
+    : { code: 0, stdout: JSON.stringify({ row: session(), files: ["session.jsonl"] }) } });
+  const dialog = f.dialog(); await f.finish();
+  assert.match(dialog.error, /unreadable/); assert.equal(text(find(dialog.render(), "session-trash-confirm")), "Retry");
+  dialog.submit(f.cx); await f.finish();
+  assert.equal(dialog.ready, true); assert.deepEqual(f.calls.map(call => call.args[1]), ["prepare", "prepare"]);
+  assert.equal(f.closed.length, 0);
+});
+
+test("Trash rechecks running and pending sessions after the confirmation was opened", async () => {
+  for (const busy of ["live", "pending", "operation"]) {
+    const f = harness(), dialog = f.dialog(); await f.finish();
+    if (busy === "live") f.running.push({ state: "live", address: "t1", argv: ["claude", "--resume", id] });
+    if (busy === "pending") f.state[model.PENDING] = { [session().key]: Date.now() };
+    if (busy === "operation") f.state[model.OPERATIONS] = { [session().key]: { expires: Date.now() + 60000 } };
+    dialog.submit(f.cx); await f.finish();
+    assert(dialog.error); assert.deepEqual(f.calls.map(call => call.args[1]), ["prepare"]); assert.equal(f.closed.length, 0);
+  }
+});
+
+test("queued mutations acquire the shared lock immediately and block resume", async () => {
+  const f = harness(), panel = f.panel(), dialog = f.dialog(); await f.finish();
+  f.defer(true); dialog.submit(f.cx); dialog.submit(f.cx); panel.open(session(), f.cx);
+  assert.match(panel.error, /Another operation/); assert.equal(f.calls.length, 2);
+  const key = dialog.render().events["on_key_down:"];
+  key({ key: "escape" }, f.cx); key({ key: "enter" }, f.cx);
+  find(dialog.render(), "session-trash-cancel").events["on_click:"]({}, f.cx);
+  assert.equal(f.closed.length, 0); assert.equal(f.stopped(), 2);
+  f.startQueued(); await f.finish();
+  assert.equal(f.calls.filter(call => call.args[1] === "trash").length, 1);
+  assert.deepEqual(f.state[model.OPERATIONS], {}); assert.equal(f.launches.length, 0);
+});
+
+test("resume acquires the same shared lock before queued validation", async () => {
+  const f = harness(), panel = f.panel(), dialog = f.dialog(); await f.finish();
+  f.defer(true); panel.open(session(), f.cx); dialog.submit(f.cx);
+  assert.match(dialog.error, /opening|Another operation/);
+  assert.equal(f.state[model.OPERATIONS][session().key].action, "resume");
+  f.startQueued(); await f.finish();
+  assert.deepEqual(f.state[model.OPERATIONS], {}); assert.equal(f.launches.length, 1);
+  assert.equal(f.calls.some(call => call.args[1] === "trash"), false);
+});
+
+test("failed mutations retain dialog, clear the shared lock, and can Retry", async () => {
+  let fail = true;
+  const f = harness({ target: entry(), action: "restore", response: async () => fail
+    ? { code: 1, stdout: JSON.stringify({ error: "Destination already exists" }) }
+    : { code: 0, stdout: JSON.stringify({ row: session() }) } });
+  const dialog = f.dialog(); dialog.submit(f.cx); await f.finish();
+  assert.match(dialog.error, /already exists/); assert.equal(dialog.busy, false);
+  assert.equal(text(find(dialog.render(), "session-trash-confirm")), "Retry");
+  assert.deepEqual(f.state[model.OPERATIONS], {}); assert.equal(f.state[model.CHANGE_KEY], undefined); assert.equal(f.closed.length, 0);
+  fail = false; dialog.submit(f.cx); await f.finish();
+  assert.equal(f.calls[1].args[3], entry().token); assert.equal(f.state[model.CHANGE_KEY], 1); assert.equal(f.closed.length, 1);
+});
+
+test("Trash list offers Restore confirmation, keeps Status, and reads only plugin history", async () => {
+  const f = harness(), panel = f.panel(); await f.finish();
+  find(panel.render(f.cx), "sessions-trash").events["on_click:"]({}, f.cx); await f.finish();
+  assert(find(panel.render(f.cx), "sessions-trash-view"));
+  find(panel.render(f.cx), `session-restore-${entry().token}`).events["on_click:"]({}, f.cx);
+  assert.equal(f.overlays[0].props.action, "restore"); assert.equal(f.overlays[0].props.target.token, entry().token);
+  assert.equal(f.calls[1].args[1], "list"); assert.equal(f.calls[1].args[0], "/fixture/herdr/mods/sessions-plus/trash.mjs");
+  find(panel.render(f.cx), "sessions-page-status").events["on_click:"]({}, f.cx);
+  assert(find(panel.render(f.cx), "quota-preserved"));
+  assert(f.timers.some(timer => timer.ms === 300000));
+});
+
+test("successful mutation revision refreshes Sessions and Trash exactly once", async () => {
+  const f = harness(), panel = f.panel(); await f.finish();
+  panel.showingTrash = true;
+  f.state[model.CHANGE_KEY] = 1;
+  panel.render(f.cx); panel.render(f.cx); await f.finish(); panel.render(f.cx);
+  assert.deepEqual(f.calls.map(call => call.args[1]), ["scan", "scan", "list"]);
+});
+
+test("unavailable Trash entries show their reason and cannot start restoration", async () => {
+  const f = harness(), panel = f.panel(); await f.finish(); panel.showingTrash = true;
+  for (const restorable of [false, undefined]) {
+    const row = { ...entry(), restorable, location: "missing", message: "The Trash was emptied." };
+    panel.trashEntries = [row];
+    const tree = panel.render(f.cx);
+    assert.match(text(tree), /The Trash was emptied/); assert.equal(find(tree, `session-restore-${row.token}`), undefined);
+    panel.restoreRow(row); assert.equal(f.overlays.length, 0);
+    const restore = harness({ target: row, action: "restore" }), dialog = restore.dialog();
+    dialog.submit(restore.cx); await restore.finish(); assert.match(dialog.error, /Trash was emptied/); assert.equal(restore.calls.length, 0);
+  }
+});
+
+test("recovery entries retain Restore and display the helper recovery message", async () => {
+  const f = harness(), panel = f.panel(); await f.finish(); panel.showingTrash = true;
+  const row = { ...entry(), status: "recovery", message: "Restore will finish the interrupted operation." }; panel.trashEntries = [row];
+  const tree = panel.render(f.cx);
+  assert.match(text(tree), /finish the interrupted operation/); assert(find(tree, `session-restore-${row.token}`));
+});
+
+test("invalid Trash lists surface Retry without breaking the Sessions view", async () => {
+  const f = harness(), panel = f.panel(); await f.finish();
+  panel.trashRead = createTrashClient(async () => ({ code: 0, stdout: JSON.stringify({ entries: null }) }), {}, "/fixture/herdr");
+  panel.showingTrash = true; panel.refreshTrash(f.cx); await f.finish();
+  assert.match(panel.trashError, /invalid list/); assert.equal(text(find(panel.render(f.cx), "sessions-trash-refresh")), "Retry");
+  panel.trashRead = async () => ({ entries: [entry()] }); panel.refreshTrash(f.cx); await f.finish();
+  assert.equal(panel.trashError, ""); assert.equal(panel.trashEntries.length, 1);
+});
+
+test("Restore also blocks duplicate submits and busy Escape until helper completion", async () => {
+  let resolve;
+  const gate = new Promise(done => { resolve = done; });
+  const f = harness({ target: entry(), action: "restore", response: async () => { await gate; return { code: 0, stdout: JSON.stringify({ row: session() }) }; } });
+  const dialog = f.dialog(); dialog.submit(f.cx); dialog.submit(f.cx);
+  dialog.render().events["on_key_down:"]({ key: "escape" }, f.cx);
+  assert.equal(f.calls.length, 1); assert.equal(f.closed.length, 0); assert.equal(f.stopped(), 1);
+  resolve(); await f.finish(); assert.equal(f.closed.length, 1); assert.deepEqual(f.state[model.OPERATIONS], {});
+});
+
+test("revision arriving during a scan queues one follow-up and no render loop", async () => {
+  const f = harness(); f.defer(true); const panel = f.panel();
+  f.state[model.CHANGE_KEY] = 1; panel.render(f.cx); panel.render(f.cx);
+  assert.equal(panel.refreshQueued, true);
+  f.defer(false); f.startQueued(); await f.finish(); panel.render(f.cx);
+  assert.deepEqual(f.calls.map(call => call.args[1]), ["scan", "scan"]);
+});
+
+test("roles initialize once without creating the normal Sessions panel", async () => {
+  for (const role of ["actions", "rename", "trash-dialog"]) {
+    const f = harness({ role }), panel = f.panel(); await f.finish();
+    assert(panel.role); assert.equal(panel.input, undefined); assert.equal(f.timers.length, 0);
+    assert.deepEqual(f.calls.map(call => call.args[1]), role === "trash-dialog" ? ["prepare"] : []);
+    assert(panel.render(f.cx));
+  }
+});
+
+test("helper errors and malformed output are visible without executing shell commands", async () => {
+  for (const result of [{ code: 1, stdout: JSON.stringify({ error: "Bundle is missing" }) }, { code: 0, stdout: "not-json" }]) {
+    const calls = [];
+    const read = createTrashClient(async (...args) => { calls.push(args); return result; }, { node: "/fixture/node" }, "/fixture/herdr");
+    await assert.rejects(read("restore", "token '$()`"), /Bundle is missing|Node.js/);
+    assert.equal(calls[0][1][3], "token '$()`"); assert.equal(calls[0][0], "/fixture/node");
+  }
+});

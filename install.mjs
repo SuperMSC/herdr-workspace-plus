@@ -140,7 +140,7 @@ export function install({
   }
   const sourceLayout = join(layouts, `${layout}.json`);
   const sessionFiles = sessions ? sourceFiles(sessionsSource) : [];
-  if (sessions && (!sessionFiles.includes("main.js") || !sessionFiles.includes("history.mjs"))) throw new Error("Sessions Plus source is incomplete.");
+  if (sessions && ["main.js", "history.mjs", "trash.mjs"].some(file => !sessionFiles.includes(file))) throw new Error("Sessions Plus source is incomplete.");
   const cloned = cloneLayout(JSON.parse(readFileSync(sourceLayout, "utf8")), { sessions });
   const serialized = JSON.stringify(cloned, null, 2) + "\n";
   let ownMod = false;

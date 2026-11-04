@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "n
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { spawn } from "node:child_process";
-import { claudeCredential, fetchClaude, codexQuota, agyQuota, supportsAgyUsage } from "../mods/sessions-plus/quota.mjs";
+import { claudeCredential, claudeQuota, fetchClaude, codexQuota, agyQuota, supportsAgyUsage } from "../mods/sessions-plus/quota.mjs";
 import { claudeWindows, codexWindows, agyWindows, resetTime, percentage, resetLabel } from "../mods/sessions-plus/quota-model.js";
 import { PROVIDERS } from "../mods/sessions-plus/model.js";
 
@@ -12,6 +12,29 @@ const agyReply = { status: "SUCCESS", command: { name: "usage", data: { groups: 
   { id: "gemini-weekly", name: "Weekly", window: "weekly", remaining_fraction: 0.75, reset_time: "2027-01-02T00:00:00Z" },
   { id: "unmetered", name: "Other", disabled: true, remaining_fraction: 0 },
 ] }] } } };
+
+test("missing CLI executables or login return unavailable without launching work", async () => {
+  const unexpected = () => assert.fail("A missing provider must not launch a process or request");
+  const results = [
+    await claudeQuota({ executable: null, readCredential: unexpected, request: unexpected }),
+    await codexQuota({ executable: null, spawnProcess: unexpected }),
+    agyQuota({ executable: null, run: unexpected, hasCredentials: unexpected }),
+    await fetchClaude({ token: null, request: unexpected }),
+  ];
+  for (const result of results) { assert.equal(result.state, "unavailable"); assert.deepEqual(result.windows, []); assert(result.message); }
+  assert.deepEqual(results.map(result => result.reason), ["missing-cli", "missing-cli", "missing-cli", "signed-out"]);
+});
+
+test("a CLI removed after discovery degrades gracefully and cleans its temporary directory", async t => {
+  const root = mkdtempSync(join(tmpdir(), "quota-missing-cli-test-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const missing = join(root, "missing-cli");
+  const codex = await codexQuota({ executable: missing, temp: root });
+  const agy = agyQuota({ executable: missing, hasCredentials: () => assert.fail("Missing agy must not query credentials") });
+  assert.equal(codex.state, "unavailable"); assert.equal(agy.state, "unavailable");
+  assert.equal(codex.reason, "missing-cli"); assert.equal(agy.reason, "missing-cli");
+  assert.deepEqual(readdirSync(root), []);
+});
 
 test("remaining and used are complementary, preserving zero and exhaustion", () => {
   const windows = claudeWindows({ five_hour: { utilization: 0, resets_at: 1800000000 }, seven_day: { utilization: 100, resets_at: "2027-01-02T00:00:00Z" } });
@@ -68,6 +91,20 @@ test("Claude authentication, rate-limit and transport errors expose no server bo
   }
   const result = await fetchClaude({ token: "fixture-access-token", request: async () => { throw new Error("fixture-access-token"); } });
   assert(!JSON.stringify(result).includes("fixture-access-token"));
+  assert.equal(result.reason, undefined);
+});
+
+test("missing credentials hide the account while network and rate-limit failures remain temporary", async () => {
+  const claude = await claudeQuota({ executable: "/fixture/claude", readCredential: () => null, request: () => assert.fail("Signed-out Claude must not send a request") });
+  assert.equal(claude.reason, "signed-out");
+  const agy = agyQuota({ executable: "/fixture/agy", hasCredentials: () => false, run: (_p, args) => {
+    assert.deepEqual(args, ["--version"]); return { status: 0, stdout: "1.4.12" };
+  } });
+  assert.equal(agy.reason, "signed-out");
+  for (const status of [401, 403, 429, 500]) {
+    const result = await fetchClaude({ token: "fixture-access-token", request: async () => new Response("", { status }) });
+    assert.equal(result.reason, status === 401 ? "signed-out" : undefined);
+  }
 });
 
 test("agy gates old versions before a print command and never bypasses slash commands", () => {
@@ -107,6 +144,16 @@ test("Codex uses only initialize and quota-read, closes its process, and removes
   assert.equal(result.state, "ok"); assert.equal(result.windows[0].remaining, 75); assert.notEqual(child.exitCode, null);
   assert.deepEqual(readFileSync(record, "utf8").trim().split("\n").map(line => JSON.parse(line).method), ["initialize", "initialized", "account/rateLimits/read"]);
   assert(!JSON.stringify(result).includes("private-account-fixture")); assert(!readdirSync(root).some(n => n.startsWith("herdr-quota-codex-")));
+});
+
+test("Codex distinguishes explicit authentication errors from temporary RPC errors", async t => {
+  const root = mkdtempSync(join(tmpdir(), "quota-auth-test-")); t.after(() => rmSync(root, { recursive: true, force: true }));
+  const file = join(root, "fixture.mjs");
+  writeFileSync(file, `import{createInterface}from'node:readline';const lines=createInterface({input:process.stdin});for await(const line of lines){const r=JSON.parse(line);if(r.id===1)console.log(JSON.stringify({id:1,result:{}}));if(r.id===2)console.log(JSON.stringify({id:2,error:{code:-32000,message:process.argv[2]}}));}`);
+  for (const [message, reason] of [["Not authenticated", "signed-out"], ["ChatGPT authentication required", "signed-out"], ["Service temporarily unavailable", undefined], ["Network request timed out", undefined]]) {
+    const result = await codexQuota({ executable: "/fixture/codex", temp: root, spawnProcess: (_p, _args, options) => spawn(process.execPath, [file, message], options) });
+    assert.equal(result.state, "unavailable"); assert.equal(result.reason, reason);
+  }
 });
 
 function quotaElement() {
@@ -156,19 +203,22 @@ function quotaFixture(state = {}, { deferredSpawn = false } = {}) {
     tick(ms) { now += ms; },
     refresh(automatic = false) { quota.refresh(cx, automatic); },
     startQueued() { while (queued.length) tasks.push(queued.shift()(cx)); },
-    async finish() {
+    async finish(overrides = {}) {
       for (const call of calls) call.resolve({ code: 0, stdout: JSON.stringify({ provider: call.provider, state: "ok", updatedAt: now,
-        windows: [{ label: `${call.provider} usage`, used: 25, remaining: 75, resetAt: now + 3600000 }] }) });
+        windows: [{ label: `${call.provider} usage`, used: 25, remaining: 75, resetAt: now + 3600000 }], ...overrides[call.provider] }) });
       await Promise.all(tasks);
     },
   };
 }
 
-test("Status defaults to all cards and restores each provider's saved visibility", async () => {
+test("Status shows cards only after quota arrives and restores each provider's saved visibility", async () => {
   const f = quotaFixture();
-  assert.deepEqual(f.providers(), ["claude", "codex", "agy"]);
+  assert.deepEqual(f.providers(), []);
+  assert.match(quotaText(f.find("quota-cards")), /Reading account quota/);
   assert.deepEqual(f.calls.map(call => call.provider), ["claude", "codex", "agy"]);
   assert.equal(f.find("quota-show-codex"), undefined);
+  await f.finish();
+  assert.deepEqual(f.providers(), ["claude", "codex", "agy"]);
   f.click("quota-agents");
   for (const provider of Object.keys(PROVIDERS)) assert(f.find(`quota-show-${provider}`));
   f.click("quota-show-codex");
@@ -178,10 +228,11 @@ test("Status defaults to all cards and restores each provider's saved visibility
   assert.equal(f.find("quota-show-claude").attributes.bg, "selected");
   await f.finish();
   const restored = quotaFixture(f.state);
-  assert.deepEqual(restored.providers(), ["claude", "agy"]);
+  assert.deepEqual(restored.providers(), []);
   assert.deepEqual(restored.calls.map(call => call.provider), ["claude", "agy"]);
-  assert.match(quotaText(restored.find("quota-agents")), /2\/3/);
+  assert.equal(quotaText(restored.find("quota-agents")), "Agents ▾");
   await restored.finish();
+  assert.deepEqual(restored.providers(), ["claude", "agy"]);
 });
 
 test("hidden providers are skipped by manual refresh, automatic polling, and queued work", async () => {
@@ -220,7 +271,7 @@ test("in-flight responses cannot reveal hidden cards and an empty Status remains
   assert.deepEqual(f.providers(), []);
   assert.match(quotaText(f.find("quota-cards")), /All agents are hidden/);
   assert.equal(quotaText(f.find("quota-refresh")), "Refresh");
-  assert.match(quotaText(f.find("quota-agents")), /0\/3/);
+  assert.equal(quotaText(f.find("quota-agents")), "Agents ▴");
   await f.finish();
   assert.deepEqual(f.providers(), []);
   f.tick(300000); f.refresh(true); f.click("quota-refresh");
@@ -237,16 +288,54 @@ test("in-flight responses cannot reveal hidden cards and an empty Status remains
 test("malformed and unknown visibility settings do not hide valid providers or break controls", async () => {
   for (const saved of [null, "claude", {}, 42, ["unknown", null, {}, "__proto__", "constructor"]]) {
     const f = quotaFixture({ "sessions-plus.quota-hidden": saved });
+    assert.deepEqual(f.providers(), []); await f.finish();
     assert.deepEqual(f.providers(), ["claude", "codex", "agy"]);
     f.click("quota-agents"); f.click("quota-show-agy");
     assert.deepEqual(f.state["sessions-plus.quota-hidden"], ["agy"]);
     await f.finish();
   }
   const f = quotaFixture({ "sessions-plus.quota-hidden": ["unknown", "codex", "codex"] });
+  assert.deepEqual(f.providers(), []); await f.finish();
   assert.deepEqual(f.providers(), ["claude", "agy"]);
   f.click("quota-agents"); f.click("quota-show-codex");
-  assert.deepEqual(f.providers(), ["claude", "codex", "agy"]);
+  assert.deepEqual(f.providers(), ["claude", "agy"]);
   assert.deepEqual(f.state["sessions-plus.quota-hidden"], []);
   assert.deepEqual(f.calls.map(call => call.provider), ["claude", "agy", "codex"]);
   await f.finish();
+  assert.deepEqual(f.providers(), ["claude", "codex", "agy"]);
+});
+
+test("missing CLI and signed-out providers are omitted while another account remains visible", async () => {
+  const f = quotaFixture();
+  await f.finish({ claude: { state: "unavailable", windows: [], reason: "missing-cli", message: "Install Claude" },
+    agy: { state: "unavailable", windows: [], reason: "signed-out", message: "Sign in to agy" } });
+  assert.deepEqual(f.providers(), ["codex"]);
+  assert.doesNotMatch(quotaText(f.find("quota-cards")), /Install Claude|Sign in to agy|Unavailable/);
+  f.click("quota-agents");
+  for (const provider of Object.keys(PROVIDERS)) assert(f.find(`quota-show-${provider}`));
+  assert.equal(f.find("quota-show-claude").attributes.bg, "selected");
+  f.tick(300000); f.refresh(true); await f.finish();
+  assert.deepEqual(f.calls.map(call => call.provider), ["claude", "codex", "agy", "codex"]);
+  f.tick(60000); f.click("quota-refresh"); await f.finish();
+  assert.deepEqual(f.providers(), ["claude", "codex", "agy"]);
+});
+
+test("all unavailable accounts use one quiet empty state and no error cards", async () => {
+  const f = quotaFixture();
+  await f.finish(Object.fromEntries(Object.keys(PROVIDERS).map(provider => [provider, { state: "unavailable", windows: [], message: "Unavailable provider error" }])));
+  assert.deepEqual(f.providers(), []);
+  assert.equal(quotaText(f.find("quota-cards")), "No account quota to show.");
+  assert.doesNotMatch(quotaText(f.render()), /Unavailable provider error/);
+});
+
+test("uninstalling or signing out clears cached cards while temporary failures retain Stale", async () => {
+  const f = quotaFixture(); await f.finish();
+  f.tick(60000); f.click("quota-refresh");
+  await f.finish({ claude: { state: "unavailable", windows: [], reason: "missing-cli", message: "Install Claude" },
+    codex: { state: "unavailable", windows: [], reason: "signed-out", message: "Sign in to Codex" },
+    agy: { state: "unavailable", windows: [], message: "Connection temporarily unavailable" } });
+  assert.deepEqual(f.providers(), ["agy"]);
+  assert.deepEqual(f.quota.data.claude.windows, []); assert.deepEqual(f.quota.data.codex.windows, []);
+  assert.equal(f.quota.data.agy.state, "stale"); assert.match(quotaText(f.find("quota-cards")), /Stale/);
+  assert.doesNotMatch(quotaText(f.find("quota-cards")), /Install Claude|Sign in to Codex/);
 });

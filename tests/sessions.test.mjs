@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import { scan, validate, agySummaries } from "../mods/sessions-plus/history.mjs";
-import { NAMES, PENDING, PROVIDERS, sessionKey, cleanTitle, argvIdentity, sessionRows, filterRows, resumeArgv, launchCommand } from "../mods/sessions-plus/model.js";
+import { NAMES, PENDING, OPERATIONS, OPERATION_TTL, operationPending, PROVIDERS, sessionKey, cleanTitle, argvIdentity, sessionRows, filterRows, resumeArgv, launchCommand } from "../mods/sessions-plus/model.js";
 
 const id = "11111111-1111-4111-8111-111111111111", second = "22222222-2222-4222-8222-222222222222";
 const put = (file, value) => { mkdirSync(dirname(file), { recursive: true }); writeFileSync(file, value); };
@@ -144,7 +144,7 @@ test("a repeated resume click starts once and uses the captured session director
   const r = row(), state = {}, calls = [], tasks = [], timers = [];
   let finish;
   const gate = new Promise(resolve => { finish = resolve; });
-  const Panel = viewClass("main", { View: class {}, NAMES, PENDING, PROVIDERS, sessionRows, filterRows, launchCommand,
+  const Panel = viewClass("main", { View: class {}, NAMES, PENDING, OPERATIONS, OPERATION_TTL, operationPending, PROVIDERS, sessionRows, filterRows, launchCommand,
     focused: () => ({ cwd: "/changed/focus" }), spaces: () => [], panes: () => [], terminals: () => [],
     shared: key => state[key], setShared: (key, value) => state[key] = value, run: (...args) => calls.push(args),
   });
@@ -158,7 +158,7 @@ test("a repeated resume click starts once and uses the captured session director
 
 test("live sessions focus immediately, while failed validation never launches a command", async () => {
   const r = row(), calls = [], tasks = [], state = {};
-  const Panel = viewClass("main", { View: class {}, NAMES, PENDING, shared: k => state[k], setShared: (k, v) => state[k] = v, run: (...args) => calls.push(args) });
+  const Panel = viewClass("main", { View: class {}, NAMES, PENDING, OPERATIONS, OPERATION_TTL, operationPending, shared: k => state[k], setShared: (k, v) => state[k] = v, run: (...args) => calls.push(args) });
   const panel = new Panel(); panel.busy = new Set(); panel.rows = () => [{ ...r, live: true, address: "t9" }];
   const cx = { notify() {}, spawn: task => tasks.push(task(cx)) };
   panel.open(r, cx); assert.deepEqual(calls, [["agent.focus", { terminal: "t9" }]]);

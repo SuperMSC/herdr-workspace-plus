@@ -77,7 +77,7 @@ function claude(store, state) {
       if (!first && record.type === "user" && !record.isMeta) first = promptText(record.message?.content);
     }
     if (sidechain || !isAbsolute(cwd)) return [];
-    return [{ provider: "claude", store, id, cwd, title: cleanTitle(title || auto || first) || `Claude ${id.slice(0, 8)}`, updated: file.updated }];
+    return [{ provider: "claude", store, id, cwd, source: file.path, title: cleanTitle(title || auto || first) || `Claude ${id.slice(0, 8)}`, updated: file.updated }];
   });
 }
 
@@ -95,7 +95,7 @@ function codex(store, state) {
       if (!first && record.type === "event_msg" && record.payload?.type === "user_message") first = record.payload.message ?? "";
     }
     if (!UUID.test(id ?? "") || typeof cwd !== "string" || !isAbsolute(cwd)) return [];
-    return [{ provider: "codex", store, id, cwd, title: cleanTitle(titles.get(id) || title || first) || `Codex ${id.slice(0, 8)}`, updated: file.updated }];
+    return [{ provider: "codex", store, id, cwd, source: file.path, title: cleanTitle(titles.get(id) || title || first) || `Codex ${id.slice(0, 8)}`, updated: file.updated }];
   });
 }
 
@@ -166,7 +166,9 @@ export function scan(options = {}) {
     catch { warnings.add(`${provider}: session history could not be read. Refresh to retry.`); }
     limited ||= state.limited;
   }
-  const unique = [...new Map(rows.map(row => [row.key, row])).values()].sort((a, b) => b.updated - a.updated);
+  const byKey = new Map();
+  for (const row of rows) byKey.set(row.key, byKey.has(row.key) ? { ...row, ambiguous: true } : row);
+  const unique = [...byKey.values()].sort((a, b) => b.updated - a.updated);
   return { rows: unique, tools, limited, warnings: [...warnings] };
 }
 

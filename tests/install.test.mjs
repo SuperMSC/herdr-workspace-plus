@@ -215,6 +215,7 @@ test("default installation adds the independent Sessions mod below the right pan
   const f = fixture(t), result = install({ ...f, sessions: true });
   assert.deepEqual(readdirSync(join(f.home, "mods")).sort(), ["files-plus", "sessions-plus"]);
   assert(existsSync(join(result.sessions, "history.mjs")));
+  assert(existsSync(join(result.sessions, "trash.mjs")));
   const layout = JSON.parse(readFileSync(result.layout, "utf8"));
   assert.equal(layout.children[1].children[0].id, "panel-body");
   assert.equal(layout.children[1].children[1].content.mod, "sessions-plus");

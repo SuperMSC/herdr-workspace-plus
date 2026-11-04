@@ -81,7 +81,7 @@ Stage/Unstage must never discard working-tree edits or treat a filename as a Git
 
 ## Sessions Plus companion
 
-The package also contains an independent `mods/sessions-plus/` mod. It uses the public Herdr APIs only; no shipped mod, application core, provider hook, transcript, or provider session title is changed. The installer adds it below the Files / Changes stack in the copied right panel. Custom Files-only layouts retain their original block id as a column containing both views. `--files-only` preserves the original installation scope.
+The package also contains an independent `mods/sessions-plus/` mod. It uses the public Herdr APIs only; no shipped mod, application core, provider hook, or provider session title is changed. History scans are read-only; explicit session Trash and Restore actions move the selected session files. The installer adds it below the Files / Changes stack in the copied right panel. Custom Files-only layouts retain their original block id as a column containing both views. `--files-only` preserves the original installation scope.
 
 `main.js` renders local history and running Herdr agents, folder/provider filters, and title search. Its rename role delegates to `rename.js`; names live in shared state under `sessions-plus.names`, keyed by provider, store, and session id. Unidentified live agents use their terminal address and creation time instead. `model.js` handles identities, exact resume-ID matching, safe argv construction, and local space selection.
 
@@ -93,9 +93,28 @@ Local history requires macOS and Node.js 22+. Normal CLI trust checks still appl
 
 Sessions validation includes all three formats, distinct provider IDs, partial/large logs, symlink exclusion, live ID matching, checkpointed and active agy WAL snapshots, source-file preservation, missing-directory rejection, literal argv, local/remote routing, duplicate clicks, captured-target rename, and installer integration. Native list and rename components are previewed with fictional data in `sessions-preview.png`. Tests do not resume a real conversation.
 
+## Recoverable session Trash
+
+```mermaid
+flowchart LR
+  A[Session menu] --> B[Confirm selected session]
+  B --> C[Local Trash helper]
+  C --> D[Private recovery journal]
+  C --> E[Session bundle in macOS Trash]
+  D --> F[Trash list and Restore]
+  E --> F
+  F --> G[Original session locations]
+```
+
+The actions and confirmation roles use plain classes within the Sessions View. The helper accepts a captured session key or recovery token, never a UI-supplied file path. It re-resolves provider data, checks local ownership and file identities, rejects active writers, and uses exclusive filesystem moves. The same-volume restriction keeps bundles recoverable without guessing another volume's Trash path.
+
+A bundle groups a recognized session transcript/database and session-specific attachments. agy WAL/SHM sidecars move with its database. Shared indexes and local aliases stay in place. Durable recovery records are kept in the app home's session-trash directory, separate from mod upgrades. Restore verifies the bundle and recorded file identities, rejects destination conflicts, and never empties the system Trash. Interrupted or failed moves preserve recoverable data; unexpected bundle contents are retained.
+
+Shared operation markers coordinate resume with Trash/Restore in Herdr. A history revision causes existing views to refresh after a successful move. The helper's separate lock protects concurrent filesystem requests across views/processes. Missing bundles are reported as unavailable in the recovery list; the UI does not promise a restore after the system Trash was emptied.
+
 ## Status and provider icons
 
-Sessions Plus also exposes a Status tab. It shows branded Claude Code, Codex and agy cards with Remaining/Used modes, separate provider quota windows, reset countdowns and last-update times. The mode and hidden-provider selection are local preferences; quota snapshots stay in memory. Failed refreshes mark a previous snapshot stale. Hidden Status views do not poll; selected views poll every five minutes, with a one-minute manual refresh cooldown. The Agents control persists hidden provider IDs under `sessions-plus.quota-hidden`. Initial, manual, and automatic reads skip hidden providers; already running reads may complete. Re-showing a provider refreshes only that provider within the same pending/cooldown guards. Even with all cards hidden, the selector remains available to restore them. Sessions filters are independent.
+Sessions Plus also exposes a Status tab. It shows branded Claude Code, Codex and agy cards with Remaining/Used modes, separate provider quota windows, reset countdowns and last-update times. The mode and hidden-provider selection are local preferences; quota snapshots stay in memory. Missing CLI or signed-out results hide that provider card. Other failed refreshes may keep a previous snapshot stale; without usable windows no provider card is rendered. Initial loading is shown once for the panel, not as empty provider cards. Hidden Status views do not poll; selected views poll every five minutes, with a one-minute manual refresh cooldown. The Agents control persists hidden provider IDs under `sessions-plus.quota-hidden`. Initial, manual, and automatic reads skip hidden providers; already running reads may complete. Re-showing a provider refreshes only that provider within the same pending/cooldown guards. Even with all cards hidden, the selector remains available to restore them. Sessions filters are independent.
 
 quota-model.js validates and normalizes numerical fields. quota.js draws the cards and launches one quota.mjs helper per provider. Claude credentials remain inside the helper and are sent only to the fixed Anthropic HTTPS usage endpoint, with redirects rejected. Codex uses its documented app-server account/rateLimits/read request, never a thread or turn, and cleans up its temporary process and logs. agy version-gates its built-in /usage command, suppresses auto-update for the query, and pauses a version if the response unexpectedly represents a model turn. No raw credentials, account IDs, emails, or subprocess/server error bodies enter the view or logs.
 

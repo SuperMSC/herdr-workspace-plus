@@ -1,6 +1,6 @@
 {
   "name": "herdr-workspace-plus",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "Independent Herdr Files, Changes, Sessions, and Status panels with context menus, session history, and account quotas for Claude Code, Codex, and agy.",

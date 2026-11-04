@@ -9,7 +9,7 @@ Original files: defaults/mods/files/ and defaults/mods/changes/
 License: Apache License, Version 2.0 (see LICENSE).
 
 Changes add Files and Changes context menus, per-file Git index actions,
-local macOS filesystem actions, session history, account quota views,
+local macOS filesystem actions, session history, recoverable session moves, account quota views,
 installation tooling, tests, and documentation. Herdr Workspace Plus is not an
 official Herdr release and is not endorsed by the upstream project.
 

@@ -1,6 +1,10 @@
-// Session identities and commands. No provider transcript is changed by this mod.
+// Session identities, launch commands and shared operation coordination.
 export const NAMES = "sessions-plus.names";
 export const PENDING = "sessions-plus.pending";
+export const OPERATIONS = "sessions-plus.operations";
+export const CHANGE_KEY = "sessions-plus.history-change";
+export const OPERATION_TTL = 300000;
+export const operationPending = (operations, key, now = Date.now()) => Number(operations?.[key]?.expires ?? 0) > now;
 export const PROVIDERS = { claude: "Claude Code", codex: "Codex", agy: "agy" };
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const base = value => String(value ?? "").split(/[\\/]/).pop();
