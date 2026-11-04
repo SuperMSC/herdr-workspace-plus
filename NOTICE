@@ -1,0 +1,14 @@
+Files Plus
+An independent enhancement mod for Herdr.
+
+The file browser, read-only preview, Changes panel, and SVG assets are
+derived from herdrdev/herdr-app:
+https://github.com/herdrdev/herdr-app
+Base commit: 816d2057d83f0cbd3705926c0231fb12963ae0fb
+Original files: defaults/mods/files/ and defaults/mods/changes/
+License: Apache License, Version 2.0 (see LICENSE).
+
+Changes add Files and Changes context menus, per-file Git index actions,
+local macOS filesystem actions,
+installation tooling, tests, and documentation. Files Plus is not an
+official Herdr release and is not endorsed by the upstream project.
