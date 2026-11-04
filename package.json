@@ -1,9 +1,9 @@
 {
-  "name": "herdr-files-plus",
-  "version": "0.1.0",
+  "name": "herdr-workspace-plus",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "Personal Herdr Files and Changes panels with context menus, macOS file actions, and per-file staging.",
+  "description": "Independent Herdr Files, Changes, Sessions, and Status panels with context menus, session history, and account quotas for Claude Code, Codex, and agy.",
   "license": "Apache-2.0",
   "engines": {
     "node": ">=22"

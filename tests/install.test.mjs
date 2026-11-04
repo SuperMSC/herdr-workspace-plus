@@ -32,7 +32,7 @@ function fixture(t) {
   writeFileSync(join(home, "layouts", "main.json"), original);
   writeFileSync(join(home, "shared.json"), '{"layout":"main","workspace.panels":["changes"]}\n');
   writeFileSync(join(home, "keys.json"), '{"global":{}}\n');
-  return { root, home, source, document: layout, original };
+  return { root, home, source, document: layout, original, sessions: false };
 }
 
 test("installs a separate Files and Changes mod with Files selected, preserving all source settings", (t) => {
@@ -209,4 +209,30 @@ test("a role previously ignored by Files cannot select the Changes view after in
   const actual = cloneLayout(source);
   assert.deepEqual(actual.content, { mod: "files-plus", props: { retained: true } });
   assert.deepEqual(source.content.props, { role: "changes", retained: true });
+});
+
+test("default installation adds the independent Sessions mod below the right panel", t => {
+  const f = fixture(t), result = install({ ...f, sessions: true });
+  assert.deepEqual(readdirSync(join(f.home, "mods")).sort(), ["files-plus", "sessions-plus"]);
+  assert(existsSync(join(result.sessions, "history.mjs")));
+  const layout = JSON.parse(readFileSync(result.layout, "utf8"));
+  assert.equal(layout.children[1].children[0].id, "panel-body");
+  assert.equal(layout.children[1].children[1].content.mod, "sessions-plus");
+  assert.equal(readFileSync(result.sourceLayout, "utf8"), f.original);
+  assert.equal(readFileSync(join(f.home, "shared.json"), "utf8"), '{"layout":"main","workspace.panels":["changes"]}\n');
+});
+
+test("an existing Sessions mod prevents all installation writes", t => {
+  const f = fixture(t); mkdirSync(join(f.home, "mods", "sessions-plus"));
+  assert.throws(() => install({ ...f, sessions: true }), /Refusing to overwrite/);
+  assert(!existsSync(join(f.home, "mods", "files-plus")));
+  assert(!existsSync(join(f.home, "layouts", "files-plus.json")));
+});
+
+test("a custom Files-only layout gains Sessions while keeping its external block id", () => {
+  const source = { id: "files", type: "block", size: { px: 400 }, content: { mod: "files", props: { custom: true } } };
+  const actual = cloneLayout(source, { sessions: true });
+  assert.equal(actual.id, "files"); assert.equal(actual.type, "column"); assert.deepEqual(actual.size, source.size);
+  assert.equal(actual.children[0].content.mod, "files-plus"); assert.equal(actual.children[1].content.mod, "sessions-plus");
+  assert.equal(source.type, "block");
 });

@@ -1,6 +1,8 @@
-# Files Plus
+# Herdr Workspace Plus
 
-Files and Changes sidebars for Herdr with right-click menus. Keep the familiar tree, read-only file preview, and Git diff view. Add path copying, local macOS file actions, and per-file staging and unstaging.
+A workspace enhancement pack for Herdr: Files and Changes sidebars with right-click menus, Sessions for Claude Code / Codex / agy, and Status with remaining or used account quota. Keep the familiar tree, read-only file preview, and Git diff view. Add path copying, local macOS file actions, and per-file staging and unstaging.
+
+Herdr Workspace Plus is the package name. Files Plus and Sessions Plus remain component names; preserve their `files-plus` / `sessions-plus` mod IDs, `files-plus` layout name, and shared-state keys when changing package branding so existing installations and saved session names remain compatible.
 
 ![Files Plus](preview.png)
 
@@ -34,7 +36,7 @@ In Changes, left-click selects a file's diff; right-click opens a menu for that 
 
 **Commit Staged** commits the repository's staged changes using the entered message. It never stages unstaged files implicitly. This includes changes staged outside this mod. The action is unavailable without staged changes or a message, and all Git mutations are disabled for remote or non-macOS targets.
 
-This mod shows no agent status and installs no global keyboard shortcuts.
+Files / Changes show no agent status and install no global shortcuts. The independent Sessions Plus mod shows live agent status from Herdr.
 
 ## Built from
 
@@ -54,7 +56,7 @@ Herdr's shipped mods and layouts are replaced on startup. Use the unique `files-
 
 The initial release targets local macOS file actions. Herdr 0.1.12 supplies the required mod APIs. Remote paths must remain bound to their machine; they must never be passed to local Finder, `open`, or a mutating helper. Other operating systems retain browsing and copying, with no OS file actions promised.
 
-The optional installer needs Node.js 22 or newer; the runtime mod needs no Node.js. Review the files before installing: the mod can read outside its own folder, run programs, and change explicitly selected local items. Remote reads and listings use Herdr's transport. There are no direct network requests.
+The installer needs Node.js 22 or newer. Files / Changes need no Node.js at runtime; Sessions history uses Node.js and agy metadata uses macOS SQLite. Review the files before installing: the mod can read outside its own folder, run programs, and change explicitly selected local items. Remote reads and listings use Herdr's transport. Files / Changes make no direct network requests. Status queries account quota as described below.
 
 Keep the shipped browser bounds: 500 entries per directory, 5,000 total, expansion depth 40, and preview text truncated at 400,000 characters. Changes retains a 1,000-file bound, 1,500 diff lines, and a 4,000-character line bound. Hide `.git`; report binary/unreadable files instead of treating them as editable text. This is not a text editor.
 
@@ -76,3 +78,25 @@ Stage/Unstage must never discard working-tree edits or treat a filename as a Git
 8. Installation leaves the original layout, keys, and shared state byte-for-byte unchanged. It replaces both panel types, supports layouts with only one type, preserves other props, and initially prefers Files. An existing mod or destination layout causes a clear failure. Failed copying removes only the attempted installation.
 9. A Changes row menu targets that row's repository-relative path. Stage/Unstage immediately shows its modal progress view; busy Escape cannot dismiss it, and failures offer Retry/Close. The operation affects only that file; partial staging and an initial repository work correctly without deleting working-tree data. Deleted files cannot be opened and reveal their parent folder instead.
 10. Commit Staged creates a commit from the index without staging unrelated files. A remote target never launches local OS actions or Git mutations.
+
+## Sessions Plus companion
+
+The package also contains an independent `mods/sessions-plus/` mod. It uses the public Herdr APIs only; no shipped mod, application core, provider hook, transcript, or provider session title is changed. The installer adds it below the Files / Changes stack in the copied right panel. Custom Files-only layouts retain their original block id as a column containing both views. `--files-only` preserves the original installation scope.
+
+`main.js` renders local history and running Herdr agents, folder/provider filters, and title search. Its rename role delegates to `rename.js`; names live in shared state under `sessions-plus.names`, keyed by provider, store, and session id. Unidentified live agents use their terminal address and creation time instead. `model.js` handles identities, exact resume-ID matching, safe argv construction, and local space selection.
+
+`history.mjs` is a Node.js helper, never imported by GPUI. It reads bounded head/tail slices of Claude/Codex JSONL files and the Codex title index. agy summary metadata is read from a private, temporary snapshot of its SQLite database and WAL; snapshots are deleted even after query errors. Source stores are never written. The helper prints metadata only and has no network code or persistent cache. It revalidates session existence, executable availability, and the original directory before a resume.
+
+A live row focuses its exact terminal. A history row resumes Claude Code, Codex, or agy in the original local directory, passing the ID as a separate argument and preserving provider configuration. Missing local spaces are created; remote spaces are never used for local history. Duplicate clicks share a short pending marker. Context and rename identities are captured before async work. Live/history association requires an exact visible provider resume ID; never infer it from a folder or title. Manually started sessions without a visible ID remain separate live rows.
+
+Local history requires macOS and Node.js 22+. Normal CLI trust checks still apply. Remote history, provider-native renaming, attaching to agents outside Herdr, archived Codex sessions, and subagents are outside this version. Herdr upgrades keep these personal mods and layout; public mod API compatibility still needs checking.
+
+Sessions validation includes all three formats, distinct provider IDs, partial/large logs, symlink exclusion, live ID matching, checkpointed and active agy WAL snapshots, source-file preservation, missing-directory rejection, literal argv, local/remote routing, duplicate clicks, captured-target rename, and installer integration. Native list and rename components are previewed with fictional data in `sessions-preview.png`. Tests do not resume a real conversation.
+
+## Status and provider icons
+
+Sessions Plus also exposes a Status tab. It shows branded Claude Code, Codex and agy cards with Remaining/Used modes, separate provider quota windows, reset countdowns and last-update times. The mode and hidden-provider selection are local preferences; quota snapshots stay in memory. Failed refreshes mark a previous snapshot stale. Hidden Status views do not poll; selected views poll every five minutes, with a one-minute manual refresh cooldown. The Agents control persists hidden provider IDs under `sessions-plus.quota-hidden`. Initial, manual, and automatic reads skip hidden providers; already running reads may complete. Re-showing a provider refreshes only that provider within the same pending/cooldown guards. Even with all cards hidden, the selector remains available to restore them. Sessions filters are independent.
+
+quota-model.js validates and normalizes numerical fields. quota.js draws the cards and launches one quota.mjs helper per provider. Claude credentials remain inside the helper and are sent only to the fixed Anthropic HTTPS usage endpoint, with redirects rejected. Codex uses its documented app-server account/rateLimits/read request, never a thread or turn, and cleans up its temporary process and logs. agy version-gates its built-in /usage command, suppresses auto-update for the query, and pauses a version if the response unexpectedly represents a model turn. No raw credentials, account IDs, emails, or subprocess/server error bodies enter the view or logs.
+
+Brand SVGs come from Herdr/LobeHub Icons; their MIT license is bundled. Both the Sessions rows and Status cards use them. Status checks cover zero/exhausted/missing quotas, complementary percentages, real reset units, named pools, unmetered buckets, authentication/network errors, credential redaction, safe agy versions, and the Codex read-only protocol and process cleanup. status-preview.png contains fictional values only.
