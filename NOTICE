@@ -1,5 +1,6 @@
-Herdr Workspace Plus
-An independent workspace enhancement pack for Herdr, previously named Files Plus.
+Agent Workspace
+An independent workspace enhancement pack for Herdr, previously named Files Plus
+and Herdr Workspace Plus.
 
 The file browser, read-only preview, Changes panel, and SVG assets are
 derived from herdrdev/herdr-app:
@@ -10,11 +11,12 @@ License: Apache License, Version 2.0 (see LICENSE).
 
 Changes add Files and Changes context menus, per-file Git index actions,
 local macOS filesystem actions, session history, recoverable session moves, account quota views,
-installation tooling, tests, and documentation. Herdr Workspace Plus is not an
+installation tooling, tests, and documentation. Agent Workspace is not an
 official Herdr release and is not endorsed by the upstream project.
 
-Sessions Plus brand icons are copied from Herdr defaults/icons/ at the
-same base commit and originate from LobeHub Icons:
+Runtime agent icons are loaded from Herdr-managed assets. The agent icons
+reproduced in sessions-preview.png and status-preview.png were rendered from
+Herdr's bundled icons and originate from LobeHub Icons:
 https://github.com/lobehub/lobe-icons
 Copyright (c) 2023 LobeHub. MIT License; see mods/sessions-plus/icons/LICENSE.
 Brand names and marks identify the corresponding tools; no endorsement is implied.

@@ -190,4 +190,4 @@ For publication, use the contents of this directory as a separate public GitHub 
 
 ## License
 
-Apache-2.0. The browser, Changes panel, and four SVG assets derive from [Herdr's shipped mods](https://github.com/herdrdev/herdr-app/tree/816d2057d83f0cbd3705926c0231fb12963ae0fb/defaults/mods). The three brand icons bundled with Sessions Plus use the MIT license in `mods/sessions-plus/icons/LICENSE`. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+Apache-2.0. The browser, Changes panel, and four SVG assets derive from [Herdr's shipped mods](https://github.com/herdrdev/herdr-app/tree/816d2057d83f0cbd3705926c0231fb12963ae0fb/defaults/mods). Agent icons are loaded at runtime from Herdr's managed `icons/claude.svg`, `icons/codex.svg`, and `icons/antigravity.svg` assets. The legacy `sessions-preview.png` and `status-preview.png` images reproduce Herdr/LobeHub icons; their MIT notice is retained in `mods/sessions-plus/icons/LICENSE`. See [LICENSE](LICENSE) and [NOTICE](NOTICE).

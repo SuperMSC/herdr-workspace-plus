@@ -1,12 +1,8 @@
-import { div, image, svg } from "gpui-kit";
-import { theme } from "herdr";
+import { div, image } from "gpui-kit";
 
-// Brand marks: LobeHub lobe-icons static-svg/icons/{claude-color,openai}.svg (MIT).
-// Keep the bundled LICENSE; OpenAI is tinted by the active theme, agy stays multicolor.
+// Use Herdr's own assets so its agent icons stay consistent after app updates.
 export function providerIcon(provider, size = 18) {
   const name = { claude: "claude", codex: "codex", agy: "antigravity" }[provider];
   if (!name) return div().w(size).h(size).text_center().child("●");
-  const path = `mods/sessions-plus/icons/${name}.svg`;
-  const icon = provider === "codex" ? svg(path).text_color(theme().foreground) : image(path);
-  return icon.w(size).h(size).flex_none();
+  return image(`icons/${name}.svg`).w(size).h(size).flex_none();
 }
