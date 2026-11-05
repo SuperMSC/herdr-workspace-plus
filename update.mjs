@@ -5,7 +5,7 @@ import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { cloneLayout } from "./install.mjs";
-import { integrateWorkspace, restoreNativeSpaces } from "./workspace-layout.mjs";
+import { integrateWorkspace, restoreNativeSpaces, useProjectSpaces } from "./workspace-layout.mjs";
 import { DISPLAY_NAME, installedLayoutName } from "./layout-name.mjs";
 
 const packageRoot = dirname(fileURLToPath(import.meta.url));
@@ -48,6 +48,8 @@ export function update({
   sessions = true,
   integrateLayout = false,
   sessionsSource = join(packageRoot, "mods", "sessions-plus"),
+  projects,
+  projectsSource = join(packageRoot, "mods", "project-spaces"),
 } = {}) {
   if (typeof home !== "string" || !home) throw new Error("--home must be a directory path.");
   if (typeof layout !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(layout) || layout.endsWith(".json")) {
@@ -59,6 +61,10 @@ export function update({
   const layouts = directory(join(home, "layouts"), "Herdr layouts directory");
   const plans = [{ name: "files-plus", source, required: ["main.js", "mod.json"] }];
   if (sessions) plans.push({ name: "sessions-plus", source: sessionsSource, required: ["main.js", "mod.json", "history.mjs", "trash.mjs"] });
+  // Project Spaces is opt-in: updated when asked for, or when it is already installed.
+  if (projects === true || (projects === undefined && entry(join(mods, "project-spaces")))) {
+    plans.push({ name: "project-spaces", source: projectsSource, required: ["main.js", "mod.json", "model.js"] });
+  }
   for (const plan of plans) {
     plan.source = directory(resolve(plan.source), `${plan.name} source`);
     plan.target = join(mods, plan.name);
@@ -91,13 +97,24 @@ export function update({
   // Ordinary updates preserve existing layouts without reading their original source.
   let serialized = null, originalLayout = null, layoutUpdated = false;
   if (!existingLayout) {
-    serialized = JSON.stringify(cloneLayout(JSON.parse(readFileSync(join(layouts, `${layout}.json`), "utf8")), { sessions }), null, 2) + "\n";
-  } else if (integrateLayout) {
+    serialized = JSON.stringify(cloneLayout(JSON.parse(readFileSync(join(layouts, `${layout}.json`), "utf8")), { sessions, projects: projects === true }), null, 2) + "\n";
+  } else if (integrateLayout || projects !== undefined) {
     originalLayout = readFileSync(layoutTarget, "utf8");
-    const integration = integrateWorkspace(JSON.parse(originalLayout));
-    if (!integration.integrated) throw new Error("This custom layout cannot be integrated automatically. Update without --integrate-layout to keep its existing interface.");
-    const nativeSpaces = restoreNativeSpaces(integration.layout);
-    if (integration.changed || nativeSpaces.changed) { serialized = JSON.stringify(nativeSpaces.layout, null, 2) + "\n"; layoutUpdated = true; }
+    let next = JSON.parse(originalLayout), changed = false;
+    if (integrateLayout) {
+      const integration = integrateWorkspace(next);
+      if (!integration.integrated) throw new Error("This custom layout cannot be integrated automatically. Update without --integrate-layout to keep its existing interface.");
+      const nativeSpaces = restoreNativeSpaces(integration.layout);
+      next = nativeSpaces.layout;
+      changed = integration.changed || nativeSpaces.changed;
+    }
+    if (projects !== undefined) {
+      const switched = useProjectSpaces(next, projects);
+      if (!switched.found) throw new Error('This layout has no Spaces block (content.mod = "spaces" or "project-spaces"); it was left unchanged.');
+      next = switched.layout;
+      changed = changed || switched.changed;
+    }
+    if (changed) { serialized = JSON.stringify(next, null, 2) + "\n"; layoutUpdated = true; }
   }
 
   // Prepare only NEW files on the destination filesystem. No old copy is saved.
@@ -144,13 +161,16 @@ function usage() {
   return [
     displayName,
     "",
-    "Usage: node update.mjs [--home PATH] [--layout NAME] [--files-only] [--integrate-layout]",
+    "Usage: node update.mjs [--home PATH] [--layout NAME] [--files-only] [--integrate-layout] [--project-spaces | --native-spaces]",
     "",
     "Updates installed mods from this package and removes obsolete mod files. No backups.",
     "Preserves existing layouts, shared state, and session-trash recovery records.",
     "Creates the Agent Workspace layout only when absent, using --layout (default: main).",
     "--files-only leaves any existing Sessions mod untouched.",
     "--integrate-layout integrates Sessions and quota and restores native Spaces in a supported existing layout.",
+    "--project-spaces installs or updates Project Spaces and uses it for the layout's Spaces sidebar.",
+    "--native-spaces switches the layout back to Herdr's Spaces; the Project Spaces mod and its state stay.",
+    "An installed Project Spaces mod is updated on every run.",
     "Default home: HERDR_APP_HOME, otherwise ~/.config/herdr-app.",
     "Does not run git pull, start Herdr, or switch its active layout.",
   ].join("\n");
@@ -163,6 +183,11 @@ function main(argv) {
     if (arg === "--help" || arg === "-h") { console.log(usage()); return; }
     if (arg === "--integrate-layout") { options.integrateLayout = true; continue; }
     if (arg === "--files-only") { options.sessions = false; continue; }
+    if (arg === "--project-spaces" || arg === "--native-spaces") {
+      if (Object.hasOwn(options, "projects")) throw new Error("Use one of --project-spaces and --native-spaces.");
+      options.projects = arg === "--project-spaces";
+      continue;
+    }
     if (arg !== "--home" && arg !== "--layout") throw new Error(`Unknown option: ${arg}\n${usage()}`);
     const value = argv[++i];
     if (!value || value.startsWith("--")) throw new Error(`Missing value for ${arg}`);

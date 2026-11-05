@@ -487,3 +487,39 @@ test("ordinary updates preserve a retired addon layout and its files for explici
   assert.equal(readFileSync(join(f.home, "mods", "spaces-plus", "main.js"), "utf8"), "personal copy");
   assert.equal(result.mods.some(path => path.endsWith("/spaces-plus")), false);
 });
+
+test("Project Spaces is opt-in, switches only Spaces blocks and switches back", t => {
+  const f = fixture(t), source = oldWorkspaceLayout(), sidebar = findLayoutNode(source, "sidebar");
+  sidebar.content.props = { keep: true };
+  const path = join(f.home, "layouts", "files-plus.json");
+  write(path, JSON.stringify(source));
+  const plain = update(f);
+  assert.equal(plain.mods.some(mod => mod.endsWith("/project-spaces")), false);
+  assert.equal(existsSync(join(f.home, "mods", "project-spaces")), false);
+
+  const on = update({ ...f, projects: true });
+  assert.equal(on.layoutUpdated, true);
+  assert.ok(existsSync(join(f.home, "mods", "project-spaces", "model.js")));
+  const switched = JSON.parse(readFileSync(path, "utf8"));
+  assert.deepEqual(findLayoutNode(switched, "sidebar"), { ...sidebar, content: { mod: "project-spaces", props: { keep: true } } });
+  assert.deepEqual({ ...switched, children: null }, { ...source, children: null });
+  // Installed: later updates refresh it without touching the layout.
+  write(join(f.home, "mods", "project-spaces", "stale.js"), "old");
+  const again = update(f);
+  assert.equal(again.layoutUpdated, false);
+  assert.ok(again.mods.some(mod => mod.endsWith("/project-spaces")));
+  assert.equal(existsSync(join(f.home, "mods", "project-spaces", "stale.js")), false);
+
+  const off = update({ ...f, projects: false });
+  assert.equal(off.layoutUpdated, true);
+  assert.deepEqual(findLayoutNode(JSON.parse(readFileSync(path, "utf8")), "sidebar"), sidebar);
+  assert.ok(existsSync(join(f.home, "mods", "project-spaces", "main.js")));
+});
+
+test("Project Spaces refuses a layout without a Spaces block and leaves it unchanged", t => {
+  const f = fixture(t);
+  const path = join(f.home, "layouts", "files-plus.json"), serialized = JSON.stringify({ id: "files", type: "block", content: { mod: "files-plus" } });
+  write(path, serialized);
+  assert.throws(() => update({ ...f, projects: true }), /no Spaces block/);
+  assert.equal(readFileSync(path, "utf8"), serialized);
+});

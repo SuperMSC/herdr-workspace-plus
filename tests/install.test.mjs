@@ -300,3 +300,14 @@ test("a cloned layout restores retired Spaces references without changing node s
   assert.deepEqual(original, before);
   assert.deepEqual(result.children[0], { ...spaces, content: { ...spaces.content, mod: "spaces" } });
 });
+
+test("--project-spaces installs the mod and points the cloned Spaces block at it", t => {
+  const f = fixture(t);
+  const original = { id: "root", type: "row", children: [{ id: "sidebar", type: "block", size: { px: 268 }, content: { mod: "spaces", props: { a: 1 } } }, ...f.document.children] };
+  writeFileSync(join(f.home, "layouts", "main.json"), JSON.stringify(original));
+  const result = install({ ...f, sessions: false, projects: true });
+  assert.ok(existsSync(join(result.projects, "model.js")));
+  const actual = JSON.parse(readFileSync(result.layout, "utf8"));
+  assert.deepEqual(actual.children[0], { ...original.children[0], content: { mod: "project-spaces", props: { a: 1 } } });
+  assert.throws(() => cloneLayout(f.document, { projects: true }), /no Spaces block/);
+});

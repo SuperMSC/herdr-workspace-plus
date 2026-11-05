@@ -14,6 +14,10 @@ local macOS filesystem actions, session history, recoverable session moves, acco
 installation tooling, tests, and documentation. Agent Workspace is not an
 official Herdr release and is not endorsed by the upstream project.
 
+mods/project-spaces/main.js derives its Git tracking, avatars and drag
+reordering from Herdr's shipped Spaces mod (defaults/mods/spaces/), under the
+same license; grouping, menus and the name dialog are Agent Workspace's.
+
 Runtime agent icons are loaded from Herdr-managed assets. The agent icons
 reproduced in sessions-preview.png and status-preview.png were rendered from
 Herdr's bundled icons and originate from LobeHub Icons:
