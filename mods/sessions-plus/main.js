@@ -133,7 +133,7 @@ export default class SessionsPlus extends View {
 
   restoreRow(row) {
     if (row.restorable !== true) return;
-    openOverlay({ mod: "sessions-plus", kind: "dialog", frame: "none", modal: true, width: 500, height: 390,
+    openOverlay({ mod: "sessions-plus", kind: "dialog", frame: "none", width: 500, height: 390,
       props: { role: "trash-dialog", action: "restore", target: { ...row }, node: this.p.node, stores: this.p.stores } });
   }
 

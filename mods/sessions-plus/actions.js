@@ -18,7 +18,7 @@ export default class Actions {
     const item = this.items[index];
     if (!item || item.disabled) return;
     closeOverlay(this.p.overlay);
-    openOverlay({ mod: "sessions-plus", kind: "dialog", frame: "none", modal: true, width: item.id === "preview" ? 600 : item.id === "rename" ? 420 : 500, height: item.id === "preview" ? 460 : item.id === "rename" ? 240 : 390,
+    openOverlay({ mod: "sessions-plus", kind: "dialog", frame: "none", width: item.id === "preview" ? 600 : item.id === "rename" ? 420 : 500, height: item.id === "preview" ? 460 : item.id === "rename" ? 240 : 390,
       props: { role: item.id === "preview" ? "preview" : item.id === "rename" ? "rename" : "trash-dialog", action: "trash", target: { ...this.target }, node: this.p.node, stores: this.p.stores } });
   }
 

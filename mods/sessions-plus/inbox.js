@@ -2,7 +2,6 @@ import { div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { agents, terminals, shared, setShared, theme, run, closeOverlay } from "herdr";
 import { INBOX_DISMISSED, INBOX_GROUPS, inboxRows, dismissUpdate } from "./inbox-model.js";
-import { closeButton } from "./icons.js";
 
 export default class Inbox {
   init(p, cx) { this.p = p; this.showHandled = false; this.handle = cx.focus_handle(); this.handle.focus(); cx.timer.every(15000, cx => cx.notify()); }
@@ -21,8 +20,7 @@ export default class Inbox {
     const button = (id, label, callback) => div().id(id).px(8).py(5).flex_none().rounded(5).cursor_pointer().bg(t.raised).hover(el => el.bg(t.hover)).on_click(callback).child(label);
     return v_flex().id("agent-inbox").size_full().min_h(0).p(14).gap(10).rounded(10).overflow_hidden().border_1().border_color(t.border).bg(t.popover).text_color(t.foreground).text_size(12)
       .track_focus(this.handle).on_key_down((event, cx) => { if (event.key === "escape") { closeOverlay(this.p.overlay); cx.stop_propagation(); } })
-      .child(h_flex().flex_none().gap(8).items_center().child(div().flex_1().min_w(0).truncate().font_semibold().text_size(15).child("Agent inbox"))
-        .child(closeButton("inbox-close", "Close agent inbox", () => closeOverlay(this.p.overlay), t)))
+      .child(h_flex().flex_none().gap(8).items_center().child(div().flex_1().min_w(0).truncate().font_semibold().text_size(15).child("Agent inbox")))
       .child(div().text_size(10.5).text_color(t.muted).child("Dismiss hides this update. Agents keep running; new updates return automatically."))
       .child(v_flex().id("inbox-groups").flex_1().min_h(0).gap(10).overflow_y_scrollbar()
         .children(INBOX_GROUPS.filter(group => visible.some(row => row.status === group.status)).map(group => v_flex().gap(5)
