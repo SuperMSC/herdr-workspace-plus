@@ -147,3 +147,22 @@ export function restoreNativeSpaces(source) {
   }
   return { layout, changed };
 }
+
+/**
+ * Point Spaces blocks at Project Spaces (`on`), or back at Herdr's Spaces. IDs, props and
+ * geometry stay. `found`: the layout has a Spaces block of either kind.
+ */
+export function useProjectSpaces(source, on = true) {
+  const layout = structuredClone(source);
+  const from = on ? "spaces" : "project-spaces", to = on ? "project-spaces" : "spaces";
+  let changed = false, found = false;
+  for (const { node } of nodes(layout)) {
+    if (node.type !== "block" || (node.content?.mod !== from && node.content?.mod !== to)) continue;
+    found = true;
+    if (node.content.mod === from) {
+      node.content = { ...node.content, mod: to };
+      changed = true;
+    }
+  }
+  return { layout, changed, found };
+}

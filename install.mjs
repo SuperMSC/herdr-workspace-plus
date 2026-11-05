@@ -4,7 +4,7 @@ import { constants, closeSync, copyFileSync, lstatSync, mkdirSync, openSync, rea
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { integrateWorkspace, restoreNativeSpaces } from "./workspace-layout.mjs";
+import { integrateWorkspace, restoreNativeSpaces, useProjectSpaces } from "./workspace-layout.mjs";
 import { DISPLAY_NAME, installedLayoutName } from "./layout-name.mjs";
 
 const packageRoot = dirname(fileURLToPath(import.meta.url));
@@ -38,8 +38,13 @@ function sourceFiles(root, relative = "") {
   return files;
 }
 
-export function cloneLayout(source, { sessions = false } = {}) {
-  const layout = restoreNativeSpaces(source).layout;
+export function cloneLayout(source, { sessions = false, projects = false } = {}) {
+  let layout = restoreNativeSpaces(source).layout;
+  if (projects) {
+    const switched = useProjectSpaces(layout);
+    if (!switched.found) throw new Error('The source layout has no Spaces block (content.mod = "spaces"). Choose another --layout or omit --project-spaces.');
+    layout = switched.layout;
+  }
   if (!layout || Array.isArray(layout) || typeof layout !== "object") {
     throw new Error("The source layout must be a JSON object.");
   }
@@ -119,6 +124,8 @@ export function install({
   source = join(packageRoot, "mods", modName),
   sessions = true,
   sessionsSource = join(packageRoot, "mods", "sessions-plus"),
+  projects = false,
+  projectsSource = join(packageRoot, "mods", "project-spaces"),
 } = {}) {
   if (typeof layout !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(layout)) {
     throw new Error("--layout must be a layout name, without a path or .json suffix.");
@@ -135,7 +142,8 @@ export function install({
   const layoutName = installedLayoutName(layouts);
   const layoutTarget = join(layouts, `${layoutName}.json`);
   const sessionTarget = join(mods, "sessions-plus");
-  for (const target of [modTarget, layoutTarget, ...(sessions ? [sessionTarget] : [])]) {
+  const projectTarget = join(mods, "project-spaces");
+  for (const target of [modTarget, layoutTarget, ...(sessions ? [sessionTarget] : []), ...(projects ? [projectTarget] : [])]) {
     if (present(target)) throw new Error(`Refusing to overwrite ${target}. Use node update.mjs to replace installed mods without backups and preserve an existing layout.`);
   }
 
@@ -147,11 +155,14 @@ export function install({
   const sourceLayout = join(layouts, `${layout}.json`);
   const sessionFiles = sessions ? sourceFiles(sessionsSource) : [];
   if (sessions && ["main.js", "history.mjs", "trash.mjs"].some(file => !sessionFiles.includes(file))) throw new Error("Sessions Plus source is incomplete.");
-  const cloned = cloneLayout(JSON.parse(readFileSync(sourceLayout, "utf8")), { sessions });
+  const projectFiles = projects ? sourceFiles(projectsSource) : [];
+  if (projects && ["main.js", "mod.json", "model.js"].some(file => !projectFiles.includes(file))) throw new Error("Project Spaces source is incomplete.");
+  const cloned = cloneLayout(JSON.parse(readFileSync(sourceLayout, "utf8")), { sessions, projects });
   const serialized = JSON.stringify(cloned, null, 2) + "\n";
   let ownMod = false;
   let ownLayout = false;
   let ownSessions = false;
+  let ownProjects = false;
   try {
     // mkdir and wx make the final collision checks exclusive, including dangling links.
     mkdirSync(modTarget);
@@ -167,16 +178,24 @@ export function install({
         copyFileSync(join(sessionsSource, file), join(sessionTarget, file), constants.COPYFILE_EXCL);
       }
     }
+    if (projects) {
+      mkdirSync(projectTarget); ownProjects = true;
+      for (const file of projectFiles) {
+        mkdirSync(dirname(join(projectTarget, file)), { recursive: true });
+        copyFileSync(join(projectsSource, file), join(projectTarget, file), constants.COPYFILE_EXCL);
+      }
+    }
     const layoutFile = openSync(layoutTarget, "wx");
     ownLayout = true;
     try { writeFileSync(layoutFile, serialized); }
     finally { closeSync(layoutFile); }
-    return { home, mod: modTarget, sessions: sessions ? sessionTarget : null, layout: layoutTarget, layoutName, sourceLayout };
+    return { home, mod: modTarget, sessions: sessions ? sessionTarget : null, projects: projects ? projectTarget : null, layout: layoutTarget, layoutName, sourceLayout };
   } catch (error) {
     // Never remove a pre-existing target, including one created during installation.
     if (ownLayout) rmSync(layoutTarget);
     if (ownMod) rmSync(modTarget, { recursive: true, force: true });
     if (ownSessions) rmSync(sessionTarget, { recursive: true, force: true });
+    if (ownProjects) rmSync(projectTarget, { recursive: true, force: true });
     throw error;
   }
 }
@@ -185,10 +204,11 @@ function usage() {
   return [
     displayName,
     "",
-    "Usage: node install.mjs [--home PATH] [--layout NAME] [--files-only]",
+    "Usage: node install.mjs [--home PATH] [--layout NAME] [--files-only] [--project-spaces]",
     "",
     "Copies mods/files-plus and mods/sessions-plus, and creates layouts/Agent-Workspace.json (legacy names are preserved).",
     "--files-only omits the Sessions panel. History requires Node.js at runtime.",
+    "--project-spaces also copies mods/project-spaces and uses it for the layout's Spaces sidebar.",
     "Default home: HERDR_APP_HOME, otherwise ~/.config/herdr-app.",
     "Default source layout: main. Neither target may already exist.",
     "Does not start Herdr or switch its active layout.",
@@ -200,6 +220,7 @@ function main(argv) {
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--files-only") { options.sessions = false; continue; }
+    if (arg === "--project-spaces") { options.projects = true; continue; }
     if (arg === "--help" || arg === "-h") {
       console.log(usage());
       return;
@@ -214,6 +235,7 @@ function main(argv) {
   console.log(displayName);
   console.log(`Installed mod: ${result.mod}\nCreated personal layout: ${result.layout}\nOriginal layout unchanged: ${result.sourceLayout}`);
   if (result.sessions) console.log(`Installed sessions mod: ${result.sessions}`);
+  if (result.projects) console.log(`Installed Project Spaces mod: ${result.projects}`);
   console.log(`Next: run herdr-app check on each installed mod, then select the ${result.layoutName} layout.`);
 }
 
