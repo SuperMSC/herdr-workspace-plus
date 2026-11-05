@@ -40,7 +40,7 @@ export function claudeCredential({ store = process.env.CLAUDE_CONFIG_DIR || join
 export async function fetchClaude({ token, request = fetch } = {}) {
   if (!token) return unavailable("claude", "Sign in to Claude Code with a subscription, then refresh.", { reason: "signed-out" });
   try {
-    const response = await request("https://api.anthropic.com/api/oauth/usage", { redirect: "error", signal: AbortSignal.timeout(10000), headers: { Authorization: `Bearer ${token}`, "anthropic-beta": "oauth-2025-04-20", "User-Agent": "herdr-workspace-plus/0.4.0" } });
+    const response = await request("https://api.anthropic.com/api/oauth/usage", { redirect: "error", signal: AbortSignal.timeout(10000), headers: { Authorization: `Bearer ${token}`, "anthropic-beta": "oauth-2025-04-20", "User-Agent": "herdr-workspace-plus/0.5.0" } });
     if (!response.ok) {
       await response.body?.cancel();
       return unavailable("claude", response.status === 401 || response.status === 403 ? "Claude login needs attention. Open Claude Code, then refresh." : response.status === 429 ? "Claude usage is rate-limited. Try again later." : "Claude usage service is temporarily unavailable.", response.status === 401 ? { reason: "signed-out" } : {});
@@ -109,7 +109,7 @@ export async function codexQuota({ executable = command("codex"), spawnProcess =
           }
         }
       });
-      send({ id: 1, method: "initialize", params: { clientInfo: { name: "herdr_workspace_plus", title: "Herdr Workspace Plus", version: "0.4.0" } } });
+      send({ id: 1, method: "initialize", params: { clientInfo: { name: "herdr_workspace_plus", title: "Herdr Workspace Plus", version: "0.5.0" } } });
     });
   } finally { rmSync(scratch, { recursive: true, force: true }); }
 }
