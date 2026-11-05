@@ -26,6 +26,4 @@ Copyright (c) 2023 LobeHub. MIT License; see mods/sessions-plus/icons/LICENSE.
 Brand names and marks identify the corresponding tools; no endorsement is implied.
 
 The original pictograms in mods/files-plus/icons/ are part of Agent Workspace
-and use this repository’s Apache-2.0 license. The system folder picker
-interaction was informed by https://github.com/jankeesvw/herdr-space-folders;
-no code or icon assets from that repository are included.
+and use this repository’s Apache-2.0 license.

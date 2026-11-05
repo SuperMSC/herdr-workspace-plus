@@ -32,29 +32,22 @@ test("state is bounded and corrupt or escaping history entries are discarded", (
   assert.deepEqual(library.libraryFor({ projects: { [library.projectKey("/bad")]: { recent: ["a", "a", null, "/outside", "a/../b"], pinned: "broken" } } }, "/bad"), { recent: ["a"], pinned: [] });
 });
 
-test("rename, batch move and Trash remap pins and history with exact path boundaries", () => {
+test("rename and Trash remap pins and history with exact path boundaries", () => {
   let state;
   for (const path of ["src/a.py", "src-old/a.py"]) {
     state = library.updateLibrary(state, "/project", null, "open", path);
     state = library.updateLibrary(state, "/project", null, "pin", path);
   }
   const target = model.targetFor("/project", "src", true, null, "macos");
-  const move = { target, action: "batch", operation: "move", results: [{ target, ok: true, path: "/project/dest/src" }] };
-  state = library.remapLibrary(state, target.root, null, path => model.applyPathChange(path, move));
-  assert.deepEqual(library.libraryFor(state, "/project").pinned, ["src-old/a.py", "dest/src/a.py"]);
-  const trash = { target: model.targetFor("/project", "dest", true), action: "trash" };
+  const rename = { target, action: "rename", name: "lib" };
+  state = library.remapLibrary(state, target.root, null, path => model.applyPathChange(path, rename));
+  assert.deepEqual(library.libraryFor(state, "/project").pinned, ["src-old/a.py", "lib/a.py"]);
+  const trash = { target: model.targetFor("/project", "lib", true), action: "trash" };
   state = library.remapLibrary(state, target.root, null, path => model.applyPathChange(path, trash));
   assert.deepEqual(library.libraryFor(state, "/project").recent, ["src-old/a.py"]);
-  assert.equal(model.applyPathChange("src/a.py", { ...move, results: [{ target, ok: true, path: "/elsewhere/src" }] }), null);
-  assert.equal(model.applyPathChange("src/a.py", { ...move, results: [{ target, ok: false }] }), "src/a.py");
 });
 
-test("selection toggles and shift ranges follow the actual visible order", () => {
-  const visible = ["a", "b", "c", "d"];
-  let selected = library.selectPaths(new Set(), "b", visible, null);
-  selected = library.selectPaths(selected, "d", visible, "b", { shift: true });
-  assert.deepEqual([...selected], ["b", "c", "d"]);
-  assert.deepEqual([...library.selectPaths(selected, "c", visible, "b", { platform: true })], ["b", "d"]);
+test("breadcrumbs mark every ancestor as a folder", () => {
   assert.deepEqual(library.breadcrumbs("/project", "src/deep/a.py").map(c => [c.path, c.dir]), [["", true], ["src", true], ["src/deep", true], ["src/deep/a.py", false]]);
 });
 
@@ -107,15 +100,15 @@ test("opening a file uses a center tab while narrow and wide sidebars keep navig
   assert.deepEqual(next.browser.visibleEntries().map(e => e.path), ["src/a.py"]);
 });
 
-test("multi-selection captures one project, supports ranges and refresh never writes during render", async () => {
+test("modifier clicks open files normally, the header has no selection control and refresh never writes during render", async () => {
   const f = harness(); await f.flush(); f.browser.toggle("src", f.cx); await f.flush();
   const entries = f.browser.visibleEntries();
   f.browser.pick(entries.find(e => e.path === "src/a.py"), { modifiers: { platform: true } }, f.cx);
   f.browser.pick(entries.find(e => e.path === "src/b.py"), { modifiers: { shift: true } }, f.cx);
-  assert.deepEqual([...f.browser.selected], ["src/a.py", "src/b.py"]); assert.equal(f.previews.length, 0); assert.equal(f.opened.length, 0);
-  f.browser.batch("copy", f.cx); assert.equal(f.overlays[0].props.targets.length, 2);
+  assert.deepEqual(f.opened.map(o => o.path), ["src/a.py", "src/b.py"]);
+  const tree = f.render();
+  assert(!find(tree, "files-select")); assert(!nodes(tree).some(node => /^batch-|^selection-/.test(node.attrs.id ?? "")));
   f.switchTo({ cwd: "/other", on: "remote", space: "other" }); f.render(); await f.flush();
-  assert.equal(f.browser.root, "/other"); assert.equal(f.browser.selected.size, 0);
-  assert(f.overlays[0].props.targets.every(t => t.root === "/project" && t.on === null));
+  assert.equal(f.browser.root, "/other");
   f.render();
 });
