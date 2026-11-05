@@ -88,7 +88,6 @@ Quota results stay in memory. The Remaining/Used preference, hidden-agent select
 | Browse folders and read-only text previews | Yes | Uses Herdr's existing file-browser support |
 | File type icons, recent files and pinned files | Yes | Yes; state is scoped to machine and project |
 | Breadcrumb navigation and center file-preview tabs | Yes | Yes |
-| Multi-select, batch copy / move / Trash | Yes; moves require the same volume | Not offered |
 | Copy absolute path, relative path, or name | Yes | Yes; copies the selected machine's path |
 | Refresh the file tree | Yes | Yes |
 | Reveal in Finder / open with the default app | Yes | Not offered |
@@ -100,11 +99,11 @@ Quota results stay in memory. The Remaining/Used preference, hidden-agent select
 
 Right-click a file or folder to act on that item. Right-click empty tree space to act on the current folder. The header's **⋯** button opens the menu for the previewed file, or for the current folder while the tree is shown.
 
-The **Files** header offers tree, recent, pinned, multi-select, search and action icons. Click the pin beside an open file’s breadcrumb path to keep it in Pinned. Recent files (20 per project) and pins (40) persist in Herdr shared state, separately for each machine and project; the 40 most recently used projects are retained. Search previews also appear in Recent. Removing a recent entry or pin never deletes the file. File, search and Changes rows share bundled colored file-type icons; action icons remain monochrome.
+The **Files** header offers tree, recent, pinned, search and action icons. Click the pin beside an open file’s breadcrumb path to keep it in Pinned. Recent files (20 per project) and pins (40) persist in Herdr shared state, separately for each machine and project; the 40 most recently used projects are retained. Search previews also appear in Recent. Removing a recent entry or pin never deletes the file. File, search and Changes rows share bundled colored file-type icons; action icons remain monochrome.
 
 Breadcrumb directories navigate inside the current root. Clicking a file in the tree, Recent or Pinned opens a read-only preview tab in the center workspace, alongside existing terminal tabs. The right sidebar keeps its file list at any width. Reopening the same project/machine/path in a space focuses its existing live preview pane. Captured project context keeps Files, Changes and Sessions on the correct folder while a preview tab is active.
 
-Select multiple items with the selection icon, Command-click or Shift-click. In selection mode Command-A selects visible rows and Escape exits. Copy, Move and Trash open a captured-target dialog for up to 100 selected items. A selected directory includes its descendants. Choose an existing destination with the system folder picker or enter an absolute path. No operation overwrites or merges a conflicting destination; moves use an exclusive same-volume rename. Results remain visible, and Retry remaining never repeats completed items. Successful rename, move and Trash update recent/pinned paths and refresh the tree.
+Successful rename and Trash update recent/pinned paths and refresh the tree.
 
  Open **⋯ → Show Hidden Files** to include dot-prefixed names, including `.git`; they are hidden by default. The preference persists across spaces and applies to nested folders before listing limits. It is based on names, not Windows hidden-file attributes.
 

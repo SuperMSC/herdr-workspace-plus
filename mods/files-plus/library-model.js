@@ -36,13 +36,3 @@ export function breadcrumbs(root, file) {
   return [{ label: root?.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || root || "Files", path: "", dir: true },
     ...parts.map((label, i) => ({ label, path: parts.slice(0, i + 1).join("/"), dir: i < parts.length - 1 }))];
 }
-
-export function selectPaths(selected, path, visible, anchor, modifiers = {}) {
-  if (modifiers.shift && visible.includes(anchor) && visible.includes(path)) {
-    const a = visible.indexOf(anchor), b = visible.indexOf(path);
-    return new Set([...selected, ...visible.slice(Math.min(a, b), Math.max(a, b) + 1)]);
-  }
-  const next = new Set(selected);
-  next.has(path) ? next.delete(path) : next.add(path);
-  return next;
-}

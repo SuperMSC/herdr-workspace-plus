@@ -137,10 +137,8 @@ Do not install hooks, add model calls, create transcript indexes, fetch remotes 
 
 Quota tooltips use one provider/mode heading, followed by one line per window. Omit duplicate window headings and internal Bar explanations; generic Codex pool names do not repeat the provider name, while named model pools stay visible.
 
-## File navigation and batch actions
+## File navigation
 
 Use Herdr shared state `files-plus.library.v1` for machine/root-scoped recent files and pins. Keep 20 recent entries, 40 pins and 40 projects; store relative paths only. Opening Search results also records recent files. Pin/forget actions change metadata only. File clicks in Tree, Recent and Pinned use `tab.new` with a `file-preview` role. The sidebar keeps its navigation at all widths. A `files-plus.file-tabs.v1` registry tracks verified live mod panes by space, machine, project and path; never deduplicate by tab title. Register the created tab by the before/after tab difference, and use a bounded pending request while discovery completes. Follow the captured project context in Files, Changes and Sessions. Only active preview tabs poll file contents; release retained preview state on close. Breadcrumbs are compact, bounded and truncated with full-path tooltips.
 
-Selection uses Command/control toggles and Shift ranges in visible order; the selection toolbar also supports pointer-only use. Capture targets before opening the batch role. Reject remote/non-macOS targets, root paths and more than 100 selections; coalesce selected ancestors and descendants. Copy uses Foundation without overwriting, move uses exclusive same-volume rename, and Trash uses the existing native operation. Reject directory transfers into themselves through symlink aliases. Display each result, allow retries of failures only, and do not dismiss while busy. The native `pickFolder` API supplies destinations; keep absolute paths without converting them to shell source. Cumulative success revisions refresh matching trees even when several operations finish before the next render. Update pins/recent paths from the exact successful mutations.
-
-The system folder picker interaction was informed by jankeesvw/herdr-space-folders. No source was copied and no dependency was added. Its Spaces grouping, rule engine, remote configuration files and keybindings are outside this change.
+Files has no multi-select or batch file operations: a click opens one item, with or without modifier keys. Update pins/recent paths from the exact successful rename and Trash mutations.
