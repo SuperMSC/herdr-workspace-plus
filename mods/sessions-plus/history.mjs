@@ -18,12 +18,12 @@ function textFile(path, max = MAX_INDEX) {
   return readFileSync(path, "utf8");
 }
 
-function records(path) {
+function records(path, recentOnly = false) {
   if (!regular(path)) return [];
   const fd = openSync(path, "r");
   try {
     const size = statSync(path).size, result = [];
-    const spans = size <= MAX_READ * 2 ? [[0, size]] : [[0, MAX_READ], [size - MAX_READ, MAX_READ]];
+    const spans = size <= MAX_READ * 2 ? [[0, size]] : recentOnly ? [[size - MAX_READ * 2, MAX_READ * 2]] : [[0, MAX_READ], [size - MAX_READ, MAX_READ]];
     for (const [offset, length] of spans) {
       const buffer = Buffer.alloc(length), count = readSync(fd, buffer, 0, length, offset);
       let lines = buffer.subarray(0, count).toString("utf8").split("\n");
@@ -67,18 +67,29 @@ function promptText(content) {
 
 function claude(store, state) {
   return collect(join(store, "projects"), n => UUID.test(n.replace(/\.jsonl$/, "")) && n.endsWith(".jsonl"), 1, state).flatMap(file => {
-    let cwd = "", title = "", first = "", auto = "", id = basename(file.path, ".jsonl"), sidechain = false;
+    let cwd = "", title = "", first = "", auto = "", id = basename(file.path, ".jsonl"), sidechain = null;
     for (const record of records(file.path)) {
       if (typeof record.cwd === "string") cwd = record.cwd;
-      if (record.isSidechain) sidechain = true;
+      if (record.isSidechain === true) sidechain = true;
+      else if (record.isSidechain === false && sidechain === null) sidechain = false;
       if (record.type === "custom-title" && record.customTitle) title = record.customTitle;
       if (record.type === "ai-title" && record.aiTitle) auto = record.aiTitle;
       if (!auto && record.type === "summary") auto = record.summary;
       if (!first && record.type === "user" && !record.isMeta) first = promptText(record.message?.content);
     }
-    if (sidechain || !isAbsolute(cwd)) return [];
-    return [{ provider: "claude", store, id, cwd, source: file.path, title: cleanTitle(title || auto || first) || `Claude ${id.slice(0, 8)}`, updated: file.updated }];
+    if (!isAbsolute(cwd)) return [];
+    return [{ provider: "claude", store, id, cwd, source: file.path, origin: sidechain === true ? "subagent" : sidechain === false ? "main" : "unknown", title: cleanTitle(title || auto || first) || `Claude ${id.slice(0, 8)}`, updated: file.updated }];
   });
+}
+
+export function codexOrigin(source) {
+  if (["cli", "vscode", "exec", "app-server"].includes(source)) return "main";
+  if (source && typeof source === "object" && Object.hasOwn(source, "subagent")) {
+    const kind = source.subagent;
+    if (kind === "review" || kind?.other === "guardian" || (kind && typeof kind === "object" && Object.hasOwn(kind, "review"))) return "review";
+    return "subagent";
+  }
+  return "unknown";
 }
 
 function codex(store, state) {
@@ -88,14 +99,14 @@ function codex(store, state) {
     if (record && UUID.test(record.id) && record.thread_name) titles.set(record.id, cleanTitle(record.thread_name));
   }
   return collect(join(store, "sessions"), n => n.startsWith("rollout-") && n.endsWith(".jsonl"), 3, state).flatMap(file => {
-    let id, cwd, first = "", title = "";
+    let id, cwd, origin = "unknown", first = "", title = "";
     for (const record of records(file.path)) {
-      if (record.type === "session_meta") { id = record.payload?.id; cwd = record.payload?.cwd; }
+      if (record.type === "session_meta") { id = record.payload?.id; cwd = record.payload?.cwd; origin = codexOrigin(record.payload?.source); }
       if (record.type === "event_msg" && record.payload?.type === "thread_name_updated") title = record.payload.thread_name ?? "";
       if (!first && record.type === "event_msg" && record.payload?.type === "user_message") first = record.payload.message ?? "";
     }
     if (!UUID.test(id ?? "") || typeof cwd !== "string" || !isAbsolute(cwd)) return [];
-    return [{ provider: "codex", store, id, cwd, source: file.path, title: cleanTitle(titles.get(id) || title || first) || `Codex ${id.slice(0, 8)}`, updated: file.updated }];
+    return [{ provider: "codex", store, id, cwd, source: file.path, origin, title: cleanTitle(titles.get(id) || title || first) || `Codex ${id.slice(0, 8)}`, updated: file.updated }];
   });
 }
 
@@ -140,7 +151,7 @@ function agy(store, state, options) {
     const folders = Array.isArray(uris) ? uris.flatMap(uri => { try { return [uri.startsWith("file:") ? fileURLToPath(uri) : uri]; } catch { return []; } }).filter(p => typeof p === "string" && isAbsolute(p)) : [];
     const cwd = folders[0] || paths.get(id);
     if (!cwd) { state.warnings.add("Some Antigravity sessions have no saved working directory and were skipped."); return []; }
-    return [{ provider: "agy", store, id, cwd, title: cleanTitle(row.title) || `${PROVIDERS.agy} ${id.slice(0, 8)}`, updated: time(row.last_modified_time) }];
+    return [{ provider: "agy", store, id, cwd, origin: "main", title: cleanTitle(row.title) || `${PROVIDERS.agy} ${id.slice(0, 8)}`, updated: time(row.last_modified_time) }];
   });
 }
 
@@ -182,10 +193,44 @@ export function validate(key, options = {}) {
   return { row, command };
 }
 
+// Only an explicit preview action reads message excerpts; nothing is indexed or written.
+export function preview(key, options = {}) {
+  const row = scan(options).rows.find(item => item.key === key);
+  if (!row) throw new Error("This session is no longer available. Refresh the list.");
+  if (row.ambiguous) throw new Error("This session identity is ambiguous. No message content was read.");
+  const result = { row: { key: row.key, id: row.id, provider: row.provider, title: row.title, updated: row.updated }, messages: [], limited: false };
+  if (row.provider === "agy") return { ...result, available: false, message: "Antigravity message preview is unavailable. Only its saved summary metadata is supported." };
+  if (!regular(row.source) || !basename(row.source).endsWith(`${row.id}.jsonl`)) throw new Error("The session file no longer matches its identity.");
+  const before = stamp(row.source), values = records(row.source, true), latest = {}, fallback = {};
+  result.limited = statSync(row.source).size > MAX_READ * 2;
+  const take = (target, role, content, record, index) => {
+    if (!["user", "assistant"].includes(role)) return;
+    const raw = typeof content === "string" ? content : Array.isArray(content) ? content.filter(part => ["text", "input_text", "output_text"].includes(part?.type)).map(part => part.text ?? "").join("\n") : "";
+    const text = raw.replace(/[\x00-\x08\x0b-\x1f\x7f]/g, "").trim();
+    if (!text) return;
+    target[role] = { role, text: text.slice(0, 6000), truncated: text.length > 6000, timestamp: time(record.timestamp) || null, index };
+  };
+  values.forEach((record, index) => {
+    if (row.provider === "claude") {
+      if (["user", "assistant"].includes(record.type) && !record.isMeta) take(latest, record.type, record.message?.content, record, index);
+    } else {
+      const payload = record.payload;
+      if (record.type === "event_msg" && payload?.type === "user_message") take(latest, "user", payload.message, record, index);
+      if (record.type === "event_msg" && payload?.type === "agent_message") take(latest, "assistant", payload.message, record, index);
+      if (record.type === "response_item" && payload?.type === "message") take(fallback, payload.role, payload.content, record, index);
+    }
+  });
+  if (before !== stamp(row.source)) throw new Error("This session changed while reading. Retry the preview.");
+  result.messages = ["user", "assistant"].flatMap(role => latest[role] || fallback[role] ? [latest[role] || fallback[role]] : []).sort((a, b) => a.index - b.index).map(({ index, ...message }) => message);
+  return { ...result, available: true, message: result.messages.length ? "" : "No readable user or assistant text was found in the recent history." };
+}
+
 if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
   try {
     const options = json(process.argv[3] ?? "{}") ?? {};
-    const result = process.argv[2] === "validate" ? validate(process.argv[4], options) : scan(options);
+    const action = process.argv[2] || "scan";
+    if (!["scan", "validate", "preview"].includes(action)) throw new Error("Unknown history action.");
+    const result = action === "validate" ? validate(process.argv[4], options) : action === "preview" ? preview(process.argv[4], options) : scan(options);
     process.stdout.write(JSON.stringify(result));
   } catch (error) { process.stdout.write(JSON.stringify({ error: error.message })); process.exitCode = 1; }
 }

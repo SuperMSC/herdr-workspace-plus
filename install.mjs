@@ -4,7 +4,7 @@ import { constants, closeSync, copyFileSync, lstatSync, mkdirSync, openSync, rea
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { integrateWorkspace } from "./workspace-layout.mjs";
+import { integrateWorkspace, restoreNativeSpaces } from "./workspace-layout.mjs";
 import { DISPLAY_NAME, installedLayoutName } from "./layout-name.mjs";
 
 const packageRoot = dirname(fileURLToPath(import.meta.url));
@@ -39,7 +39,7 @@ function sourceFiles(root, relative = "") {
 }
 
 export function cloneLayout(source, { sessions = false } = {}) {
-  const layout = structuredClone(source);
+  const layout = restoreNativeSpaces(source).layout;
   if (!layout || Array.isArray(layout) || typeof layout !== "object") {
     throw new Error("The source layout must be a JSON object.");
   }

@@ -1,3 +1,4 @@
+import * as libraryModel from "../mods/files-plus/library-model.js";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
@@ -16,6 +17,7 @@ function element() {
 }
 const nodes = node => !node || typeof node !== "object" ? [] : [node, ...node.childNodes.flatMap(nodes)];
 function view(name, dependencies) {
+  dependencies = { ...libraryModel, fileIcon: element, iconButton: (id, icon, label, click) => element().id(id).on_click(click), ...dependencies };
   const source = readFileSync(new URL(`../mods/files-plus/${name}.js`, import.meta.url), "utf8")
     .replace(/^import .*;\n/gm, "").replace("export function changed", "function changed").replace("export default class", "return class");
   return new Function(...Object.keys(dependencies), source)(...Object.values(dependencies));
@@ -24,7 +26,7 @@ function view(name, dependencies) {
 function popup(kind, { height = 900, zoom = 1, preferences = false } = {}) {
   const overlays = [];
   globalThis.window = { viewport_size: () => ({ width: 1200, height }) };
-  const dependencies = { ...model, div: element, svg: element, v_flex: element, h_flex: element,
+  const dependencies = { ...model, projectContext: () => ({ cwd: "/fixture/project", on: null }), div: element, svg: element, v_flex: element, h_flex: element,
     theme: () => ({}), settings: () => ({ zoom }), window: () => ({ platform: "macos" }),
     openOverlay: props => overlays.push(props), shared: () => false };
   const cx = { stop_propagation() {}, focus_handle: () => ({ focus() {} }) };

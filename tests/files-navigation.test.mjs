@@ -1,0 +1,121 @@
+import assert from "node:assert/strict";
+import { existsSync, readFileSync } from "node:fs";
+import test from "node:test";
+import * as library from "../mods/files-plus/library-model.js";
+import * as model from "../mods/files-plus/model.js";
+import { iconName } from "../mods/files-plus/icon-model.js";
+
+test("recent files and pins survive serialization, deduplicate and stay scoped to machine and project", () => {
+  let state = library.updateLibrary(null, "/one", null, "open", "src/main.py");
+  state = library.updateLibrary(state, "/one", null, "pin", "src/main.py");
+  state = library.updateLibrary(state, "/one", "server", "open", "remote.py");
+  state = JSON.parse(JSON.stringify(state));
+  assert.deepEqual(library.libraryFor(state, "/one", null), { recent: ["src/main.py"], pinned: ["src/main.py"] });
+  assert.deepEqual(library.libraryFor(state, "/two", null), { recent: [], pinned: [] });
+  for (let i = 0; i < 30; i++) state = library.updateLibrary(state, "/one", null, "open", `${i}.py`);
+  state = library.updateLibrary(state, "/one", null, "open", "15.py");
+  assert.equal(library.libraryFor(state, "/one").recent.length, 20);
+  assert.equal(library.libraryFor(state, "/one").recent[0], "15.py");
+  assert.deepEqual(library.libraryFor(state, "/one", "server").recent, ["remote.py"]);
+  state = library.updateLibrary(state, "/one", null, "forget", "15.py");
+  assert(!library.libraryFor(state, "/one").recent.includes("15.py"));
+});
+
+test("state is bounded and corrupt or escaping history entries are discarded", () => {
+  let state;
+  for (let i = 0; i < 55; i++) state = library.updateLibrary(state, `/project-${i}`, null, "pin", "a.py", i);
+  assert.equal(Object.keys(state.projects).length, 40);
+  assert(!state.projects[library.projectKey("/project-0")]);
+  for (let i = 0; i < 50; i++) state = library.updateLibrary(state, "/pins", null, "pin", `${i}.py`);
+  assert.equal(library.libraryFor(state, "/pins").pinned.length, 40);
+  assert.equal(library.updateLibrary(state, "/pins", null, "open", "../outside"), state);
+  assert.deepEqual(library.libraryFor({ projects: { [library.projectKey("/bad")]: { recent: ["a", "a", null, "/outside", "a/../b"], pinned: "broken" } } }, "/bad"), { recent: ["a"], pinned: [] });
+});
+
+test("rename, batch move and Trash remap pins and history with exact path boundaries", () => {
+  let state;
+  for (const path of ["src/a.py", "src-old/a.py"]) {
+    state = library.updateLibrary(state, "/project", null, "open", path);
+    state = library.updateLibrary(state, "/project", null, "pin", path);
+  }
+  const target = model.targetFor("/project", "src", true, null, "macos");
+  const move = { target, action: "batch", operation: "move", results: [{ target, ok: true, path: "/project/dest/src" }] };
+  state = library.remapLibrary(state, target.root, null, path => model.applyPathChange(path, move));
+  assert.deepEqual(library.libraryFor(state, "/project").pinned, ["src-old/a.py", "dest/src/a.py"]);
+  const trash = { target: model.targetFor("/project", "dest", true), action: "trash" };
+  state = library.remapLibrary(state, target.root, null, path => model.applyPathChange(path, trash));
+  assert.deepEqual(library.libraryFor(state, "/project").recent, ["src-old/a.py"]);
+  assert.equal(model.applyPathChange("src/a.py", { ...move, results: [{ target, ok: true, path: "/elsewhere/src" }] }), null);
+  assert.equal(model.applyPathChange("src/a.py", { ...move, results: [{ target, ok: false }] }), "src/a.py");
+});
+
+test("selection toggles and shift ranges follow the actual visible order", () => {
+  const visible = ["a", "b", "c", "d"];
+  let selected = library.selectPaths(new Set(), "b", visible, null);
+  selected = library.selectPaths(selected, "d", visible, "b", { shift: true });
+  assert.deepEqual([...selected], ["b", "c", "d"]);
+  assert.deepEqual([...library.selectPaths(selected, "c", visible, "b", { platform: true })], ["b", "d"]);
+  assert.deepEqual(library.breadcrumbs("/project", "src/deep/a.py").map(c => [c.path, c.dir]), [["", true], ["src", true], ["src/deep", true], ["src/deep/a.py", false]]);
+});
+
+test("type and folder icons always resolve to bundled assets, including special names", () => {
+  const cases = [["MAIN.PY", false, "python"], ["a.tsx", false, "typescript"], ["a.jsonl", false, "json"], [".env.local", false, "config"], ["tests", true, "folder-test"], [".git", true, "folder-git"], ["src", true, "folder-code"], ["README", false, "markdown"], ["new.unknown", false, "file"]];
+  for (const [path, dir, expected] of cases) { const name = iconName(path, dir); assert.equal(name, expected); assert(existsSync(new URL(`../mods/files-plus/icons/${name}.svg`, import.meta.url))); }
+});
+
+function element() {
+  const target = { childNodes: [], attrs: {}, events: {} }; let proxy;
+  proxy = new Proxy(target, { get(object, key) {
+    if (key === "child") return child => { object.childNodes.push(child); return proxy; };
+    if (key === "children") return children => { object.childNodes.push(...children); return proxy; };
+    if (key === "when") return (condition, fn) => condition ? fn(proxy) : proxy;
+    if (key in object) return object[key];
+    if (key.startsWith("on_")) return (...args) => { object.events[key] = args.at(-1); return proxy; };
+    return value => { object.attrs[key] = value; return proxy; };
+  } }); return proxy;
+}
+const nodes = node => !node || typeof node !== "object" ? [] : [node, ...node.childNodes.flatMap(nodes)];
+const find = (tree, id) => nodes(tree).find(node => node.attrs.id === id);
+function harness(persisted = {}) {
+  let location = { cwd: "/project", on: null, space: "s" }, rendering = false;
+  const tasks = [], timers = [], previews = [], opened = [], overlays = [], state = persisted;
+  const cx = { notify() { assert.equal(rendering, false); }, stop_propagation() {}, focus_handle: () => ({ focus() {} }), timer: { after(_ms, fn) { timers.push(fn); }, every() {} }, spawn(fn) { tasks.push(fn(cx)); } };
+  const deps = { ...library, ...model, projectContext: () => ({ ...location }), openFileTab: value => opened.push(value), div: element, svg: element, h_flex: element, v_flex: element, fileIcon: element,
+    iconButton: (id, icon, label, fn) => element().id(id).on_click(fn),
+    Preview: class { clear() {} close() {} refresh() {} open(root, path, on) { previews.push({ root, path, on }); } render() { return element().id("preview"); } },
+    shared: key => state[key], setShared(key, value) { assert.equal(rendering, false); state[key] = value; },
+    spaces: () => [{ active: true, folder: location.cwd, machine: location.on, id: "s" }], panes: () => [], focused: () => ({ cwd: location.cwd, pane: "p" }),
+    theme: () => ({}), settings: () => ({ zoom: 1 }), window: () => ({ platform: "macos" }), openOverlay: value => overlays.push(value), watchFolder: async () => { throw new Error("No fixture watcher"); },
+    exec: async (program, args) => ({ code: program === "git" ? 1 : 0, stdout: program === "git" ? "" : args[3].endsWith("/src") ? "f\0a.py\0f\0b.py\0" : "d\0src\0f\0readme.md\0" }) };
+  const source = readFileSync(new URL("../mods/files-plus/browser.js", import.meta.url), "utf8").replace(/^import .*;\n/gm, "").replace("export default class", "return class");
+  const Browser = new Function(...Object.keys(deps), source)(...Object.values(deps)), browser = new Browser(); browser.init({}, cx);
+  return { browser, cx, state, previews, opened, overlays, async flush() { while (timers.length) timers.shift()(cx); for (let i = 0; i < tasks.length; i++) await tasks[i]; }, switchTo(next) { location = next; }, render() { rendering = true; try { return browser.render(cx); } finally { rendering = false; } } };
+}
+globalThis.window = { viewport_size: () => ({ width: 1400, height: 900 }) };
+
+test("opening a file uses a center tab while narrow and wide sidebars keep navigation, pins and breadcrumbs", async () => {
+  const f = harness(); await f.flush(); f.browser.toggle("src", f.cx); await f.flush();
+  f.browser.pick(f.browser.visibleEntries().find(entry => entry.path === "src/a.py"), {}, f.cx); const narrow = f.render();
+  assert.deepEqual(f.opened, [{ root: "/project", path: "src/a.py", on: null }]);
+  assert(!find(narrow, "preview")); assert(find(narrow, "files-navigation"));
+  find(narrow, "files-pin-current").events.on_click({}, f.cx);
+  f.browser.width = 900; const wide = f.render(); assert(!find(wide, "preview")); assert(find(wide, "files-navigation"));
+  find(wide, "crumb-src").events.on_click({}, f.cx); await f.flush();
+  assert.equal(f.browser.file, null); assert.equal(f.browser.browseFolder, "src"); assert(find(f.render(), "file-src/a.py"));
+  const next = harness(JSON.parse(JSON.stringify(f.state))); await next.flush();
+  find(next.render(), "files-pinned").events.on_click({}, next.cx);
+  assert.deepEqual(next.browser.visibleEntries().map(e => e.path), ["src/a.py"]);
+});
+
+test("multi-selection captures one project, supports ranges and refresh never writes during render", async () => {
+  const f = harness(); await f.flush(); f.browser.toggle("src", f.cx); await f.flush();
+  const entries = f.browser.visibleEntries();
+  f.browser.pick(entries.find(e => e.path === "src/a.py"), { modifiers: { platform: true } }, f.cx);
+  f.browser.pick(entries.find(e => e.path === "src/b.py"), { modifiers: { shift: true } }, f.cx);
+  assert.deepEqual([...f.browser.selected], ["src/a.py", "src/b.py"]); assert.equal(f.previews.length, 0); assert.equal(f.opened.length, 0);
+  f.browser.batch("copy", f.cx); assert.equal(f.overlays[0].props.targets.length, 2);
+  f.switchTo({ cwd: "/other", on: "remote", space: "other" }); f.render(); await f.flush();
+  assert.equal(f.browser.root, "/other"); assert.equal(f.browser.selected.size, 0);
+  assert(f.overlays[0].props.targets.every(t => t.root === "/project" && t.on === null));
+  f.render();
+});

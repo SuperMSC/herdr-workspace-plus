@@ -1,19 +1,17 @@
 // Modified from Herdr Files (Apache-2.0): context menus, captured targets and immediate refresh.
 // A lazy file browser for the focused pane's folder, with bounded read-only previews.
 import { div, svg } from "gpui-kit";
-import { v_flex, h_flex, Editor, EditorState } from "gpui-base";
-import { spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, window, openOverlay, shared } from "herdr";
+import { v_flex, h_flex } from "gpui-base";
+import { spaces, panes, focused, exec, watchFolder, theme, settings, window, openOverlay, shared, setShared } from "herdr";
+
+import { openFileTab, projectContext } from "./file-tabs.js";
+import { fileIcon, iconButton } from "./icons.js";
+import { LIBRARY_KEY, libraryFor, updateLibrary, remapLibrary, breadcrumbs, selectPaths } from "./library-model.js";
 
 import { CHANGE_KEY, SHOW_HIDDEN_KEY, visibleEntry, targetFor, menuHeight, applyPathChange } from "./model.js";
 
-function location() {
-  const space = spaces().find(s => s.active), f = focused();
-  const pane = f?.pane ? panes().find(p => p.pane === f.pane) : null;
-  const on = f?.pane === null ? (f.terminal?.includes("/") ? f.terminal.split("/")[0] : null) : space?.machine ?? null;
-  return { cwd: pane?.cwd || f?.cwd || space?.folder, on, space: space?.id };
-}
-const key = () => JSON.stringify(location());
-const LANG = { ts: "js", tsx: "js", mts: "js", cts: "js", jsx: "js", mjs: "js", toml: "yaml", jsonc: "json", svelte: "html", vue: "html" };
+function location() { return projectContext(); }
+const key = source => JSON.stringify(source || location());
 const PER_FOLDER = 500, TOTAL = 5000;
 
 async function directory(path, on, showHidden = false) {
@@ -43,6 +41,8 @@ async function directory(path, on, showHidden = false) {
 
 export default class Browser {
   init(_props, cx) {
+    this.source = _props.source; this.width = 320; this.mode = "tree"; this.browseFolder = ""; this.selectionMode = false; this.selected = new Set(); this.anchor = null;
+    this.handle = cx.focus_handle();
     this.lastChange = shared(CHANGE_KEY)?.revision;
     this.folderRequests = new Map();
     this.saved = new Map();
@@ -62,7 +62,7 @@ export default class Browser {
   }
 
   current(context) {
-    return this.context === context && key() === context.key;
+    return !this.disposed && this.context === context && key(this.source) === context.key;
   }
 
   async loadFolder(path, context) {
@@ -78,14 +78,15 @@ export default class Browser {
   }
 
   refresh(cx) {
-    const { cwd, on } = location(), next = key(), showHidden = shared(SHOW_HIDDEN_KEY) === true;
+    if (this.disposed) return;
+    const { cwd, on } = this.source || location(), next = key(this.source), showHidden = shared(SHOW_HIDDEN_KEY) === true;
     if (next !== this.context?.key || showHidden !== this.context?.showHidden) {
       if (this.context) this.saved.set(this.context.key, { folders: this.folders, file: this.file });
       const saved = this.saved.get(next);
       this.context = { key: next, cwd, on, showHidden }; this.root = cwd; this.on = on; this.entries = new Map(); this.folders = new Set(saved?.folders);
       this.pending = new Set(); this.marks = {}; this.show(null); this.watched = null; this.error = null; this.limited = false;
-      this.loading = false;
-      if (saved?.file) this.show(saved.file, cx);
+      this.loading = false; this.selected.clear(); this.selectionMode = false; this.browseFolder = "";
+      if (saved?.file) this.show(saved.file, cx, false);
     }
     if (!cwd || this.loading) return;
     const context = this.context;
@@ -145,26 +146,16 @@ export default class Browser {
     cx.notify();
   }
 
-  show(path, cx) {
-    this.code?.release(); this.code = null; this.file = path; this.fileError = null;
-    const request = {};
-    this.previewRequest = request;
+  show(path, cx, remember = true) {
+    this.file = path;
     if (!path || !cx) return;
-    const context = this.context, root = this.root, on = this.on;
-    cx.spawn(async cx => {
-      try {
-        const text = await readTextFile(`${root}/${path}`, { on });
-        if (this.previewRequest !== request || !this.current(context)) return;
-        if (text === null) { this.fileError = "This file is no longer available"; return; }
-        if (text.includes("\0")) { this.fileError = "Binary file · no text preview"; return; }
-        const t = theme(), ext = path.includes(".") ? path.split(".").pop() : "txt";
-        this.code = EditorState.new({ language: LANG[ext] ?? ext, readonly: true,
-          value: text.length > 400000 ? text.slice(0, 400000) + "\n… (file truncated)" : text,
-          font_family: settings().font_family, font_size: 12,
-          syntax: { keyword: t.ansi5, string: t.ansi2, comment: t.dim, function: t.ansi4, type: t.ansi3, number: t.ansi1, constant: t.ansi6 } });
-      } catch { if (this.previewRequest === request && this.current(context)) this.fileError = "Cannot preview this file (binary, too large, or unreadable)"; }
-      finally { cx.notify(); }
-    });
+    if (remember) this.updateLibrary("open", path);
+    cx.notify();
+  }
+
+  search(cx) {
+    const viewport = globalThis.window.viewport_size(), zoom = settings().zoom || 1;
+    openOverlay({ mod: "files-plus", kind: "dialog", frame: "none", width: Math.min(1050, viewport.width / zoom * 0.92), height: Math.min(800, viewport.height / zoom * 0.88), props: { role: "search", root: this.root, on: this.on } });
   }
 
   menu(relative, dir, cx, preferences = false) {
@@ -179,48 +170,136 @@ export default class Browser {
     this.lastChange = change.revision;
     if (change.target.root !== this.root || (change.target.on ?? null) !== (this.on ?? null)) return;
     this.folders = new Set([...this.folders].map(path => applyPathChange(path, change)).filter(Boolean));
+    this.browseFolder = applyPathChange(this.browseFolder, change) || "";
+    this.selected = new Set([...this.selected].map(path => applyPathChange(path, change)).filter(Boolean));
     const file = applyPathChange(this.file, change);
     // A new context invalidates reads still running against the old tree.
     this.context = { ...this.context };
     this.entries = new Map(); this.pending = new Set(); this.folderRequests = new Map();
     this.loading = false; this.watched = null; this.reloadAgain = false;
-    this.show(file, cx);
+    this.show(file, cx, false);
     this.refresh(cx);
   }
 
-  close() { this.code?.release(); }
 
-  rows(prefix, depth, out, t) {
+  updateLibrary(action, path) {
+    const state = shared(LIBRARY_KEY), next = updateLibrary(state, this.root, this.on, action, path);
+    if (next !== state) setShared(LIBRARY_KEY, next);
+  }
+
+  navigate(path, cx) {
+    this.browseFolder = path; this.mode = "tree"; this.selected.clear(); this.selectionMode = false;
+    this.show(null); if (path && !this.folders.has(path)) this.toggle(path, cx); else this.refresh(cx);
+    cx.notify();
+  }
+
+  listEntries(prefix = this.browseFolder, depth = 0, out = []) {
     if (out.length >= TOTAL || depth > 40) return out;
     for (const entry of this.entries.get(prefix) ?? []) {
-      if (!visibleEntry(entry.name, shared(SHOW_HIDDEN_KEY) === true)) continue;
-      if (out.length >= TOTAL) break;
-      const path = prefix ? `${prefix}/${entry.name}` : entry.name, open = this.folders.has(path), mark = this.marks[`${this.root}/${path}`];
-      out.push(h_flex().id(`file-${path}`).h(28).flex_none().pl(8 + depth * 18).pr(8).gap(7).items_center().rounded(7).cursor_pointer().hover(s => s.bg(t.hover))
-        .on_click((_e, cx) => entry.dir ? this.toggle(path, cx) : this.show(path, cx))
-        .on_mouse_down("right", (_e, cx) => this.menu(path, entry.dir, cx))
-        .child(entry.dir ? svg(`mods/files-plus/chevron-${open ? "down" : "right"}.svg`).size(12).flex_none().text_color(t.dim) : div().w(12).flex_none())
-        .child(svg(`mods/files-plus/${entry.dir ? "folder" : "file"}.svg`).size(14).flex_none().text_color(t.muted))
-        .child(div().flex_1().min_w(0).truncate().child(entry.name))
-        .when(Boolean(mark), el => el.child(div().text_size(11).text_color(mark === "A" ? t.ansi2 : mark === "D" || mark === "U" ? t.ansi1 : t.blocked).child(mark))));
-      if (entry.dir && open) this.rows(path, depth + 1, out, t);
+      if (!visibleEntry(entry.name, shared(SHOW_HIDDEN_KEY) === true) || out.length >= TOTAL) continue;
+      const path = prefix ? prefix + "/" + entry.name : entry.name;
+      out.push({ ...entry, path, depth });
+      if (entry.dir && this.folders.has(path)) this.listEntries(path, depth + 1, out);
     }
     return out;
   }
 
+  visibleEntries() {
+    if (this.mode === "tree") return this.listEntries();
+    return libraryFor(shared(LIBRARY_KEY), this.root, this.on)[this.mode].map(path => ({ path, name: path, dir: false, depth: 0 }));
+  }
+
+  pick(entry, e, cx) {
+    this.handle.focus();
+    if (this.selectionMode || e.modifiers?.platform || e.modifiers?.control || e.modifiers?.shift) {
+      this.selected = selectPaths(this.selected, entry.path, this.visibleEntries().map(e => e.path), this.anchor, e.modifiers);
+      if (!e.modifiers?.shift || !this.anchor) this.anchor = entry.path;
+      this.selectionMode = true; cx.notify();
+    } else if (entry.dir) this.toggle(entry.path, cx);
+    else {
+      this.selected.clear();
+      try { openFileTab({ root: this.root, path: entry.path, on: this.on }, cx); this.show(entry.path, cx); }
+      catch (error) { this.error = String(error.message ?? error); cx.notify(); }
+    }
+  }
+
+  batch(action, cx) {
+    const entries = this.visibleEntries(), targets = [...this.selected].map(path => {
+      const entry = entries.find(e => e.path === path);
+      return targetFor(this.root, path, entry?.dir || this.entries.has(path), this.on, window()?.platform);
+    });
+    if (!targets.length) return;
+    const viewport = globalThis.window.viewport_size(), zoom = settings().zoom || 1;
+    openOverlay({ mod: "files-plus", kind: "dialog", frame: "none", modal: true, width: Math.min(540, viewport.width / zoom * 0.94), height: Math.min(540, viewport.height / zoom * 0.88), props: { role: "batch", action, targets } });
+  }
+
+  close() { this.disposed = true; this.context = null; }
+
+  row(entry, t, idPrefix = "file") {
+    const { path, name, dir, depth } = entry, open = this.folders.has(path), mark = this.marks[this.root + "/" + path];
+    return h_flex().id(idPrefix + "-" + path).h(28).flex_none().min_w(0).pl(8 + depth * 18).pr(8).gap(6).items_center().rounded(5).cursor_pointer()
+      .when(this.selected.has(path) || this.file === path, el => el.bg(t.selected)).hover(s => s.bg(t.hover))
+      .on_click((e, cx) => this.pick(entry, e, cx)).on_mouse_down("right", (_e, cx) => this.menu(path, dir, cx))
+      .when(this.selectionMode, el => el.child(div().w(14).flex_none().text_color(this.selected.has(path) ? t.accent : t.dim).child(this.selected.has(path) ? "☑" : "☐")))
+      .child(dir ? div().id("expand-" + path).w(14).h(24).flex_none().flex().items_center().on_click((_e, cx) => { cx.stop_propagation(); this.toggle(path, cx); }).child(svg("mods/files-plus/chevron-" + (open ? "down" : "right") + ".svg").size(12).text_color(t.dim)) : div().w(14).flex_none())
+      .child(fileIcon(path, dir)).child(div().flex_1().min_w(0).truncate().tooltip(path).child(name))
+      .when(Boolean(mark), el => el.child(div().text_size(11).text_color(mark === "A" ? t.ansi2 : mark === "D" || mark === "U" ? t.ansi1 : t.blocked).child(mark)))
+      .when(this.mode === "recent", el => el.child(iconButton("forget-" + path, "close", "Remove from recent files", (_e, cx) => { this.updateLibrary("forget", path); cx.notify(); }, t)))
+      .when(this.mode === "pinned", el => el.child(iconButton("unpin-" + path, "pin", "Unpin file", (_e, cx) => { this.updateLibrary("pin", path); cx.notify(); }, t, true)));
+  }
+
+  rows(prefix, depth, out, t) { return [...out, ...this.listEntries(prefix, depth).map(entry => this.row(entry, t))]; }
+
+  scheduleSync(cx) {
+    const changed = key(this.source) !== this.context?.key || (shared(SHOW_HIDDEN_KEY) === true) !== this.context?.showHidden || shared(CHANGE_KEY)?.revision !== this.lastChange;
+    if (!changed || this.syncScheduled) return;
+    this.syncScheduled = true;
+    cx.timer.after(0, cx => { this.syncScheduled = false; if (this.disposed) return; this.refresh(cx); this.consumeChange(cx); cx.notify(); });
+  }
+
   render(cx) {
-    if (key() !== this.context?.key || (shared(SHOW_HIDDEN_KEY) === true) !== this.context?.showHidden) this.refresh(cx);
-    this.consumeChange(cx);
-    const t = theme();
-    return v_flex().id("files").size_full().min_h(0).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border).text_color(t.foreground).text_size(13)
-      .child(h_flex().h(42).flex_none().px(14).gap(8).items_center().border_b(1).border_color(t.border)
-        .when(Boolean(this.file), el => el.child(div().id("files-back").w(20).cursor_pointer().text_color(t.muted).on_click((_e, cx) => { this.show(null); cx.notify(); }).child("←")))
-        .child(div().font_semibold().child("Files"))
-        .child(div().id("files-plus-root-menu").w(22).text_center().cursor_pointer().hover(s => s.bg(t.hover)).on_click((_e, cx) => this.menu(this.file ?? "", !this.file, cx, true)).child("⋯"))
-        .child(div().flex_1().min_w(0).truncate().text_right().text_size(12).text_color(t.dim).child(this.file ?? this.root?.split(/[\\/]/).pop() ?? "")))
-      .when(!this.file, el => el.child(v_flex().id("files-tree").flex_1().min_h(0).overflow_y_scrollbar().p(6).on_mouse_down("right", (_e, cx) => this.menu("", true, cx)).children(this.rows("", 0, [], t))
-        .when(Boolean(this.error) || !this.entries.get("")?.length, el => el.child(div().p(8).text_size(12).text_color(t.dim).child(this.error || (this.loading ? "Loading files…" : this.root ? "No files" : "No folder"))))
-        .when(this.limited, el => el.child(div().p(8).text_size(11).text_color(t.dim).child("File list limited to 500 entries per folder and 5,000 total")))))
-      .when(Boolean(this.file), el => el.child(this.code ? Editor.new(this.code).flex_1().min_h(0) : div().p(12).text_color(t.dim).child(this.fileError || "Loading file…")));
+    this.scheduleSync(cx);
+    const t = theme(), library = libraryFor(shared(LIBRARY_KEY), this.root, this.on);
+    const local = !this.on && window()?.platform === "macos";
+    const crumbPath = this.file || this.browseFolder, crumbs = breadcrumbs(this.root, crumbPath);
+    if (!this.file && crumbs.length) crumbs[crumbs.length - 1].dir = true;
+    const visibleCrumbs = this.width < 420 && crumbs.length > 3 ? [crumbs[0], { label: "…", path: crumbs[crumbs.length - 3].path, dir: true }, ...crumbs.slice(-2)] : crumbs;
+    const crumbMax = Math.min(180, Math.max(24, (this.width - 24 - (this.file ? 28 : 0)) / visibleCrumbs.length - 4));
+    const tree = v_flex().id("files-navigation").flex_1().min_w(0).min_h(0)
+      .when(this.selectionMode, el => el.child(h_flex().h(32).flex_none().px(8).gap(4).items_center()
+        .child(div().flex_1().min_w(0).truncate().text_size(11).child(this.selected.size + " selected"))
+        .child(iconButton("batch-copy", "copy", "Copy selected items…", (_e, cx) => this.batch("copy", cx), t, false, !local || !this.selected.size))
+        .child(iconButton("batch-move", "move", "Move selected items…", (_e, cx) => this.batch("move", cx), t, false, !local || !this.selected.size))
+        .child(iconButton("batch-trash", "trash", "Move selected items to Trash…", (_e, cx) => this.batch("trash", cx), t, false, !local || !this.selected.size))
+        .child(iconButton("selection-clear", "close", "Clear selection", (_e, cx) => { this.selected.clear(); this.selectionMode = false; cx.notify(); }, t))))
+      .when(this.mode !== "tree", el => el.child(div().px(10).py(5).flex_none().text_size(11).text_color(t.dim).child(this.mode === "recent" ? "Recently opened · this project" : "Pinned files · this project")))
+      .child(v_flex().id("files-tree-" + this.mode + "-" + this.browseFolder).flex_1().min_h(0).overflow_y_scrollbar().p(6).on_mouse_down("right", (_e, cx) => this.menu(this.browseFolder, true, cx)).children(this.visibleEntries().map(entry => this.row(entry, t)))
+        .when(!this.visibleEntries().length || Boolean(this.error && this.mode === "tree"), el => el.child(div().p(8).text_size(12).text_color(t.dim).child(this.mode === "tree" ? this.error || (this.loading ? "Loading files…" : this.root ? "No files" : "No folder") : this.mode === "recent" ? "Files you open will appear here." : "Use the pin beside a preview path to keep a file here.")))
+        .when(this.limited && this.mode === "tree", el => el.child(div().p(8).text_size(11).text_color(t.dim).child("File list limited to 500 entries per folder and 5,000 total"))));
+    return v_flex().id("files").size_full().min_h(0).min_w(0).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border).text_color(t.foreground).text_size(13).track_focus(this.handle)
+      .on_size_change((size, cx) => { if (Math.abs(this.width - size.width) > 1) { this.width = size.width; cx.notify(); } })
+      .on_key_down((e, cx) => {
+        if (e.key === "escape" && this.selectionMode) { this.selected.clear(); this.selectionMode = false; }
+        else if (this.selectionMode && e.key === "a" && (e.modifiers?.platform || e.modifiers?.control)) this.selected = new Set(this.visibleEntries().map(e => e.path));
+        else return;
+        cx.stop_propagation(); cx.notify();
+      })
+      .child(h_flex().h(42).flex_none().px(10).gap(3).items_center().border_b(1).border_color(t.border)
+        .child(div().font_semibold().flex_1().min_w(0).truncate().child("Files"))
+        .child(iconButton("files-tree-mode", "tree", "File tree", (_e, cx) => { this.mode = "tree"; this.show(null); this.selected.clear(); cx.notify(); }, t, this.mode === "tree"))
+        .child(iconButton("files-recent", "history", "Recent files", (_e, cx) => { this.mode = "recent"; this.show(null); this.selected.clear(); cx.notify(); }, t, this.mode === "recent"))
+        .child(iconButton("files-pinned", "pin", "Pinned files", (_e, cx) => { this.mode = "pinned"; this.show(null); this.selected.clear(); cx.notify(); }, t, this.mode === "pinned"))
+        .child(iconButton("files-select", "select", "Select multiple · ⌘ click / Shift click", (_e, cx) => { this.selectionMode = !this.selectionMode; this.selected.clear(); this.show(null); this.handle.focus(); cx.notify(); }, t, this.selectionMode))
+        .child(iconButton("files-search", "search", "Search project", (_e, cx) => this.search(cx), t, false, !this.root))
+        .child(iconButton("files-plus-root-menu", "more", "File actions", (_e, cx) => this.menu(this.file ?? this.browseFolder, !this.file, cx, true), t)))
+      .child(h_flex().id("files-breadcrumbs").h(30).flex_none().px(8).gap(4).min_w(0).overflow_hidden().border_b(1).border_color(t.border)
+        .children(visibleCrumbs.map((crumb, index) => h_flex().w(Math.min(crumbMax, [...crumb.label].length * 7 + 12 + (index ? 12 : 0))).flex_none().min_w(0).gap(4).items_center()
+          .when(index > 0, el => el.child(div().flex_none().text_color(t.dim).child("›")))
+          .child(div().id("crumb-" + crumb.path).min_w(0).flex_1().truncate().text_size(11).text_color(crumb.dir ? t.muted : t.foreground).tooltip(crumb.path || this.root || "Files")
+            .when(crumb.dir, el => el.cursor_pointer().hover(s => s.text_color(t.accent))).on_click((_e, cx) => { if (crumb.dir) this.navigate(crumb.path, cx); }).child(crumb.label))))
+        .child(div().flex_1())
+        .when(Boolean(this.file), el => el.child(iconButton("files-pin-current", "pin", library.pinned.includes(this.file) ? "Unpin file" : "Pin file", (_e, cx) => { this.updateLibrary("pin", this.file); cx.notify(); }, t, library.pinned.includes(this.file)))))
+      .child(h_flex().id("files-content").flex_1().min_h(0).min_w(0).items_stretch().overflow_hidden()
+        .child(tree));
   }
 }

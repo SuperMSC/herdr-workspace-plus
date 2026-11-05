@@ -1,7 +1,9 @@
+import * as libraryModel from "../mods/files-plus/library-model.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { targetFor, localActions, menuItems, menuHeight, copyValue, creationFolder, applyPathChange, CHANGE_KEY, SHOW_HIDDEN_KEY, visibleEntry } from "../mods/files-plus/model.js";
+import * as previewModel from "../mods/files-plus/preview-model.js";
 import { validateName } from "../mods/files-plus/filesystem.js";
 
 globalThis.window = { viewport_size: () => ({ width: 1280, height: 800 }) };
@@ -24,7 +26,11 @@ function element() {
   return proxy;
 }
 
+const iconsSource = readFileSync(new URL("../mods/files-plus/icons.js", import.meta.url), "utf8").replace(/^import .*;\n/gm, "").replaceAll("export function", "function");
+const closeButton = new Function("div", "svg", iconsSource + "\nreturn closeButton;")(element, element);
+
 function view(name, dependencies) {
+  dependencies = { ...libraryModel, fileIcon: element, closeButton, FileFind: class { handle = { focus() {} }; clear() {} setText() {} close() {} }, iconButton: (id, icon, label, click) => element().id(id).on_click(click), ...dependencies };
   const source = readFileSync(new URL(`../mods/files-plus/${name}.js`, import.meta.url), "utf8")
     .replace(/^import .*;\n/gm, "")
     .replace("export function changed", "function changed")
@@ -36,7 +42,7 @@ function context() {
   const tasks = [];
   const clipboard = [];
   let stopped = false;
-  const cx = { focus_handle: () => ({ focus() {} }), notify() {},
+  const cx = { focus_handle: () => ({ focus() {} }), timer: { after() {} }, notify() {},
     stop_propagation() { stopped = true; },
     write_to_clipboard(value) { clipboard.push(value); },
     spawn(callback) { tasks.push(callback(cx)); } };
@@ -169,12 +175,20 @@ test("filesystem failure stays visible, preserves the dialog, and does not broad
   assert.equal(env.changes.length, 0);
 });
 
-test("busy dialogs consume Escape without closing an operation in progress", () => {
+test("busy dialogs block Escape and both current and stale close-button callbacks", () => {
   const env = dialogHarness(file(), "rename");
+  const nodes = node => typeof node !== "object" || !node ? [] : [node, ...node.childNodes.flatMap(nodes)];
+  const close = tree => nodes(tree).find(node => node.idValue === "files-dialog-close").events["on_click:"];
+  const before = close(env.dialog.render());
   env.dialog.busy = true;
+  before({}, env.cx);
+  close(env.dialog.render())({}, env.cx);
   env.dialog.render().events["on_key_down:"]({ key: "escape" }, env.cx);
   assert(env.stopped());
   assert.equal(env.closed.length, 0);
+  env.dialog.busy = false;
+  close(env.dialog.render())({}, env.cx);
+  assert.deepEqual(env.closed, ["dialog1"]);
 });
 
 test("Changes offers stage/unstage from each index/worktree state", () => {
@@ -213,18 +227,20 @@ test("deleted Changes hide Open and reveal the parent folder", async () => {
 
 function browserHarness({ readTextFile = async () => "", exec = async () => ({ code: 0, stdout: "" }), change } = {}) {
   const location = { cwd: root, on: null, space: "s" };
-  const Browser = view("browser", { div: element, svg: element, v_flex: element, h_flex: element,
+  const Preview = view("preview", { ...previewModel, readTextFile, shared: () => null, setShared() {}, theme: () => ({}), settings: () => ({}),
+    EditorState: { new: options => ({ ...options, release() {}, set_value(value) { this.value = value; } }) } });
+  const Browser = view("browser", { Preview, projectContext: () => location, div: element, svg: element, v_flex: element, h_flex: element,
     Editor: { new: element }, EditorState: { new: options => ({ ...options, release() {} }) },
     spaces: () => [{ active: true, id: "s", folder: root }], panes: () => [], focused: () => ({ pane: null, terminal: "t1", cwd: root }),
     exec, readTextFile, watchFolder() {}, theme: () => ({}), settings: () => ({}), window: () => ({ platform: "macos" }),
-    openOverlay() {}, shared: () => change, CHANGE_KEY, SHOW_HIDDEN_KEY, visibleEntry, targetFor, menuHeight, applyPathChange });
+    openOverlay() {}, shared: () => change, setShared() {}, CHANGE_KEY, SHOW_HIDDEN_KEY, visibleEntry, targetFor, menuHeight, applyPathChange });
   const browser = new Browser();
-  Object.assign(browser, { context: { ...location, key: JSON.stringify(location) }, root, on: null,
-    entries: new Map(), folders: new Set(), pending: new Set(), folderRequests: new Map() });
+  Object.assign(browser, { preview: new Preview(), context: { ...location, key: JSON.stringify(location) }, root, on: null,
+    selected: new Set(), entries: new Map(), folders: new Set(), pending: new Set(), folderRequests: new Map() });
   return { browser, ...context() };
 }
 
-test("rename invalidates old directory counts and pending reads, and refreshes previews", () => {
+test("rename invalidates old directory counts and pending reads, and updates file selection", () => {
   const change = { revision: 2, target: targetFor(root, "src", true, null, "macos"), action: "rename", name: "lib" };
   const env = browserHarness({ change });
   const oldContext = env.browser.context;
@@ -246,13 +262,14 @@ test("rename invalidates old directory counts and pending reads, and refreshes p
 test("late same-path preview response cannot replace the newest preview", async () => {
   const pending = [];
   const env = browserHarness({ readTextFile: () => new Promise(resolve => pending.push(resolve)) });
-  env.browser.show("a.txt", env.cx);
-  env.browser.show("a.txt", env.cx);
+  env.browser.on = "remote-fixture";
+  env.browser.preview.open(root, "a.txt", "remote-fixture", env.cx);
+  env.browser.preview.open(root, "a.txt", "remote-fixture", env.cx);
   pending[1]("newest");
   await env.tasks[1];
   pending[0]("old");
   await env.tasks[0];
-  assert.equal(env.browser.code.value, "newest");
+  assert.equal(env.browser.preview.code.value, "newest");
 });
 
 test("late folder load cannot overwrite a newer refresh", async () => {

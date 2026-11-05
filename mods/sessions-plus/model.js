@@ -51,10 +51,10 @@ export function sessionRows(history, terminals, panes, names = {}) {
   return rows.sort((a, b) => Number(b.live) - Number(a.live) || (b.updated ?? 0) - (a.updated ?? 0));
 }
 
-export function filterRows(rows, { cwd, remote = false, all = false, provider = "all", query = "" }) {
+export function filterRows(rows, { cwd, remote = false, all = false, provider = "all", query = "", source = "all" }) {
   const search = query.trim().toLocaleLowerCase();
   return rows.filter(row => (all || (!remote && !row.remote && cwd && row.cwd.replace(/\/$/, "") === cwd.replace(/\/$/, ""))) &&
-    (provider === "all" || row.provider === provider) && (!search || [row.title, row.cwd, row.id, row.provider].some(value => String(value ?? "").toLocaleLowerCase().includes(search))));
+    (provider === "all" || row.provider === provider) && (source === "all" || (row.origin || "unknown") === source) && (!search || [row.title, row.cwd, row.id, row.provider].some(value => String(value ?? "").toLocaleLowerCase().includes(search))));
 }
 
 export function resumeArgv(row, executable) {
@@ -68,4 +68,23 @@ export function launchCommand(row, executable, spaces) {
   const argv = resumeArgv(row, executable), title = cleanTitle(row.title) || PROVIDERS[row.provider];
   const space = spaces.find(s => !s.machine && s.folder === row.cwd);
   return space ? ["tab.new", { space: space.id, name: title, folder: row.cwd, argv }] : ["space.new", { folder: row.cwd, tab: title, argv }];
+}
+
+
+export const ORIGINS = { main: "Main", review: "Auto review", subagent: "Subagent", unknown: "Unknown source" };
+export function historyGroup(row, now = Date.now()) {
+  if (row.live) return "Running";
+  if (!Number.isFinite(row.updated) || row.updated <= 0) return "Unknown date";
+  const today = new Date(now); today.setHours(0, 0, 0, 0);
+  const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1);
+  const week = new Date(today); week.setDate(week.getDate() - 6);
+  return row.updated >= +today ? "Today" : row.updated >= +yesterday ? "Yesterday" : row.updated >= +week ? "Previous 7 days" : "Earlier";
+}
+export function historyTime(row, now = Date.now()) {
+  const id = row.id?.slice(0, 8) || row.address || "";
+  if (row.live) return id;
+  if (!Number.isFinite(row.updated) || row.updated <= 0) return ["Update time unavailable", id].filter(Boolean).join(" · ");
+  const minutes = Math.max(0, Math.floor((now - row.updated) / 60000));
+  const ago = minutes < 1 ? "just now" : minutes < 60 ? `${minutes}m ago` : minutes < 1440 ? `${Math.floor(minutes / 60)}h ago` : `${Math.floor(minutes / 1440)}d ago`;
+  return [`Updated ${ago}`, id].filter(Boolean).join(" · ");
 }

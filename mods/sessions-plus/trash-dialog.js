@@ -3,6 +3,7 @@ import { v_flex, h_flex } from "gpui-base";
 import { appHome, exec, terminals, panes, theme, window, shared, setShared, closeOverlay } from "herdr";
 import { NAMES, PENDING, OPERATIONS, CHANGE_KEY, OPERATION_TTL, operationPending, sessionRows, PROVIDERS } from "./model.js";
 import { createTrashClient } from "./trash-client.js";
+import { closeButton } from "./icons.js";
 
 export default class TrashDialog {
   init(p, cx) {
@@ -26,6 +27,15 @@ export default class TrashDialog {
     if (operationPending(shared(OPERATIONS), target.key, now)) throw new Error("Another operation is using this session. Try again when it finishes.");
   }
 
+  handleError(error) {
+    if (this.action === "trash" && error.code === "SESSION_MISSING") {
+      setShared(CHANGE_KEY, (Number(shared(CHANGE_KEY)) || 0) + 1);
+      closeOverlay(this.p.overlay);
+      return;
+    }
+    this.error = String(error.message ?? error);
+  }
+
   prepare(cx) {
     if (this.busy) return;
     this.ready = false; this.error = "";
@@ -38,7 +48,7 @@ export default class TrashDialog {
         const data = await this.read("prepare", key);
         if (data.row?.key !== key || !Array.isArray(data.files)) throw new Error("The session changed. Close this dialog and select it again.");
         this.files = data.files; this.ready = true;
-      } catch (error) { this.error = String(error.message ?? error); }
+      } catch (error) { this.handleError(error); }
       finally { this.busy = false; cx.notify(); }
     });
   }
@@ -56,7 +66,7 @@ export default class TrashDialog {
         await this.read(action, action === "restore" ? token : key);
         setShared(CHANGE_KEY, (Number(shared(CHANGE_KEY)) || 0) + 1);
         closeOverlay(this.p.overlay);
-      } catch (error) { this.error = String(error.message ?? error); }
+      } catch (error) { this.handleError(error); }
       finally {
         const latest = { ...(shared(OPERATIONS) ?? {}) };
         if (latest[key]?.stamp === stamp) { delete latest[key]; setShared(OPERATIONS, latest); }
@@ -70,14 +80,15 @@ export default class TrashDialog {
     const button = (id, label, primary, callback) => div().id(id).px(12).py(7).rounded(7).cursor_pointer()
       .bg(primary ? (trash ? t.ansi1 : t.solid) : t.raised).text_color(primary ? t.solid_foreground : t.foreground)
       .when(this.busy, el => el.opacity(0.5)).on_click(callback).child(label);
-    return v_flex().id("session-trash-dialog").size_full().min_h(0).p(18).gap(12).bg(t.popover).text_color(t.foreground).text_size(13)
+    return v_flex().id("session-trash-dialog").size_full().min_h(0).p(18).gap(12).rounded(10).overflow_hidden().border_1().border_color(t.border).bg(t.popover).text_color(t.foreground).text_size(13)
       .track_focus(this.handle).on_key_down((event, cx) => {
         if (event.key === "escape") { if (!this.busy) closeOverlay(this.p.overlay); }
         else if (event.key === "enter") this.submit(cx);
         else return;
         cx.stop_propagation();
       })
-      .child(div().font_semibold().text_size(15).child(trash ? "Move Session to Trash?" : "Restore Session?"))
+      .child(h_flex().flex_none().gap(8).items_center().child(div().flex_1().min_w(0).truncate().font_semibold().text_size(15).child(trash ? "Move Session to Trash?" : "Restore Session?"))
+        .child(closeButton("session-trash-close", "Close session dialog", () => { if (!this.busy) closeOverlay(this.p.overlay); }, t, Boolean(this.busy))))
       .child(div().max_h(45).overflow_y_scrollbar().child(this.target.title || this.target.id || "Session"))
       .child(div().text_color(t.muted).child(trash ? "Move this session’s local history to Trash. You can restore it from Sessions → Trash until the Trash is emptied." : "Restore this session’s history to its original location. Existing files are never replaced."))
       .when(!trash && Boolean(this.target.message), el => el.child(div().text_size(11.5).text_color(t.muted).child(this.target.message)))

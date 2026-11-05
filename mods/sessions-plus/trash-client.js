@@ -6,7 +6,11 @@ export function createTrashClient(exec, p, home) {
     let data;
     try { data = JSON.parse(result.stdout); }
     catch { throw new Error("Session Trash needs Node.js 22+ on PATH. Set the mod's node prop to its executable if needed."); }
-    if (result.code || data.error) throw new Error(data.error || "Could not update Session Trash.");
+    if (result.code || data.error) {
+      const error = new Error(data.error || "Could not update Session Trash.");
+      if (data.code === "SESSION_MISSING") error.code = data.code;
+      throw error;
+    }
     return data;
   };
 }

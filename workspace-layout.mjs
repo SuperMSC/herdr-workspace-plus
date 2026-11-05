@@ -134,3 +134,16 @@ export function integrateWorkspace(source) {
   }
   return { layout, changed, integrated: true };
 }
+
+/** Restore native Spaces after the retired addon; preserve IDs, props, geometry and custom mods. */
+export function restoreNativeSpaces(source) {
+  const layout = structuredClone(source);
+  let changed = false;
+  for (const { node } of nodes(layout)) {
+    if (node.type === "block" && node.content?.mod === "spaces-plus") {
+      node.content = { ...node.content, mod: "spaces" };
+      changed = true;
+    }
+  }
+  return { layout, changed };
+}

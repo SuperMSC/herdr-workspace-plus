@@ -1,9 +1,9 @@
-import { div } from "gpui-kit";
+import { div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { appHome, exec, theme, shared, setShared, window } from "herdr";
 import { PROVIDERS } from "./model.js";
 import { providerIcon } from "./icons.js";
-import { percentage, resetLabel } from "./quota-model.js";
+import { percentage, resetLabel, quotaWarning } from "./quota-model.js";
 
 export default class Quota {
   init(p, cx) {
@@ -42,6 +42,7 @@ export default class Quota {
         try {
           if (!this.visibleProviders().includes(provider)) return;
           this.started[provider] = Date.now();
+          cx.timer.after(60000, cx => cx.notify());
           const options = { stores: this.p.stores ?? {}, blockedVersion: shared("sessions-plus.agy-usage-blocked") };
           const result = await exec(this.p.node || "node", [appHome() + "/mods/sessions-plus/quota.mjs", provider, JSON.stringify(options)]);
           const next = JSON.parse(result.stdout);
@@ -62,18 +63,22 @@ export default class Quota {
   render() {
     const t = theme(), mode = shared("sessions-plus.quota-mode") === "used" ? "used" : "remaining";
     const visible = this.visibleProviders(), hidden = this.hiddenProviders();
-    const available = visible.filter(provider => ["ok", "stale"].includes(this.data[provider]?.state) && this.data[provider]?.windows.length);
+    const available = visible.filter(provider => (["ok", "stale"].includes(this.data[provider]?.state) && this.data[provider]?.windows.length) || quotaWarning(this.data[provider]));
     const loading = visible.some(provider => this.pending.has(provider));
-    const remaining = Math.max(0, Math.ceil((Math.max(0, ...visible.map(provider => this.started[provider] ?? 0)) + 60000 - Date.now()) / 1000));
-    const refreshLabel = loading ? "Updating…" : remaining ? `Refresh · ${remaining}s` : "Refresh";
+    const remaining = visible.length ? Math.max(0, Math.ceil((Math.min(...visible.map(provider => this.started[provider] ?? 0)) + 60000 - Date.now()) / 1000)) : 0;
+    const refreshDisabled = loading || remaining > 0 || !visible.length;
+    const refreshHint = loading ? "Refreshing quota…" : !visible.length ? "Show an account in Agents to refresh" : remaining ? `Refresh available in ${remaining}s` : "Refresh quota";
     const button = (id, text, selected, click) => div().id(id).px(7).py(4).rounded(5).bg(selected ? t.selected : t.surface).text_color(selected ? t.foreground : t.muted).cursor_pointer().hover(el => el.bg(t.hover)).on_click(click).child(text);
     const card = provider => {
-      const data = this.data[provider], loading = this.pending.has(provider), stale = data?.state === "stale";
-      const timestamp = data?.updatedAt ? new Date(data.updatedAt) : null;
+      const data = this.data[provider], loading = this.pending.has(provider), stale = data?.state === "stale", warning = quotaWarning(data);
+      const timestamp = ["ok", "stale"].includes(data?.state) && data?.updatedAt ? new Date(data.updatedAt) : null;
       const updated = timestamp ? `${String(timestamp.getHours()).padStart(2, "0")}:${String(timestamp.getMinutes()).padStart(2, "0")}` : "";
-      return v_flex().p(10).gap(9).rounded(8).border_1().border_color(t.border)
-        .child(h_flex().items_center().gap(8).child(providerIcon(provider, 21)).child(div().font_semibold().child(PROVIDERS[provider]))
-          .child(div().flex_1()).child(div().text_size(10.5).text_color(stale ? t.ansi3 : t.dim).child(loading ? "Updating…" : timestamp ? `${stale ? "Stale · " : "Updated "}${updated}` : "")))
+      return v_flex().id(`quota-card-${provider}`).min_w(0).p(10).gap(9).rounded(8).border_1().border_color(t.border)
+        .child(h_flex().min_w(0).items_center().gap(8).child(providerIcon(provider, 21).flex_none())
+          .child(div().flex_1().min_w(0).truncate().font_semibold().child(PROVIDERS[provider]))
+          .child(h_flex().id(`quota-updated-${provider}`).flex_none().items_center().gap(4)
+            .child(div().whitespace_nowrap().text_size(10.5).text_color(stale ? t.ansi3 : t.dim).child(loading ? "Updating…" : timestamp ? `${stale ? "Stale · " : "Updated "}${updated}` : ""))
+            .when(Boolean(warning), el => el.child(div().id(`quota-warning-${provider}`).size(13).flex_none().text_color(t.ansi3).tooltip(warning).accessibility_label(`${PROVIDERS[provider]}: ${warning}`).child(svg("mods/sessions-plus/warning.svg").size(13))))))
         .children((data?.windows ?? []).map(row => {
           const value = row[mode], color = row.used >= 90 ? t.ansi1 : row.used >= 75 ? t.ansi3 : t.accent;
           return v_flex().gap(4)
@@ -88,7 +93,9 @@ export default class Quota {
       .child(h_flex().px(8).py(7).gap(3).flex_none()
         .child(button("quota-remaining", "Remaining", mode === "remaining", () => setShared("sessions-plus.quota-mode", "remaining")))
         .child(button("quota-used", "Used", mode === "used", () => setShared("sessions-plus.quota-mode", "used")))
-        .child(div().flex_1()).child(button("quota-refresh", refreshLabel, false, (_e, cx) => this.refresh(cx))))
+        .child(div().flex_1()).child(button("quota-refresh", svg("mods/sessions-plus/refresh.svg").id("quota-refresh-icon").size(14).flex_none().when(loading, el => el.spin(850)), false, (_e, cx) => { if (!refreshDisabled) this.refresh(cx); })
+          .size(24).p(0).rounded(4).flex().items_center().justify_center().flex_none().text_color(loading ? t.accent : t.muted).disabled(refreshDisabled)
+          .when(refreshDisabled, el => el.cursor_default().opacity(loading ? 1 : 0.45)).tooltip(refreshHint).accessibility_label("Refresh quota")))
       .child(h_flex().px(8).pb(4).flex_none().child(button("quota-agents", `Agents ${this.showAgents ? "▴" : "▾"}`, this.showAgents, (_e, cx) => { this.showAgents = !this.showAgents; cx.notify(); })))
       .when(this.showAgents, el => el.child(v_flex().px(8).pb(5).gap(4).flex_none()
         .child(div().text_size(10.5).text_color(t.dim).child("Show account quota for"))

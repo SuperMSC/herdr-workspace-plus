@@ -1,3 +1,4 @@
+import * as libraryModel from "../mods/files-plus/library-model.js";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -25,6 +26,7 @@ const find = (node, id) => nodes(node).find(node => node.attrs.id === id);
 const text = node => typeof node === "string" ? node : (node?.childNodes ?? []).map(text).join(" ");
 
 function view(file, dependencies) {
+  dependencies = { ...libraryModel, fileIcon: element, iconButton: (id, icon, label, click) => element().id(id).on_click(click), ...dependencies };
   const source = readFileSync(new URL(`../mods/files-plus/${file}.js`, import.meta.url), "utf8")
     .replace(/^import .*;\n/gm, "").replace("export function changed", "function changed").replace("export default class", "return class");
   return new Function(...Object.keys(dependencies), source)(...Object.values(dependencies));
@@ -40,10 +42,12 @@ function fixture(t) {
 }
 
 function harness(root, state = {}, options = {}) {
-  const calls = [], tasks = [], overlays = [], closed = [];
-  const cx = { notify() {}, stop_propagation() {}, timer: { every() {} }, focus_handle: () => ({ focus() {} }),
+  const calls = [], tasks = [], overlays = [], closed = [], timers = [];
+  const cx = { notify() {}, stop_propagation() {}, timer: { every() {}, after(_delay, fn) { timers.push(fn); } }, focus_handle: () => ({ focus() {} }),
     spawn(task) { tasks.push(task(cx)); } };
   const dependencies = {
+    projectContext: () => ({ cwd: root, on: null, space: "space" }),
+    Preview: class { clear() {} refresh() {} open() {} close() {} render() { return element(); } },
     ...model, div: element, svg: element, h_flex: element, v_flex: element,
     Editor: { new: element }, EditorState: { new: () => ({ release() {} }) },
     spaces: () => [{ id: "space", active: true, folder: root }], panes: () => [],
@@ -66,7 +70,7 @@ function harness(root, state = {}, options = {}) {
   return {
     browser, state, calls, overlays, closed, cx,
     async finish() { for (let i = 0; i < tasks.length; i++) await tasks[i]; },
-    render: () => browser.render(cx),
+    render: () => { const result = browser.render(cx); while (timers.length) timers.shift()(cx); return result; },
     rows: () => browser.rows("", 0, [], {}).map(row => row.attrs.id),
     menu(props) { const menu = new Menu(); menu.init({ ...props, overlay: "fixture-menu" }, cx); return menu; },
   };

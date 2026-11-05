@@ -460,3 +460,30 @@ test("updates prefer the current named layout and leave a legacy layout intact",
   assert.equal(readFileSync(currentPath, "utf8"), current);
   assert.deepEqual(readFileSync(legacyPath), legacy);
 });
+
+test("explicit integration restores native Spaces without altering its props or geometry", t => {
+  const f = fixture(t), source = oldWorkspaceLayout(), sidebar = findLayoutNode(source, "sidebar");
+  sidebar.content = { mod: "spaces-plus", props: { custom: true, folded: ["keep"] }, title: "My spaces" };
+  sidebar.min = 180; sidebar.hidden = true;
+  const path = join(f.home, "layouts", "files-plus.json");
+  write(path, JSON.stringify(source));
+  const result = update({ ...f, integrateLayout: true });
+  assert.equal(result.layoutUpdated, true);
+  const actual = JSON.parse(readFileSync(path, "utf8"));
+  assert.deepEqual(findLayoutNode(actual, "sidebar"), { ...sidebar, content: { ...sidebar.content, mod: "spaces" } });
+  assert.equal(existsSync(join(f.home, "mods", "spaces-plus")), false);
+  assert.equal(update({ ...f, integrateLayout: true }).layoutUpdated, false);
+});
+
+test("ordinary updates preserve a retired addon layout and its files for explicit migration", t => {
+  const f = fixture(t), source = oldWorkspaceLayout();
+  findLayoutNode(source, "sidebar").content.mod = "spaces-plus";
+  const path = join(f.home, "layouts", "files-plus.json"), serialized = JSON.stringify(source, null, 3);
+  write(path, serialized);
+  write(join(f.home, "mods", "spaces-plus", "main.js"), "personal copy");
+  const result = update(f);
+  assert.equal(result.layoutUpdated, false);
+  assert.equal(readFileSync(path, "utf8"), serialized);
+  assert.equal(readFileSync(join(f.home, "mods", "spaces-plus", "main.js"), "utf8"), "personal copy");
+  assert.equal(result.mods.some(path => path.endsWith("/spaces-plus")), false);
+});

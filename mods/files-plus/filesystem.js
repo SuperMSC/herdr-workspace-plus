@@ -18,6 +18,29 @@ function run(argv) {
     } else if (action === "createFolder") {
       if (!manager.createDirectoryAtPathWithIntermediateDirectoriesAttributesError(path, false, $(), $()))
         return failure("Cannot create this folder", path);
+    } else if (action === "copy" || action === "move") {
+      var destination = argv[2];
+      var sourceType = manager.attributesOfItemAtPathError(path, $());
+      if (!sourceType) return failure("Source no longer exists", path);
+      var parent = ObjC.unwrap($(destination).stringByDeletingLastPathComponent.stringByResolvingSymlinksInPath);
+      var parentAttrs = manager.attributesOfItemAtPathError(parent, $());
+      if (!parentAttrs || ObjC.unwrap(parentAttrs.objectForKey($.NSFileType)) !== "NSFileTypeDirectory")
+        return failure("Destination must be an existing folder", parent);
+      // A link is transferred as a link. For a directory, reject symlink aliases into itself.
+      if (ObjC.unwrap(sourceType.objectForKey($.NSFileType)) === "NSFileTypeDirectory") {
+        var realSource = ObjC.unwrap($(path).stringByResolvingSymlinksInPath);
+        if (parent === realSource || parent.indexOf(realSource + "/") === 0)
+          return failure("A folder cannot be transferred into itself", path);
+      }
+      if (action === "copy") {
+        if (!manager.copyItemAtPathToPathError(path, destination, $()))
+          return failure("Cannot copy; destination may exist or be inaccessible", destination);
+      } else {
+        ObjC.bindFunction("renamex_np", ["int", ["char *", "char *", "unsigned int"]]);
+        if ($.renamex_np(path, destination, 4) !== 0)
+          return failure("Cannot move; use an unused name on the same volume", destination);
+      }
+      path = destination;
     } else if (action === "rename") {
       // RENAME_EXCL is atomic and acts on a final symlink itself. Never fall back to rename().
       ObjC.bindFunction("renamex_np", ["int", ["char *", "char *", "unsigned int"]]);
@@ -126,6 +149,18 @@ export function createFilesystem(executor, { on = null, platform = "macos" } = {
       localMac();
       const source = itemPath(path);
       return filesystem("rename", source, childPath(parentPath(source), name));
+    },
+    async copy(path, folder) {
+      localMac();
+      const source = itemPath(path), destination = childPath(folder, basename(source));
+      if (source === destination) throw new Error("Source and destination are the same item.");
+      return filesystem("copy", source, destination);
+    },
+    async move(path, folder) {
+      localMac();
+      const source = itemPath(path), destination = childPath(folder, basename(source));
+      if (source === destination) throw new Error("Source and destination are the same item.");
+      return filesystem("move", source, destination);
     },
     async trash(path) {
       localMac();

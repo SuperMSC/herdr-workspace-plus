@@ -4,7 +4,14 @@ import { closeOverlay, openOverlay, theme, exec, shared, setShared, settings } f
 import { createFilesystem } from "./filesystem.js";
 import { CHANGE_KEY, SHOW_HIDDEN_KEY, menuItems, copyValue, localActions, parentPath, menuHeight } from "./model.js";
 
+import { LIBRARY_KEY, remapLibrary } from "./library-model.js";
+import { applyPathChange } from "./model.js";
+
 export function changed(target, action, name) {
+  if (["rename", "trash"].includes(action)) {
+    const state = shared(LIBRARY_KEY), next = remapLibrary(state, target.root, target.on, path => applyPathChange(path, { target, action, name }));
+    if (next !== state) setShared(LIBRARY_KEY, next);
+  }
   setShared(CHANGE_KEY, { target, action, name, revision: (shared(CHANGE_KEY)?.revision ?? 0) + 1 });
 }
 
@@ -36,7 +43,7 @@ export default class Menu {
       closeOverlay(this.p.overlay);
     } else if (["createFile", "createFolder", "rename", "trash", "stage", "unstage"].includes(action)) {
       closeOverlay(this.p.overlay);
-      openOverlay({ mod: "files-plus", kind: "dialog", modal: true, width: 460, height: 290,
+      openOverlay({ mod: "files-plus", kind: "dialog", frame: "none", modal: true, width: 460, height: 290,
         props: { role: "dialog", action, target } });
     } else {
       this.busy = true;

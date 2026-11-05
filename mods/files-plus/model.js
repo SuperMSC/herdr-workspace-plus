@@ -81,7 +81,16 @@ export function menuHeight(target, options, maximum = Infinity) {
 }
 
 export function applyPathChange(path, change) {
-  if (path == null || !["rename", "trash"].includes(change.action)) return path;
+  if (path == null) return path;
+  if (change.action === "batch") {
+    if (!["move", "trash"].includes(change.operation)) return path;
+    const result = change.results?.find(r => r.ok && (path === r.target.relative || path.startsWith(r.target.relative + "/")));
+    if (!result) return path;
+    if (change.operation === "trash") return null;
+    const root = change.target.root.replace(/\/+$/, "") + "/";
+    return result.path.startsWith(root) ? result.path.slice(root.length) + path.slice(result.target.relative.length) : null;
+  }
+  if (!["rename", "trash"].includes(change.action)) return path;
   const old = change.target.relative;
   if (!old || (path !== old && !path.startsWith(`${old}/`))) return path;
   if (change.action === "trash") return null;

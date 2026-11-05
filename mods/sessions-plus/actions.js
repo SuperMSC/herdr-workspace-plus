@@ -7,7 +7,8 @@ export default class Actions {
     this.p = p;
     this.target = { ...p.target };
     this.canTrash = !this.target.live && !this.target.remote && window()?.platform === "macos";
-    this.items = [{ id: "rename", label: "Rename" }, { id: "trash", label: "Move to Trash…", disabled: !this.canTrash }];
+    this.items = [{ id: "rename", label: "Rename" }, { id: "trash", label: "Move to Trash…", disabled: !this.canTrash },
+      { id: "preview", label: "Preview recent messages", disabled: this.target.remote || !this.target.id || !this.target.key }];
     this.at = 0;
     this.handle = cx.focus_handle();
     this.handle.focus();
@@ -17,8 +18,8 @@ export default class Actions {
     const item = this.items[index];
     if (!item || item.disabled) return;
     closeOverlay(this.p.overlay);
-    openOverlay({ mod: "sessions-plus", kind: "dialog", modal: true, width: item.id === "rename" ? 420 : 500, height: item.id === "rename" ? 240 : 390,
-      props: { role: item.id === "rename" ? "rename" : "trash-dialog", action: "trash", target: { ...this.target }, node: this.p.node, stores: this.p.stores } });
+    openOverlay({ mod: "sessions-plus", kind: "dialog", frame: "none", modal: true, width: item.id === "preview" ? 600 : item.id === "rename" ? 420 : 500, height: item.id === "preview" ? 460 : item.id === "rename" ? 240 : 390,
+      props: { role: item.id === "preview" ? "preview" : item.id === "rename" ? "rename" : "trash-dialog", action: "trash", target: { ...this.target }, node: this.p.node, stores: this.p.stores } });
   }
 
   render() {
@@ -26,7 +27,10 @@ export default class Actions {
     return v_flex().id("sessions-actions").size_full().p(6).gap(4).bg(t.popover).text_color(t.foreground).text_size(12.5)
       .track_focus(this.handle).on_key_down((event, cx) => {
         if (event.key === "escape") closeOverlay(this.p.overlay);
-        else if (event.key === "down" || event.key === "up") this.at = this.canTrash ? 1 - this.at : 0;
+        else if (event.key === "down" || event.key === "up") {
+          const step = event.key === "down" ? 1 : -1;
+          do { this.at = (this.at + step + this.items.length) % this.items.length; } while (this.items[this.at].disabled);
+        }
         else if (event.key === "enter") this.choose(this.at);
         else return;
         cx.stop_propagation(); cx.notify();

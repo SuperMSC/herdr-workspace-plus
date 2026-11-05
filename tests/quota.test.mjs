@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { spawn } from "node:child_process";
 import { claudeCredential, claudeQuota, fetchClaude, codexQuota, agyQuota, supportsAgyUsage } from "../mods/sessions-plus/quota.mjs";
-import { claudeWindows, codexWindows, agyWindows, resetTime, percentage, resetLabel } from "../mods/sessions-plus/quota-model.js";
+import { claudeWindows, codexWindows, agyWindows, resetTime, percentage, resetLabel, quotaWarning } from "../mods/sessions-plus/quota-model.js";
 import { PROVIDERS } from "../mods/sessions-plus/model.js";
 
 const agyReply = { status: "SUCCESS", command: { name: "usage", data: { groups: [{ name: "Gemini", buckets: [
@@ -184,15 +184,15 @@ function quotaFixture(state = {}, { deferredSpawn = false } = {}) {
   const source = readFileSync(new URL("../mods/sessions-plus/quota.js", import.meta.url), "utf8")
     .replace(/^import .*;\n/gm, "").replace("export default class", "return class");
   const dependencies = {
-    PROVIDERS, percentage, resetLabel, div: quotaElement, h_flex: quotaElement, v_flex: quotaElement,
+    PROVIDERS, percentage, resetLabel, quotaWarning, div: quotaElement, svg: quotaElement, h_flex: quotaElement, v_flex: quotaElement,
     Date: class extends Date { static now() { return now; } },
     theme: () => ({ selected: "selected", surface: "surface" }), window: () => ({ platform: "macos" }), appHome: () => "/fixture/herdr",
     shared: key => state[key], setShared: (key, value) => { state[key] = value; },
-    providerIcon: provider => ({ provider, nodes: [] }),
+    providerIcon: provider => Object.assign(quotaElement(), { provider }),
     exec: (program, args) => new Promise((resolve, reject) => { calls.push({ program, args, provider: args[1], resolve, reject }); }),
   };
   const Quota = new Function(...Object.keys(dependencies), source)(...Object.values(dependencies));
-  const cx = { notify() {}, spawn(task) { if (deferredSpawn) queued.push(task); else tasks.push(task(cx)); } };
+  const cx = { notify() {}, timer: { after() {} }, spawn(task) { if (deferredSpawn) queued.push(task); else tasks.push(task(cx)); } };
   const quota = new Quota(); quota.init({}, cx);
   const render = () => quota.render();
   const find = (id, tree = render()) => quotaNodes(tree).find(node => node.attributes?.id === id);
@@ -274,7 +274,8 @@ test("in-flight responses cannot reveal hidden cards and an empty Status remains
   for (const provider of Object.keys(PROVIDERS)) f.click(`quota-show-${provider}`);
   assert.deepEqual(f.providers(), []);
   assert.match(quotaText(f.find("quota-cards")), /All agents are hidden/);
-  assert.equal(quotaText(f.find("quota-refresh")), "Refresh");
+  assert.equal(quotaText(f.find("quota-refresh")), "");
+  assert.equal(f.find("quota-refresh").attributes.tooltip, "Show an account in Agents to refresh");
   assert.equal(quotaText(f.find("quota-agents")), "Agents ▴");
   await f.finish();
   assert.deepEqual(f.providers(), []);
@@ -324,12 +325,12 @@ test("missing CLI and signed-out providers are omitted while another account rem
   assert.deepEqual(f.providers(), ["claude", "codex", "agy"]);
 });
 
-test("all unavailable accounts use one quiet empty state and no error cards", async () => {
+test("initial service failures show each provider's warning without invented readings", async () => {
   const f = quotaFixture();
   await f.finish(Object.fromEntries(Object.keys(PROVIDERS).map(provider => [provider, { state: "unavailable", windows: [], message: "Unavailable provider error" }])));
-  assert.deepEqual(f.providers(), []);
-  assert.equal(quotaText(f.find("quota-cards")), "No account quota to show.");
-  assert.doesNotMatch(quotaText(f.render()), /Unavailable provider error/);
+  assert.deepEqual(f.providers(), ["claude", "codex", "agy"]);
+  for (const provider of Object.keys(PROVIDERS)) assert(f.find(`quota-warning-${provider}`));
+  assert.doesNotMatch(quotaText(f.find("quota-cards")), /Updated|\d+%/);
 });
 
 test("uninstalling or signing out clears cached cards while temporary failures retain Stale", async () => {
@@ -348,7 +349,7 @@ test("uninstalling or signing out clears cached cards while temporary failures r
 test("temporary initial quota failures retry automatically while preserving the refresh cooldown", async () => {
   const f = quotaFixture();
   await f.finish(Object.fromEntries(Object.keys(PROVIDERS).map(provider => [provider, { state: "unavailable", windows: [], message: "Temporary service failure" }])));
-  assert.deepEqual(f.providers(), []);
+  assert.deepEqual(f.providers(), ["claude", "codex", "agy"]);
   f.tick(59999); f.refresh(true);
   assert.equal(f.calls.length, 3);
   f.tick(240001); f.refresh(true);
@@ -360,7 +361,7 @@ test("temporary initial quota failures retry automatically while preserving the 
 test("an initial exec rejection without cached readings recovers on the next automatic refresh", async () => {
   const f = quotaFixture();
   await f.fail();
-  assert.deepEqual(f.providers(), []);
+  assert.deepEqual(f.providers(), ["claude", "codex", "agy"]);
   assert(Object.values(f.quota.data).every(data => data.state === "unavailable"));
   f.tick(300000); f.refresh(true);
   assert.equal(f.calls.length, 6);

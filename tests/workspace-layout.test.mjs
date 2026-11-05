@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { integrateWorkspace } from "../workspace-layout.mjs";
+import { integrateWorkspace, restoreNativeSpaces } from "../workspace-layout.mjs";
 
 function fixture() {
   return {
@@ -245,4 +245,17 @@ test("a split footer with unrelated user blocks preserves them and removes only 
   assert.equal(again.integrated, true);
   assert.equal(again.changed, false);
   assert.deepEqual(again.layout, result.layout);
+});
+
+
+test("retired Spaces restoration changes only its exact mod reference and is repeatable", () => {
+  const source = fixture(), spaces = find(source, "spaces");
+  spaces.content = { mod: "spaces-plus", props: { keep: [1, 2] }, title: "Personal spaces" };
+  spaces.size = { px: 275 }; spaces.min = 140; spaces.hidden = true;
+  source.children.push({ id: "custom-spaces", type: "block", content: { mod: "spaces-plus-custom", props: { keep: true } } });
+  const before = structuredClone(source), result = restoreNativeSpaces(source);
+  assert.deepEqual(source, before); assert.equal(result.changed, true);
+  const expected = structuredClone(source); find(expected, "spaces").content.mod = "spaces";
+  assert.deepEqual(result.layout, expected);
+  assert.deepEqual(restoreNativeSpaces(result.layout), { layout: result.layout, changed: false });
 });

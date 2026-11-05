@@ -134,19 +134,30 @@ function unchanged(path, saved, device) {
   if (JSON.stringify(fingerprint(path, device)) !== JSON.stringify(saved)) throw new Error("The session changed during this operation. Close its agent and retry.");
 }
 
+function missingSession() {
+  return Object.assign(new Error("This session is no longer available. Refresh the list."), { code: "SESSION_MISSING" });
+}
+
 function plan(key, config) {
   let identity;
   try { identity = JSON.parse(key); } catch { throw new Error("Invalid session identity."); }
   if (!Array.isArray(identity) || identity.length !== 3 || !Object.hasOwn(PROVIDERS, identity[0]) || !UUID.test(identity[2]) || identity[1] !== config.stores[identity[0]]) throw new Error("Invalid session identity or data directory.");
   const [provider, store, id] = identity;
-  if (guarded(store, { directory: true }).dev !== config.device) throw new Error("Session Trash supports only data on the same volume as your home folder.");
+  const storeInfo = guarded(store, { directory: true, missing: true });
+  if (!storeInfo) throw missingSession();
+  if (storeInfo.dev !== config.device) throw new Error("Session Trash supports only data on the same volume as your home folder.");
+  const history = join(store, provider === "claude" ? "projects" : provider === "codex" ? "sessions" : "conversations");
+  if (!guarded(history, { directory: true, missing: true })) throw missingSession();
   let candidates;
   if (provider === "claude") candidates = walk(join(store, "projects"), name => name === `${id}.jsonl`, 1);
   else if (provider === "codex") candidates = walk(join(store, "sessions"), name => name.startsWith("rollout-") && name.endsWith(`-${id}.jsonl`), 3);
   else candidates = [join(store, "conversations", `${id}.db`)];
-  if (candidates.length !== 1) throw new Error(candidates.length ? "More than one file matches this session. No files were moved." : "This session is no longer available. Refresh the list.");
+  if (!candidates.length) throw missingSession();
+  if (candidates.length !== 1) throw new Error("More than one file matches this session. No files were moved.");
   const source = candidates[0];
-  if (!guarded(source).isFile()) throw new Error("The session file is unavailable.");
+  const sourceInfo = guarded(source, { missing: true });
+  if (!sourceInfo) throw missingSession();
+  if (!sourceInfo.isFile()) throw new Error("The session file is unavailable.");
   const data = scan(config), row = data.rows.find(item => item.key === key);
   if (!row) throw new Error("This session is no longer available. Refresh the list.");
   if (row.ambiguous || (provider !== "agy" && row.source !== source)) throw new Error("Session metadata does not uniquely match its file. No files were moved.");
@@ -162,6 +173,7 @@ function plan(key, config) {
 export function providerProcess(provider, command, args = "") {
   const name = basename(command).toLowerCase();
   if (name === provider || name === provider + ".exe") return true;
+  if (provider === "claude" && /\/claude\/versions\/\d[^/]*$/.test(command)) return true;
   if (provider !== "agy" && new RegExp(`/${provider}\\.app/Contents/`, "i").test(command)) return true;
   if (provider === "agy" && ["antigravity", "antigravity-cli"].includes(name)) return true;
   if (!["node", "nodejs", "bun"].includes(name)) return false;
@@ -180,19 +192,42 @@ export function providerProcess(provider, command, args = "") {
   return /\/(?:antigravity-cli|@google\/antigravity)\/(?:dist\/|bin\/)?(?:index|cli|main)\.(?:m?js|cjs)$/.test(script);
 }
 
-/** Conservatively reject every running instance of the selected provider. */
-export function checkInactive(row, paths, snapshots) {
-  const processes = spawnSync("/bin/ps", ["-axo", "pid=,comm="], { encoding: "utf8", timeout: 5000, maxBuffer: 8 * 1024 * 1024 });
-  const argumentsList = spawnSync("/bin/ps", ["-axo", "pid=,args="], { encoding: "utf8", timeout: 5000, maxBuffer: 8 * 1024 * 1024 });
+/** Match an explicit session identity, not other conversations using the same CLI. */
+export function sessionProcess(row, command, args = "", pid) {
+  if (!providerProcess(row.provider, command, args) || !UUID.test(row.id ?? "")) return false;
+  const words = args.match(/"[^"\n]*"|'[^'\n]*'|\S+/g)?.map(value => value.replace(/^(['"])(.*)\1$/, "$2")) || [];
+  const flags = row.provider === "codex" ? ["resume"] : row.provider === "agy" ? ["--conversation"] : ["--resume", "-r", "--session-id"];
+  for (let index = 0; index < words.length; index++) {
+    const [flag, inline] = words[index].split("=", 2);
+    if (flags.includes(flag) && (inline ?? words[index + 1]) === row.id) return true;
+  }
+  // Claude also publishes the session of a freshly started CLI under its PID.
+  if (row.provider === "claude" && row.store && Number.isSafeInteger(pid) && pid > 0) {
+    const path = join(row.store, "sessions", `${pid}.json`), info = guarded(path, { missing: true });
+    if (info) {
+      if (!info.isFile() || info.size > 65536) throw new Error("Could not validate the active Claude session record.");
+      let current;
+      try { current = JSON.parse(readFileSync(path, "utf8")); }
+      catch { throw new Error("Could not read the active Claude session record. Retry shortly."); }
+      if (current.sessionId === row.id) return true;
+    }
+  }
+  return false;
+}
+
+/** Reject the selected session's process or open files, including restored payloads. */
+export function checkInactive(row, paths, snapshots, { run = spawnSync } = {}) {
+  const processes = run("/bin/ps", ["-axo", "pid=,comm="], { encoding: "utf8", timeout: 5000, maxBuffer: 8 * 1024 * 1024 });
+  const argumentsList = run("/bin/ps", ["-axo", "pid=,args="], { encoding: "utf8", timeout: 5000, maxBuffer: 8 * 1024 * 1024 });
   if (processes.status !== 0 || argumentsList.status !== 0) throw new Error("Could not verify that the agent is stopped. Close its CLI and desktop app, then retry.");
   const argumentsByPid = new Map(argumentsList.stdout.split("\n").flatMap(line => { const match = /^\s*(\d+)\s+(.*)$/.exec(line); return match ? [[match[1], match[2]]] : []; }));
   for (const line of processes.stdout.split("\n")) {
     const found = /^\s*(\d+)\s+(.*)$/.exec(line);
-    if (found && Number(found[1]) !== process.pid && providerProcess(row.provider, found[2], argumentsByPid.get(found[1]))) throw new Error(`Close ${PROVIDERS[row.provider]} CLI and desktop processes before moving or restoring sessions.`);
+    if (found && Number(found[1]) !== process.pid && sessionProcess(row, found[2], argumentsByPid.get(found[1]), Number(found[1]))) throw new Error("This session is still running. Close its agent before moving or restoring it.");
   }
   const all = paths.flatMap((path, index) => snapshots[index].map(item => item.path ? join(path, item.path) : path));
   for (let index = 0; index < all.length; index += 128) {
-    const result = spawnSync("/usr/sbin/lsof", ["-Fpn", "--", ...all.slice(index, index + 128)], { encoding: "utf8", timeout: 10000, maxBuffer: 1024 * 1024 });
+    const result = run("/usr/sbin/lsof", ["-Fpn", "--", ...all.slice(index, index + 128)], { encoding: "utf8", timeout: 10000, maxBuffer: 1024 * 1024 });
     // lsof can return 1 when only some requested paths are open; matching
     // process records still prove that the session is in use.
     if (/^p\d+/m.test(result.stdout || "")) throw new Error("This session is in use. Close its agent and retry.");
@@ -351,7 +386,16 @@ export function list(options = {}) {
       const token = file.slice(0, -5);
       if (!UUID.test(token)) continue;
       let entry;
-      try { entry = readEntry(config, token); entries.push(publicEntry(config, entry)); }
+      try {
+        entry = readEntry(config, token);
+        const view = publicEntry(config, entry);
+        if (view.location === "missing" && entry.status === "trashed") {
+          // Finder already removed the bundle. Only its obsolete local index is pruned.
+          unlinkSync(journalPath(config, token));
+          continue;
+        }
+        entries.push(view);
+      }
       catch (error) {
         // One damaged or differently configured record must not hide intact
         // recovery entries. Keep its files and disable its Restore action.
@@ -408,5 +452,5 @@ if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.m
     const actions = { prepare: () => prepare(value, options), trash: () => trash(value, options), list: () => list(options), restore: () => restore(value, options) };
     if (!Object.hasOwn(actions, action)) throw new Error("Unknown Session Trash action.");
     process.stdout.write(JSON.stringify(actions[action]()));
-  } catch (error) { process.stdout.write(JSON.stringify({ error: error.message || "Session Trash could not complete this operation." })); process.exitCode = 1; }
+  } catch (error) { process.stdout.write(JSON.stringify({ error: error.message || "Session Trash could not complete this operation.", ...(error.code === "SESSION_MISSING" ? { code: error.code } : {}) })); process.exitCode = 1; }
 }

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { INBOX_DISMISSED, inboxRows } from "../mods/sessions-plus/inbox-model.js";
 
 function element() {
   const value = { children: [], attributes: {}, events: {} };
@@ -22,8 +23,9 @@ function fixture({ spaces = [], agents = [], bindings = [], platform = "macos", 
   const state = { spaces, agents, bindings, platform }, calls = [], initialized = [], instances = [];
   let renders = 0;
   const dependencies = {
+    INBOX_DISMISSED, inboxRows, terminals: () => [], shared: () => ({}), openOverlay: (...args) => calls.push(["overlay", ...args]),
     div: element, svg: element, h_flex: element, theme: () => ({}),
-    spaces: () => state.spaces, agents: () => state.agents, keys: () => state.bindings,
+    spaces: () => state.spaces, agents: () => state.agents.map((agent, index) => ({ address: `t${index}`, ...agent })), keys: () => state.bindings,
     window: () => ({ platform: state.platform }), run: (...args) => calls.push(args),
     StatusBar: class {
       constructor() { instances.push(this); }
@@ -101,4 +103,12 @@ test("the footer initializes one embedded StatusBar and forwards helper properti
   assert.deepEqual(f.initialized[0].props, { ...props, embedded: true });
   assert.deepEqual(props, before);
   assert.equal(f.renders(), 3);
+});
+
+
+test("the agent count and needs-you badge open the Inbox without ending an agent", () => {
+  const f = fixture({ agents: [{ address: "t1", status: "blocked", seq: 4 }] });
+  find(f.render(), "workspace-inbox").events.on_click();
+  assert.equal(f.calls.length, 1); assert.equal(f.calls[0][0], "overlay");
+  assert.equal(f.calls[0][1].props.role, "inbox");
 });

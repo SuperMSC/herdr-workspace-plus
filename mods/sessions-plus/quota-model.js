@@ -28,7 +28,8 @@ export function codexWindows(data) {
   const buckets = data?.rateLimitsByLimitId && Object.keys(data.rateLimitsByLimitId).length ? Object.values(data.rateLimitsByLimitId) : [data?.rateLimits];
   return buckets.filter(Boolean).flatMap(bucket => ["primary", "secondary"].flatMap(key => {
     const raw = bucket[key];
-    const name = `${bucket.limitName || bucket.limitId || "Codex"} · ${durationLabel(raw?.windowDurationMins)}`;
+    const pool = label(bucket.limitName || bucket.limitId || "Codex").trim();
+    const name = /^codex$/i.test(pool) ? durationLabel(raw?.windowDurationMins) : `${pool} · ${durationLabel(raw?.windowDurationMins)}`;
     const row = window(`${bucket.limitId || "codex"}:${key}`, name, raw?.usedPercent, raw?.resetsAt, raw?.windowDurationMins);
     return row ? [row] : [];
   }));
@@ -43,6 +44,10 @@ export function agyWindows(envelope) {
     const row = window(bucket.id, name, (1 - fraction) * 100, bucket.reset_time, bucket.window === "weekly" ? 10080 : bucket.window === "5h" ? 300 : null);
     return row ? [row] : [];
   }));
+}
+export function quotaWarning(data) {
+  if (!["stale", "unavailable"].includes(data?.state) || ["missing-cli", "signed-out"].includes(data.reason)) return "";
+  return data.message || "Quota refresh failed. Try again.";
 }
 export function percentage(row, mode = "remaining") {
   if (row.unlimited) return "Unmetered";

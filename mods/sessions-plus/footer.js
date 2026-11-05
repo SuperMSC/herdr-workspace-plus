@@ -1,7 +1,8 @@
 import { div, svg } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { spaces, agents, theme, run, window, keys } from "herdr";
+import { spaces, agents, terminals, shared, openOverlay, theme, run, window, keys } from "herdr";
 import StatusBar from "./statusbar.js";
+import { INBOX_DISMISSED, inboxRows } from "./inbox-model.js";
 
 export default class Footer {
   init(p, cx) {
@@ -20,7 +21,7 @@ export default class Footer {
 
   render() {
     const t = theme(), space = spaces().find(item => item.active), list = agents();
-    const blocked = list.filter(item => item.status === "blocked").length;
+    const blocked = inboxRows(list, terminals(), shared(INBOX_DISMISSED)).filter(item => item.status === "blocked" && !item.dismissed).length;
     const label = (icon, text) => h_flex().gap(6).items_center().flex_none()
       .child(svg(`mods/workspace-chrome/${icon}.svg`).size(13))
       .child(div().max_w(160).truncate().child(text));
@@ -29,8 +30,9 @@ export default class Footer {
       .child(h_flex().id("workspace-status-context").gap(16).items_center().flex_none()
         .child(label(space?.machine ? "server" : "monitor", space?.machine ?? "This computer"))
         .when(Boolean(space?.branch), el => el.child(label("branch", space.branch)))
-        .child(h_flex().gap(6).items_center()
-          .child(div().size(6).rounded(3).bg(t.dim)).child(`${list.length} agents`)
+        .child(h_flex().id("workspace-inbox").gap(6).items_center().cursor_pointer().tooltip("Agent inbox · Needs you, finished, and working agents")
+          .on_click(() => openOverlay({ mod: "sessions-plus", kind: "dialog", frame: "none", width: 560, height: 500, props: { role: "inbox" } }))
+          .child(svg("mods/sessions-plus/inbox.svg").size(13).flex_none()).child(`${list.length} agents`)
           .when(blocked > 0, el => el.child(div().text_color(t.blocked).child(`· ${blocked} needs you`)))))
       .child(div().id("workspace-quota-inline").flex_1().min_w(0).h_full().child(this.status.render()))
       .child(div().id("workspace-commands").flex_none().text_color(t.dim).cursor_pointer()

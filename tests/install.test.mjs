@@ -281,3 +281,22 @@ test("a first installation of the full workspace puts Sessions in the stack with
   assert.equal(readFileSync(join(f.home, "shared.json"), "utf8"), '{"layout":"main","workspace.panels":["changes"]}\n');
   assert.equal(readFileSync(join(f.home, "keys.json"), "utf8"), '{"global":{}}\n');
 });
+
+test("installation does not install or overwrite the retired Spaces addon", t => {
+  const f = fixture(t);
+  mkdirSync(join(f.home, "mods", "spaces-plus"));
+  writeFileSync(join(f.home, "mods", "spaces-plus", "mine.txt"), "keep");
+  const result = install({ ...f, sessions: true });
+  assert.equal(result.spaces, undefined);
+  assert.deepEqual(readdirSync(join(f.home, "mods")).sort(), ["files-plus", "sessions-plus", "spaces-plus"]);
+  assert.equal(readFileSync(join(f.home, "mods", "spaces-plus", "mine.txt"), "utf8"), "keep");
+});
+
+
+test("a cloned layout restores retired Spaces references without changing node settings", () => {
+  const spaces = { id: "spaces", type: "block", size: { px: 270 }, hidden: true, content: { mod: "spaces-plus", props: { custom: true } } };
+  const original = { id: "root", type: "row", children: [spaces, { id: "files", type: "block", content: { mod: "files" } }] };
+  const before = structuredClone(original), result = cloneLayout(original, { sessions: true });
+  assert.deepEqual(original, before);
+  assert.deepEqual(result.children[0], { ...spaces, content: { ...spaces.content, mod: "spaces" } });
+});

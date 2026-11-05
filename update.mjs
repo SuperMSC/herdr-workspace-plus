@@ -5,7 +5,7 @@ import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { cloneLayout } from "./install.mjs";
-import { integrateWorkspace } from "./workspace-layout.mjs";
+import { integrateWorkspace, restoreNativeSpaces } from "./workspace-layout.mjs";
 import { DISPLAY_NAME, installedLayoutName } from "./layout-name.mjs";
 
 const packageRoot = dirname(fileURLToPath(import.meta.url));
@@ -96,7 +96,8 @@ export function update({
     originalLayout = readFileSync(layoutTarget, "utf8");
     const integration = integrateWorkspace(JSON.parse(originalLayout));
     if (!integration.integrated) throw new Error("This custom layout cannot be integrated automatically. Update without --integrate-layout to keep its existing interface.");
-    if (integration.changed) { serialized = JSON.stringify(integration.layout, null, 2) + "\n"; layoutUpdated = true; }
+    const nativeSpaces = restoreNativeSpaces(integration.layout);
+    if (integration.changed || nativeSpaces.changed) { serialized = JSON.stringify(nativeSpaces.layout, null, 2) + "\n"; layoutUpdated = true; }
   }
 
   // Prepare only NEW files on the destination filesystem. No old copy is saved.
@@ -149,7 +150,7 @@ function usage() {
     "Preserves existing layouts, shared state, and session-trash recovery records.",
     "Creates the Agent Workspace layout only when absent, using --layout (default: main).",
     "--files-only leaves any existing Sessions mod untouched.",
-    "--integrate-layout moves Sessions to the toolbar and quota to the status bar in a supported existing layout.",
+    "--integrate-layout integrates Sessions and quota and restores native Spaces in a supported existing layout.",
     "Default home: HERDR_APP_HOME, otherwise ~/.config/herdr-app.",
     "Does not run git pull, start Herdr, or switch its active layout.",
   ].join("\n");

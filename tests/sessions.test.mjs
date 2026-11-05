@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
-import { scan, validate, agySummaries } from "../mods/sessions-plus/history.mjs";
+import { scan, validate, preview, agySummaries } from "../mods/sessions-plus/history.mjs";
 import { NAMES, PENDING, OPERATIONS, OPERATION_TTL, operationPending, PROVIDERS, sessionKey, cleanTitle, argvIdentity, sessionRows, filterRows, resumeArgv, launchCommand } from "../mods/sessions-plus/model.js";
 
 const id = "11111111-1111-4111-8111-111111111111", second = "22222222-2222-4222-8222-222222222222";
@@ -172,4 +172,13 @@ test("renaming uses the captured identity and clearing restores the original tit
   const view = new Rename(); view.p = { target: a, overlay: "rename" }; view.input = { value: () => "My saved name" };
   view.save({ notify() {} }); assert.equal(state[NAMES][a.key], "My saved name"); assert.equal(state[NAMES][b.key], "Keep other name");
   view.input.value = () => ""; view.save({ notify() {} }); assert(!Object.hasOwn(state[NAMES], a.key)); assert.equal(closed.length, 2);
+});
+
+
+test("Antigravity preview never guesses its conversation database schema", t => {
+  const f = fixture(t), row = scan(f.options).rows.find(row => row.provider === "agy");
+  const conversation = join(f.stores.agy, "conversations", id + ".db"), before = readFileSync(conversation);
+  const result = preview(row.key, f.options);
+  assert.equal(result.available, false); assert.deepEqual(result.messages, []); assert.match(result.message, /Only its saved summary metadata/);
+  assert.deepEqual(readFileSync(conversation), before);
 });

@@ -5,6 +5,8 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { after, test } from "node:test";
+import { fileKey, fileTree, diffRows, splitRows } from "../mods/files-plus/git-model.js";
+import { createGitReader, READ } from "../mods/files-plus/git-reader.js";
 import { createGitActions } from "../mods/files-plus/git-actions.js";
 
 const run = promisify(execFile);
@@ -160,6 +162,7 @@ async function changesClass(overrides = {}) {
   let source = await readFile(new URL("../mods/files-plus/changes.js", import.meta.url), "utf8");
   source = source.replace(/^import .+;$/gm, "").replace("export default class Changes {", "return class Changes {");
   const values = {
+    projectContext: () => ({ cwd: "/fixture", on: null }), fileKey, fileTree, diffRows, splitRows, createGitReader, READ, VirtualListScrollHandle: { new: () => ({ scroll_to_item() {}, release() {} }) },
     spaces: () => [{ active: true, folder: "/fixture", machine: null }], panes: () => [], focused: () => ({}),
     exec: async () => ({ code: 0, stdout: "", stderr: "" }), readTextFile: async () => "", watchFolder: () => new Promise(() => {}),
     window: () => ({ platform: "macos" }), theme: () => ({}), settings: () => ({}), openOverlay() {},
@@ -192,7 +195,7 @@ test("an index change during refresh queues another refresh instead of losing it
   let change = null, statusCalls = 0, holdStatus, releaseStatus;
   const Changes = await changesClass({ shared: () => change, exec: async (_command, args) => {
     if (args.includes("--show-toplevel")) return { code: 0, stdout: "/fixture\n", stderr: "" };
-    if (args.includes("status")) {
+    if (args.includes("--porcelain=v1")) {
       statusCalls++;
       if (holdStatus) { holdStatus = false; await new Promise(resolve => { releaseStatus = resolve; }); }
       return { code: 0, stdout: "", stderr: "" };

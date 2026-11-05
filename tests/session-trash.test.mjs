@@ -8,7 +8,7 @@ import { once } from "node:events";
 import { pathToFileURL } from "node:url";
 import { scan } from "../mods/sessions-plus/history.mjs";
 import { sessionKey } from "../mods/sessions-plus/model.js";
-import { checkInactive, exclusiveMove, list, nativeTrash, prepare, providerProcess, restore, trash } from "../mods/sessions-plus/trash.mjs";
+import { checkInactive, exclusiveMove, list, nativeTrash, prepare, providerProcess, sessionProcess, restore, trash } from "../mods/sessions-plus/trash.mjs";
 
 const id = "11111111-1111-4111-8111-111111111111", other = "22222222-2222-4222-8222-222222222222";
 const mac = { skip: process.platform !== "darwin" };
@@ -173,11 +173,12 @@ test("restore movement failure rolls already-restored files back into the recove
   restore(entry.token, f.options, f.dependencies); assert(existsSync(f.files.agy)); assert(existsSync(f.files.agy + "-wal"));
 });
 
-test("emptying only the fixture bundle marks its persistent entry unavailable", mac, t => {
+test("emptying only the fixture bundle prunes its obsolete recovery index", mac, t => {
   const f = fixture(t), { entry } = trash(f.key("codex"), f.options, f.dependencies);
   rmSync(bundle(f, entry), { recursive: true });
-  const missing = list(f.options).entries[0]; assert.equal(missing.restorable, false); assert.equal(missing.location, "missing"); assert.match(missing.message, /no longer/);
-  assert.throws(() => restore(entry.token, f.options, f.dependencies), /no longer available/); assert(existsSync(journal(f, entry.token)));
+  assert.deepEqual(list(f.options).entries, []);
+  assert(!existsSync(journal(f, entry.token)));
+  assert(!existsSync(f.files.codex));
 });
 
 test("a damaged manifest or changed store does not hide other recoverable entries", mac, t => {
@@ -268,4 +269,83 @@ test("native macOS Trash and exclusive restoration round-trip only our unique fi
   restore(entry.token, options, { checkInactive: quiet }); assert.deepEqual(readFileSync(f.files.claude), original); assert(!existsSync(preciseTrash));
   const a = join(f.root, "a"), b = join(f.root, "b"); put(a, "Original A"); put(b, "Original B");
   assert.throws(() => exclusiveMove(a, b), /without overwriting/); assert.equal(readFileSync(a, "utf8"), "Original A"); assert.equal(readFileSync(b, "utf8"), "Original B");
+});
+
+
+for (const provider of ["claude", "codex", "agy"]) {
+  test(`${provider}: an already removed session returns SESSION_MISSING without modifying other history`, mac, t => {
+    const f = fixture(t), others = Object.values(f.files).filter(path => path !== f.files[provider]);
+    const before = others.map(path => readFileSync(path)), summary = readFileSync(f.database);
+    rmSync(f.files[provider]);
+    for (const action of [prepare, trash]) assert.throws(() => action(f.key(provider), f.options, f.dependencies), { code: "SESSION_MISSING" });
+    assert(!scan(f.options).rows.some(row => row.key === f.key(provider)));
+    assert.deepEqual(others.map(path => readFileSync(path)), before); assert.deepEqual(readFileSync(f.database), summary);
+    assert.deepEqual(list(f.options).entries, []);
+    const cli = spawnSync(process.execPath, [new URL("../mods/sessions-plus/trash.mjs", import.meta.url).pathname, "prepare", JSON.stringify(f.options), f.key(provider)], { encoding: "utf8" });
+    assert.equal(cli.status, 1); assert.equal(JSON.parse(cli.stdout).code, "SESSION_MISSING");
+  });
+}
+
+test("removed history directories are stale selections, but malformed sessions remain errors", mac, t => {
+  const f = fixture(t);
+  rmSync(join(f.stores.claude, "projects"), { recursive: true });
+  assert.throws(() => prepare(f.key("claude"), f.options, f.dependencies), { code: "SESSION_MISSING" });
+  writeFileSync(f.files.codex, "Malformed fixture JSON\n");
+  assert.throws(() => prepare(f.key("codex"), f.options, f.dependencies), error => error.code !== "SESSION_MISSING");
+  assert(existsSync(f.files.codex));
+});
+
+test("only the selected session's resume identity blocks a provider process", () => {
+  for (const [provider, flag] of [["codex", "resume"], ["claude", "--resume"], ["agy", "--conversation"]]) {
+    const row = { provider, id };
+    assert(sessionProcess(row, `/usr/local/bin/${provider}`, `${provider} ${flag} ${id}`));
+    assert(!sessionProcess(row, `/usr/local/bin/${provider}`, `${provider} ${flag} ${other}`));
+    assert(!sessionProcess(row, `/usr/local/bin/${provider}`, `${provider} -p 'explain ${flag} ${id}'`));
+    assert(!sessionProcess(row, "/bin/zsh", `zsh -c '${provider} ${flag} ${id}'`));
+  }
+  assert(sessionProcess({ provider: "claude", id }, "/usr/bin/node", `node /opt/node_modules/@anthropic-ai/claude-code/cli.js --session-id=${id}`));
+  assert(sessionProcess({ provider: "codex", id }, "/opt/codex", `codex exec resume ${id}`));
+});
+
+test("Claude's native executable and per-PID record protect a newly started conversation", mac, t => {
+  const f = fixture(t), row = { provider: "claude", id, store: f.stores.claude }, command = "/home/.local/share/claude/versions/2.1.118";
+  const record = join(f.stores.claude, "sessions", "12345.json");
+  put(record, JSON.stringify({ pid: 12345, sessionId: id }));
+  assert(sessionProcess(row, command, "claude", 12345));
+  put(record, JSON.stringify({ pid: 12345, sessionId: other }));
+  assert(!sessionProcess(row, command, "claude", 12345));
+  put(record, "Malformed record");
+  assert.throws(() => sessionProcess(row, command, "claude", 12345), /active Claude session record/);
+});
+
+test("inactive checks allow another CLI session and still reject selected or open sessions", () => {
+  const row = { provider: "codex", id }, paths = ["/fixture/session.jsonl"], snapshots = [[{ path: "" }]], calls = [];
+  let target = other, open = false, failed = false;
+  const run = (command, args) => {
+    calls.push({ command, args });
+    if (command === "/bin/ps") return { status: failed ? 1 : 0, stdout: `12345 ${args[1] === "pid=,comm=" ? "/opt/codex" : `codex resume ${target}`}\n`, stderr: "" };
+    return { status: 1, stdout: open ? "p12345\nn/fixture/session.jsonl\n" : "", stderr: "" };
+  };
+  assert.doesNotThrow(() => checkInactive(row, paths, snapshots, { run }));
+  assert(calls.some(call => call.command === "/usr/sbin/lsof" && call.args.includes(paths[0])));
+  target = id; assert.throws(() => checkInactive(row, paths, snapshots, { run }), /session is still running/);
+  target = other; open = true; assert.throws(() => checkInactive(row, paths, snapshots, { run }), /session is in use/);
+  failed = true; assert.throws(() => checkInactive(row, paths, snapshots, { run }), /Could not verify/);
+});
+
+test("pruning an emptied bundle preserves intact bundles and incomplete recovery journals", mac, t => {
+  const f = fixture(t), removed = trash(f.key("claude"), f.options, f.dependencies).entry;
+  const intact = trash(f.key("codex"), f.options, f.dependencies).entry;
+  const recovery = trash(f.key("agy"), f.options, f.dependencies).entry;
+  const intactJournal = readFileSync(journal(f, intact.token)), payload = readFileSync(join(bundle(f, intact), "data", intact.files[0]));
+  const record = JSON.parse(readFileSync(journal(f, recovery.token), "utf8")); record.status = "recovery";
+  writeFileSync(journal(f, recovery.token), JSON.stringify(record));
+  rmSync(bundle(f, removed), { recursive: true }); rmSync(bundle(f, recovery), { recursive: true });
+  const entries = list(f.options).entries;
+  assert.equal(entries.length, 2); assert(!existsSync(journal(f, removed.token)));
+  assert.equal(entries.find(entry => entry.token === recovery.token).location, "missing");
+  assert.equal(entries.find(entry => entry.token === recovery.token).status, "recovery");
+  assert(existsSync(journal(f, recovery.token)));
+  assert.deepEqual(readFileSync(journal(f, intact.token)), intactJournal);
+  assert.deepEqual(readFileSync(join(bundle(f, intact), "data", intact.files[0])), payload);
 });
