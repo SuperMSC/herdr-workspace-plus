@@ -5,10 +5,13 @@ import { delimiter, isAbsolute, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 const COMMON = ['/opt/homebrew/bin/rg', '/usr/local/bin/rg', '/usr/bin/rg'];
 function pathCandidates(name, env) { return String(env.PATH || '').split(delimiter).filter(Boolean).map(folder => resolve(folder, name)); }
+// macOS checks a newly installed or updated executable on its first run, which can take
+// over a second on a busy machine; a short probe would reject a real ripgrep as missing.
+export const PROBE_TIMEOUT = 5000;
 function usable(candidate, env, probe) {
   try {
     accessSync(candidate, constants.X_OK); if (!statSync(candidate).isFile()) return false;
-    const result = probe(candidate, ['--version'], { encoding: 'utf8', env, timeout: 1000, maxBuffer: 16384 });
+    const result = probe(candidate, ['--version'], { encoding: 'utf8', env, timeout: PROBE_TIMEOUT, maxBuffer: 16384 });
     return result.status === 0 && /^ripgrep\s+\d/m.test(result.stdout || '');
   } catch { return false; }
 }

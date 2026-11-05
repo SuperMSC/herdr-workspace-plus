@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { integrateWorkspace, restoreNativeSpaces } from "../workspace-layout.mjs";
+import { integrateWorkspace, restoreNativeSpaces, usePaneHeader } from "../workspace-layout.mjs";
 
 function fixture() {
   return {
@@ -258,4 +258,19 @@ test("retired Spaces restoration changes only its exact mod reference and is rep
   const expected = structuredClone(source); find(expected, "spaces").content.mod = "spaces";
   assert.deepEqual(result.layout, expected);
   assert.deepEqual(restoreNativeSpaces(result.layout), { layout: result.layout, changed: false });
+});
+
+test("the pane header switches to Files Plus, keeps its settings, and leaves other headers alone", () => {
+  const pane = header => ({ id: "main", type: "block", content: { tab: "active", pane: { gap: 8, lone: true, header } } });
+  const source = { id: "root", type: "row", children: [
+    pane({ content: { mod: "pane" }, height: 30, reveal: "always" }),
+    { id: "other", type: "block", content: { tab: "active", pane: { header: { content: { mod: "my-header", props: { a: 1 } } } } } },
+    { id: "files", type: "block", content: { mod: "files-plus" } },
+  ] };
+  const before = structuredClone(source), result = usePaneHeader(source);
+  assert.deepEqual(source, before);
+  assert.equal(result.changed, true);
+  assert.deepEqual(result.layout.children[0].content.pane, { gap: 8, lone: true, header: { content: { mod: "files-plus", props: { role: "pane-header" } }, height: 30, reveal: "always" } });
+  assert.deepEqual(result.layout.children[1], source.children[1]);
+  assert.deepEqual(usePaneHeader(result.layout), { layout: result.layout, changed: false });
 });

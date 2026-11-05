@@ -166,3 +166,20 @@ export function useProjectSpaces(source, on = true) {
   }
   return { layout, changed, found };
 }
+
+/**
+ * Frame tab panes with the Files Plus pane header: terminals look as before, and a file
+ * preview shows its file there instead of a second toolbar. Only Herdr's own `pane`
+ * header is replaced; other header mods and every header setting stay.
+ */
+export function usePaneHeader(source) {
+  const layout = structuredClone(source);
+  let changed = false;
+  for (const { node } of nodes(layout)) {
+    const header = node.content?.pane?.header;
+    if (node.type !== "block" || node.content?.tab !== "active" || !object(header?.content) || header.content.mod !== "pane") continue;
+    header.content = { ...header.content, mod: "files-plus", props: { ...(object(header.content.props) ? header.content.props : {}), role: "pane-header" } };
+    changed = true;
+  }
+  return { layout, changed };
+}

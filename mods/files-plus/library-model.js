@@ -36,3 +36,55 @@ export function breadcrumbs(root, file) {
   return [{ label: root?.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || root || "Files", path: "", dir: true },
     ...parts.map((label, i) => ({ label, path: parts.slice(0, i + 1).join("/"), dir: i < parts.length - 1 }))];
 }
+
+// How Recent and Pinned are listed: "flat" in their own order, or "tree" by folder.
+export const LIBRARY_VIEW_KEY = "files-plus.library-view.v1";
+export const libraryView = value => value === "tree" ? "tree" : "flat";
+
+/** Forget recent files: all of them, or those inside `folder`. Pins are kept. */
+export function forgetRecent(state, root, on, folder = "", now = Date.now()) {
+  if (!root || (folder && !validRelative(folder))) return state;
+  const key = projectKey(root, on), library = libraryFor(state, root, on);
+  const inside = path => !folder || path === folder || path.startsWith(folder + "/");
+  const recent = library.recent.filter(path => !inside(path));
+  if (recent.length === library.recent.length) return state;
+  return { projects: { ...state?.projects, [key]: { ...library, recent, updated: now } } };
+}
+
+/**
+ * Group relative paths into folders, folders first, then by name. A folder holding only one
+ * folder joins it on one row ("a/b"), as editors show compact folders.
+ * Returns [{ name, path, dir, count, children }], where count is the files inside.
+ */
+export function pathTree(paths) {
+  const root = { children: new Map() };
+  for (const path of paths) {
+    const parts = path.split("/");
+    let node = root;
+    parts.forEach((part, i) => {
+      if (!node.children.has(part)) node.children.set(part, { name: part, path: parts.slice(0, i + 1).join("/"), dir: i < parts.length - 1, children: new Map() });
+      node = node.children.get(part);
+    });
+  }
+  const build = node => [...node.children.values()]
+    .sort((a, b) => Number(b.dir) - Number(a.dir) || a.name.localeCompare(b.name))
+    .map(child => {
+      let item = child, name = child.name;
+      while (item.dir && item.children.size === 1 && [...item.children.values()][0].dir) {
+        item = [...item.children.values()][0];
+        name += "/" + item.name;
+      }
+      const children = item.dir ? build(item) : [];
+      return { name, path: item.path, dir: item.dir, count: item.dir ? children.reduce((n, c) => n + (c.dir ? c.count : 1), 0) : 1, children };
+    });
+  return build(root);
+}
+
+/** The visible rows of a path tree, skipping the children of folders in `folded`. */
+export function treeRows(nodes, folded = new Set(), depth = 0, out = []) {
+  for (const node of nodes) {
+    out.push({ path: node.path, name: node.name, dir: node.dir, count: node.count, depth, group: node.dir });
+    if (node.dir && !folded.has(node.path)) treeRows(node.children, folded, depth + 1, out);
+  }
+  return out;
+}

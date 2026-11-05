@@ -15,6 +15,9 @@ export function iconName(path, directory = false) {
     if ([".config", "config", "configs", "settings", ".vscode", ".idea"].includes(name)) return "folder-config";
     if (["src", "source", "lib"].includes(name)) return "folder-code";
     if (["doc", "docs", "documentation"].includes(name)) return "folder-docs";
+    if (["script", "scripts", "bin", "tools"].includes(name)) return "folder-scripts";
+    if (["data", "dataset", "datasets", "db", "sql"].includes(name)) return "folder-data";
+    if (["asset", "assets", "image", "images", "img", "static", "public", "media"].includes(name)) return "folder-assets";
     return "folder";
   }
   if (/^(dockerfile|makefile|justfile|\.env(?:\.|$)|\.gitignore$|\.gitattributes$|\.editorconfig$)/.test(name)) return "config";

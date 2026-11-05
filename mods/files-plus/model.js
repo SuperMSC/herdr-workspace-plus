@@ -89,3 +89,39 @@ export function applyPathChange(path, change) {
   const prefix = old.includes("/") ? old.slice(0, old.lastIndexOf("/") + 1) : "";
   return prefix + change.name + path.slice(old.length);
 }
+
+const MARK_RANK = { U: 4, D: 3, M: 2, A: 1 };
+
+/** Folders, relative to `root`, that contain a Git mark, each with the strongest mark inside. */
+export function dirtyFolders(marks, root) {
+  const prefix = String(root ?? "").replace(/\/+$/, "") + "/", out = new Map();
+  for (const [path, mark] of Object.entries(marks ?? {})) {
+    if (!path.startsWith(prefix)) continue;
+    const parts = path.slice(prefix.length).split("/");
+    for (let i = 1; i < parts.length; i++) {
+      const folder = parts.slice(0, i).join("/");
+      if ((MARK_RANK[mark] ?? 0) > (MARK_RANK[out.get(folder)] ?? 0)) out.set(folder, mark);
+    }
+  }
+  return out;
+}
+
+/** Mix two #rrggbb colors (alpha ignored); anything else comes back as `a` unchanged. */
+export function mixColor(a, b, amount) {
+  const parse = c => /^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(c ?? "") ? [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16)) : null;
+  const x = parse(a), y = parse(b);
+  if (!x || !y) return a;
+  return "#" + x.map((v, i) => Math.round(v + (y[i] - v) * amount).toString(16).padStart(2, "0")).join("");
+}
+
+/**
+ * The color for a Git mark, as editors show them: added green, deleted or conflicted red,
+ * modified amber. Terminal ANSI colors are tuned for text on black, so they are blended
+ * toward the theme's text color: the same lightness with less saturation. Modified takes a
+ * little red first, so a pure yellow becomes the amber that editors use.
+ */
+export function markColor(mark, t) {
+  if (!mark) return null;
+  const base = mark === "A" ? t.ansi2 : mark === "D" || mark === "U" ? t.ansi1 : mixColor(t.ansi3, t.ansi1, 0.2);
+  return mixColor(base, t.foreground, 0.35);
+}

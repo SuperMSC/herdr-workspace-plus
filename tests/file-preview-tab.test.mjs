@@ -21,7 +21,7 @@ function element() {
 }
 const nodes = node => !node || typeof node !== "object" ? [] : [node, ...node.childNodes.flatMap(nodes)];
 const find = (tree, id) => nodes(tree).find(node => node.attrs.id === id);
-function harness({ props = {}, storedPath, tabName = "old.py", registered = true } = {}) {
+function harness({ props = {}, storedPath, tabName = "old.py", registered = true, header = false } = {}) {
   const p = { root: "/captured", path: "src/old.py", on: null, previewId: "preview-1", ...props };
   const row = { tab: "file-tab", pane: "file-pane", space: "space-1", root: p.root, path: storedPath || p.path, on: p.on, previewId: p.previewId };
   const state = { [FILE_TABS_KEY]: { tabs: registered ? { [row.tab]: row } : {}, pending: { other: "preserve" } }, [model.CHANGE_KEY]: { revision: 1 } };
@@ -30,7 +30,7 @@ function harness({ props = {}, storedPath, tabName = "old.py", registered = true
   const opens = [], refreshes = [], closures = [], after = [], every = [], writes = [], commands = [], overlays = [];
   const cx = { notify() { assert(!rendering, "render must never notify"); notifications++; }, stop_propagation() { stopped++; },
     timer: { after(ms, callback) { after.push({ ms, callback }); }, every(ms, callback) { every.push({ ms, callback }); } } };
-  const deps = { ...library, ...model, FILE_TABS_KEY, div: element, h_flex: element, v_flex: element, fileIcon: element,
+  const deps = { ...library, ...model, FILE_TABS_KEY, DIRTY_KEY: "files-plus.dirty.v1", headerShown: () => header, div: element, h_flex: element, v_flex: element, fileIcon: element,
     iconButton: (id, _icon, label, callback) => element().id(id).tooltip(label).on_click(callback),
     Preview: class { open(root, path, on) { opens.push({ root, path, on }); } refresh() { refreshes.push(true); } close() { closures.push(true); } render() { return element().id("preview-body"); } },
     theme: () => ({}), settings: () => ({ zoom: 1 }), window: () => ({ platform: "macos" }),
@@ -130,4 +130,9 @@ test("invalid file targets show an error before any preview read or file action 
     assert.match(f.view.error, /No valid file/); assert.deepEqual(f.opens, []); assert.deepEqual(f.every, []);
     assert(!find(tree, "file-tab-actions")); assert(!find(tree, "file-tab-pin"));
   }
+});
+
+test("with the workspace pane header, the preview drops its own toolbar", () => {
+  const f = harness({ header: true }), tree = f.render();
+  assert(!find(tree, "file-tab-actions")); assert(!find(tree, "file-tab-pin")); assert(find(tree, "preview-body"));
 });

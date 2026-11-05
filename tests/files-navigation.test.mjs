@@ -112,3 +112,64 @@ test("modifier clicks open files normally, the header has no selection control a
   assert.equal(f.browser.root, "/other");
   f.render();
 });
+
+test("folders carry their strongest Git mark, marks map to theme colors, and folders have open icons", () => {
+  const marks = { "/project/src/deep/a.py": "A", "/project/src/b.py": "M", "/project/readme.md": "A", "/elsewhere/x.py": "D" };
+  assert.deepEqual([...model.dirtyFolders(marks, "/project/")].sort(), [["src", "M"], ["src/deep", "A"]]);
+  assert.equal(model.dirtyFolders({}, "/project").size, 0);
+  const t = { ansi1: "red", ansi2: "green", ansi3: "amber" };
+  assert.deepEqual(["A", "M", "D", "U", undefined].map(mark => model.markColor(mark, t)), ["green", "amber", "red", "red", null]);
+  // VS Code Dark: neon terminal yellow on near-black is blended toward the text color.
+  assert.equal(model.markColor("M", { ansi3: "#e5e510", ansi1: "#cd3131", foreground: "#bfbfbf" }), "#d4c052");
+  assert.equal(model.markColor("A", { ansi2: "#0dbc79", foreground: "#bfbfbf" }), "#4bbd92");
+  assert.equal(model.mixColor("#000000", "#ffffff80", 0.5), "#808080");
+  const source = readFileSync(new URL("../mods/files-plus/icons.js", import.meta.url), "utf8").replace(/^import .*;\n/gm, "").replaceAll("export function", "function");
+  const { iconFile } = new Function("div", "svg", "image", "iconName", source + "\nreturn { iconFile };")(element, element, element, iconName);
+  assert.equal(iconFile("src", true, true), "mods/files-plus/icons/folder-code-open.svg");
+  assert.equal(iconFile("scripts", true), "mods/files-plus/icons/folder-scripts.svg");
+  assert.equal(iconFile("a.py", false, true), "mods/files-plus/icons/python.svg");
+  for (const name of ["folder", "folder-code", "folder-docs", "folder-test", "folder-git", "folder-config", "folder-scripts", "folder-data", "folder-assets"])
+    for (const variant of [name, name + "-open"]) assert(existsSync(new URL(`../mods/files-plus/icons/${variant}.svg`, import.meta.url)), variant);
+});
+
+test("recent and pinned paths group into compact folders, and recent files clear by folder or all at once", () => {
+  const paths = ["AiData/Wechat/README.md", "GTSData/AnnounceInfo/a.py", "ruff.toml", "GTSData/AnnounceInfo/main.py", "GTSData/x.py"];
+  const rows = library.treeRows(library.pathTree(paths));
+  assert.deepEqual(rows.map(r => [r.depth, r.name, r.dir, r.count]), [
+    [0, "AiData/Wechat", true, 1], [1, "README.md", false, 1], [0, "GTSData", true, 3], [1, "AnnounceInfo", true, 2],
+    [2, "a.py", false, 1], [2, "main.py", false, 1], [1, "x.py", false, 1], [0, "ruff.toml", false, 1]]);
+  assert.equal(rows[0].path, "AiData/Wechat");
+  assert.deepEqual(library.treeRows(library.pathTree(paths), new Set(["GTSData"])).map(r => r.name), ["AiData/Wechat", "README.md", "GTSData", "ruff.toml"]);
+  let state;
+  for (const path of paths) { state = library.updateLibrary(state, "/p", null, "open", path); }
+  state = library.updateLibrary(state, "/p", null, "pin", "GTSData/x.py");
+  const folder = library.forgetRecent(state, "/p", null, "GTSData");
+  assert.deepEqual(library.libraryFor(folder, "/p").recent, ["ruff.toml", "AiData/Wechat/README.md"]);
+  assert.deepEqual(library.libraryFor(folder, "/p").pinned, ["GTSData/x.py"]);
+  assert.deepEqual(library.libraryFor(library.forgetRecent(state, "/p", null), "/p").recent, []);
+  assert.equal(library.forgetRecent(state, "/p", null, "../x"), state);
+  assert.equal(library.forgetRecent(state, "/p", null, "Missing"), state);
+  assert.equal(library.libraryView("tree"), "tree"); assert.equal(library.libraryView("junk"), "flat");
+});
+
+test("Recent lists flat with dimmed folders or by folder, folds folders, and clears only after a second click", async () => {
+  const f = harness(); await f.flush();
+  for (const path of ["src/a.py", "src/b.py", "readme.md"]) f.state[library.LIBRARY_KEY] = library.updateLibrary(f.state[library.LIBRARY_KEY], "/project", null, "open", path);
+  find(f.render(), "files-recent").events.on_click({}, f.cx);
+  assert.deepEqual(f.browser.visibleEntries().map(e => [e.name, e.hint]), [["readme.md", ""], ["b.py", "src"], ["a.py", "src"]]);
+  find(f.render(), "library-tree").events.on_click({}, f.cx);
+  assert.equal(f.state[library.LIBRARY_VIEW_KEY], "tree");
+  assert.deepEqual(f.browser.visibleEntries().map(e => e.name), ["src", "a.py", "b.py", "readme.md"]);
+  find(f.render(), "file-src").events.on_click({}, f.cx);
+  assert.deepEqual(f.browser.visibleEntries().map(e => e.name), ["src", "readme.md"]);
+  assert.equal(f.opened.length, 0);
+  find(f.render(), "forget-src").events.on_click({}, f.cx);
+  assert.deepEqual(library.libraryFor(f.state[library.LIBRARY_KEY], "/project").recent, ["readme.md"]);
+  find(f.render(), "recent-clear").events.on_click({}, f.cx);
+  assert.deepEqual(library.libraryFor(f.state[library.LIBRARY_KEY], "/project").recent, ["readme.md"]);
+  await f.flush(); assert.equal(f.browser.clearArmed, false);
+  find(f.render(), "recent-clear").events.on_click({}, f.cx);
+  find(f.render(), "recent-clear").events.on_click({}, f.cx);
+  assert.deepEqual(library.libraryFor(f.state[library.LIBRARY_KEY], "/project").recent, []);
+  assert(!find(f.render(), "recent-clear"));
+});

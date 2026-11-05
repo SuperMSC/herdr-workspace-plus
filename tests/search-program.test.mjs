@@ -34,3 +34,10 @@ test('resolver honors custom CODEX_HOME and discovers releases when current is m
   const bundled = await fake(join(codex, 'packages/standalone/releases/any-version/codex-path/rg'));
   assert.equal(resolveRipgrep(options(home, { env: { PATH: '', CODEX_HOME: codex } })), bundled);
 });
+test('resolver gives a slow first run of a real ripgrep time to answer', async t => {
+  const home = await fixture(t), rg = await fake(join(home, 'slow/rg'));
+  const seen = [];
+  const probe = (file, args, options) => { seen.push(options.timeout); return { status: 0, stdout: 'ripgrep 14.1.0\n' }; };
+  assert.equal(resolveRipgrep(options(home, { env: { PATH: dirname(rg) }, probe })), rg);
+  assert(seen.every(timeout => timeout >= 5000), `probe timeout ${seen}`);
+});

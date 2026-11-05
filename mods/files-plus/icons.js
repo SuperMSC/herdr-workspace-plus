@@ -1,8 +1,14 @@
 import { div, svg, image } from "gpui-kit";
 import { iconName } from "./icon-model.js";
 
-export function fileIcon(path, directory = false) {
-  return image(`mods/files-plus/icons/${iconName(path, directory)}.svg`).w(16).h(16).flex_none();
+/** The icon file for a path: folders have an open variant. */
+export function iconFile(path, directory = false, open = false) {
+  return `mods/files-plus/icons/${iconName(path, directory)}${directory && open ? "-open" : ""}.svg`;
+}
+
+// Full-color file and folder icons; each type keeps its own color in every theme.
+export function fileIcon(path, directory = false, open = false) {
+  return image(iconFile(path, directory, open)).w(16).h(16).flex_none();
 }
 
 export function iconButton(id, icon, label, click, t, active = false, disabled = false) {
