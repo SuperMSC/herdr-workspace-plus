@@ -1,4 +1,3 @@
-import { closeButton } from "./icons.js";
 import { div } from "gpui-kit";
 import { v_flex, h_flex, Input, InputState } from "gpui-base";
 import { closeOverlay, exec, theme } from "herdr";
@@ -68,8 +67,7 @@ export default class Dialog {
         cx.stop_propagation();
       })
       .child(h_flex().flex_none().gap(8).items_center()
-        .child(div().flex_1().min_w(0).text_size(15).font_semibold().child(TITLES[this.action] ?? "File action"))
-        .child(closeButton("files-dialog-close", "Close file action", () => { if (!this.busy) closeOverlay(this.p.overlay); }, t, this.busy)))
+        .child(div().flex_1().min_w(0).text_size(15).font_semibold().child(TITLES[this.action] ?? "File action")))
       .child(div().max_h(48).overflow_y_scrollbar().text_size(12).text_color(t.muted).child(path ?? "No file selected"))
       .child(this.immediate ? div().text_color(t.muted).child("Updating this file’s Git index entry. Working files are kept.") : trash ? div().text_color(t.muted).child("Move this item and its contents to the macOS Trash. You can restore it from there.") : div().h(36).px(10).flex_none().flex().items_center().rounded(7).border_1().border_color(t.border).child(Input.new(this.input).w_full().h_full().text_color(t.foreground)))
       .child(div().flex_1().min_h(0).overflow_y_scrollbar().text_size(12).text_color(this.error ? t.ansi1 : t.dim)

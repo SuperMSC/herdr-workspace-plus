@@ -2,7 +2,7 @@ import { fileIcon, closeButton } from "./icons.js";
 // Project search stays read-only and captures its folder when opened.
 import { div, svg } from 'gpui-kit';
 import { v_flex, h_flex, Input, InputState } from 'gpui-base';
-import { exec, appHome, theme, closeOverlay, spaces, panes, focused, shared, setShared } from 'herdr';
+import { exec, appHome, theme, spaces, panes, focused, shared, setShared } from 'herdr';
 import { LIBRARY_KEY, updateLibrary } from "./library-model.js";
 import { projectContext } from "./file-tabs.js";
 import Preview from './preview.js';
@@ -54,7 +54,7 @@ export default class Search {
   render(cx) {
     const t = theme(), groups = groupedMatches(this.matches), empty = !this.query.value().trim(), loading = Boolean(this.loading);
     return v_flex().id('project-search').size_full().min_h(0).min_w(0).rounded(10).overflow_hidden().border_1().border_color(t.border).bg(t.background).text_color(t.foreground).text_size(12).p(12).gap(8)
-      .child(h_flex().flex_none().gap(8).items_center().child(div().font_semibold().text_size(14).child('Project search')).child(div().flex_1().min_w(0).truncate().text_color(t.dim).child(this.root || 'No folder')).when(Boolean(this.overlay), row => row.child(closeButton('search-close', 'Close search', () => closeOverlay(this.overlay), t))))
+      .child(h_flex().flex_none().gap(8).items_center().child(div().font_semibold().text_size(14).child('Project search')).child(div().flex_1().min_w(0).truncate().text_color(t.dim).child(this.root || 'No folder')))
       .child(h_flex().flex_none().gap(5).items_center().child(Input.new(this.query).h(32).flex_1().min_w(80).px(8).rounded(5).bg(t.surface).border_1().border_color(t.input))
         .child(this.chip('content', 'Content', this.mode === 'content', (_e, cx) => { this.mode = 'content'; this.schedule(cx); }, t))
         .child(this.chip('files', 'Files', this.mode === 'files', (_e, cx) => { this.mode = 'files'; this.schedule(cx); }, t))

@@ -32,11 +32,6 @@ function viewClass(file, dependencies) {
   return new Function(...Object.keys(dependencies), source)(...Object.values(dependencies));
 }
 
-// Keep the real dismiss guard while replacing only native element construction.
-const iconsSource = readFileSync(new URL("../mods/sessions-plus/icons.js", import.meta.url), "utf8")
-  .replace(/^import .*;\n/gm, "").replace(/export function /g, "function ");
-const closeButton = new Function("div", "svg", "image", iconsSource + "\nreturn closeButton;")(element, element, element);
-
 const nodes = node => !node || typeof node !== "object" ? [] : [node, ...node.childNodes.flatMap(nodes), ...Object.values(node.slots).flatMap(nodes)];
 const find = (tree, id) => nodes(tree).find(node => node.attributes.id === id);
 const text = node => typeof node === "string" ? node : (node?.childNodes ?? []).map(text).join(" ");
@@ -48,7 +43,7 @@ function harness({ state = {}, target = session(), role, action = "trash", platf
   const cx = { notify() { notifications++; }, stop_propagation() { stopped++; }, focus_handle: () => ({ focus() {} }),
     spawn(task) { if (defer) queued.push(task); else tasks.push(task(cx)); },
     timer: { every(ms, callback) { timers.push({ ms, callback }); }, after(ms, callback) { timers.push({ ms, callback }); } } };
-  const dependencies = { ...model, ...inboxModel, closeButton, agents: () => running, createTrashClient, View: class {}, div: element, svg: element, h_flex: element, v_flex: element,
+  const dependencies = { ...model, ...inboxModel, agents: () => running, createTrashClient, View: class {}, div: element, svg: element, h_flex: element, v_flex: element,
     InputState: { new: () => ({ on() {}, value: () => "", focus() {} }) }, Input: { new: element }, providerIcon: (provider, size) => element().id(`provider-icon-${provider}`).size(size),
     Popover: { new: id => element().id(id) },
     theme: () => ({}), window: () => ({ platform }), appHome: () => "/fixture/herdr", props: () => p,
@@ -108,9 +103,9 @@ test("live, remote and unsupported-platform menus disable Trash", () => {
   }
 });
 
-test("menu opens a modal Trash confirmation with captured target and helper settings", () => {
+test("menu opens a Trash confirmation that a click beside it closes, with captured target and helper settings", () => {
   const f = harness(), menu = f.menu(); menu.choose(1);
-  assert.equal(f.overlays[0].modal, true); assert.equal(f.overlays[0].props.action, "trash");
+  assert.notEqual(f.overlays[0].modal, true); assert.equal(f.overlays[0].props.action, "trash");
   assert.deepEqual(f.overlays[0].props.target, session()); assert.equal(f.overlays[0].props.node, f.p.node);
   assert.deepEqual(f.overlays[0].props.stores, f.p.stores); assert.equal(f.calls.length, 0);
 });
@@ -155,10 +150,8 @@ test("queued mutations acquire the shared lock immediately and block resume", as
   const key = dialog.render().events["on_key_down:"];
   key({ key: "escape" }, f.cx); key({ key: "enter" }, f.cx);
   find(dialog.render(), "session-trash-cancel").events["on_click:"]({}, f.cx);
-  const titleClose = find(dialog.render(), "session-trash-close");
-  assert.equal(titleClose.attributes.disabled, true);
-  titleClose.events["on_click:"]({}, f.cx);
-  assert.equal(f.closed.length, 0); assert.equal(f.stopped(), 3);
+  assert(!find(dialog.render(), "session-trash-close"));
+  assert.equal(f.closed.length, 0); assert.equal(f.stopped(), 2);
   f.startQueued(); await f.finish();
   assert.equal(f.calls.filter(call => call.args[1] === "trash").length, 1);
   assert.deepEqual(f.state[model.OPERATIONS], {}); assert.equal(f.launches.length, 0);

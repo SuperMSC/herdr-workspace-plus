@@ -15,7 +15,7 @@ const save = next => setShared(STATE_KEY, next);
 
 /** Open the rename / new-project dialog. */
 export function openPrompt(props) {
-  openOverlay({ mod: MOD, kind: "dialog", frame: "none", modal: true, width: 400, height: 214, props: { role: "prompt", ...props } });
+  openOverlay({ mod: MOD, kind: "dialog", frame: "none", width: 400, height: 214, props: { role: "prompt", ...props } });
 }
 
 /** Open a menu role at the pointer, sized to its rows. */

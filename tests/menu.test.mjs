@@ -98,7 +98,8 @@ test("copy and rename use the captured target, without running programs", () => 
   next.menu.choose(next.menu.items.findIndex(item => item.id === "rename"), next.cx);
   assert.deepEqual(next.overlays[0].props.target, file());
   assert.equal(next.overlays[0].props.action, "rename");
-  assert.equal(next.overlays[0].modal, true);
+  // A click beside the dialog closes it, as system dialogs do.
+  assert.notEqual(next.overlays[0].modal, true);
   assert.equal(next.executions.length, 0);
 });
 
@@ -175,10 +176,11 @@ test("filesystem failure stays visible, preserves the dialog, and does not broad
   assert.equal(env.changes.length, 0);
 });
 
-test("busy dialogs block Escape and both current and stale close-button callbacks", () => {
+test("busy dialogs block Escape and both current and stale Cancel callbacks, and have no title close button", () => {
   const env = dialogHarness(file(), "rename");
   const nodes = node => typeof node !== "object" || !node ? [] : [node, ...node.childNodes.flatMap(nodes)];
-  const close = tree => nodes(tree).find(node => node.idValue === "files-dialog-close").events["on_click:"];
+  assert(!nodes(env.dialog.render()).some(node => node.idValue === "files-dialog-close"));
+  const close = tree => nodes(tree).find(node => node.idValue === "files-plus-cancel").events["on_click:"];
   const before = close(env.dialog.render());
   env.dialog.busy = true;
   before({}, env.cx);
@@ -203,11 +205,11 @@ test("Changes offers stage/unstage from each index/worktree state", () => {
   assert.equal(menuItems({ ...file(), kind: "changes", xy: "UU" }).find(item => item.id === "stage").label, "Stage Resolution");
 });
 
-test("Changes stage transfers the captured target to a modal task", async () => {
+test("Changes stage transfers the captured target to a dialog task", async () => {
   const target = { ...file(), kind: "changes", xy: " M" };
   const env = menuHarness(target);
   env.menu.choose(env.menu.items.findIndex(item => item.id === "stage"), env.cx);
-  assert.equal(env.overlays[0].modal, true);
+  assert.notEqual(env.overlays[0].modal, true);
   assert.deepEqual(env.overlays[0].props.target, target);
   assert.equal(env.executions.length, 0);
   const task = dialogHarness(target, "stage");

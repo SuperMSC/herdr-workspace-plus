@@ -1,9 +1,9 @@
 import { projectContext } from "./file-tabs.js";
-import { fileIcon, closeButton } from "./icons.js";
+import { fileIcon } from "./icons.js";
 // Modified from Herdr Changes (Apache-2.0). Git reads and UI extensions are independent of Git write actions.
 import { div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, VirtualListScrollHandle, v_resizable, resizable_panel } from "gpui-base";
-import { spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, window, openOverlay, closeOverlay, shared, setShared } from "herdr";
+import { spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, window, openOverlay, shared, setShared } from "herdr";
 import { CHANGE_KEY, targetFor, menuHeight } from "./model.js";
 import { fileKey, fileTree, diffRows, splitRows } from "./git-model.js";
 import { createGitReader, READ } from "./git-reader.js";
@@ -309,8 +309,7 @@ export default class Changes {
           .text_color(loading ? t.accent : t.muted).disabled(loading).tooltip(loading ? "Refreshing Git data…" : "Refresh Git data").accessibility_label("Refresh Git data")
           .when(loading, el => el.cursor_default()).when(!loading, el => el.cursor_pointer().hover(s => s.bg(t.hover)))
           .on_click((_e, cx) => { if (!this.loading && !this.historyLoading) { this.refresh(cx); if (this.page === "history") this.loadHistory(cx, true); cx.notify(); } })
-          .child(svg("mods/files-plus/refresh.svg").id("git-refresh-icon").size(14).flex_none().when(loading, el => el.spin(850))))
-        .when(Boolean(this.props.overlay), el => el.child(closeButton("git-preview-close", "Close diff preview", () => closeOverlay(this.props.overlay), t))))
+          .child(svg("mods/files-plus/refresh.svg").id("git-refresh-icon").size(14).flex_none().when(loading, el => el.spin(850)))))
       .child(h_flex().h(26).flex_none().px(10).gap(8).items_center().text_size(10).text_color(t.dim).child(div().flex_1().min_w(0).truncate().tooltip(this.branch.upstream ? `${branch} → ${this.branch.upstream}` : branch).child(branch)).child(div().flex_none().tooltip("Ahead/behind the last fetched upstream refs").child(counts)))
       .child(this.panes(t))
       .when(Boolean(this.note || this.error), e => e.child(div().px(10).py(5).text_size(11).text_color(t.ansi1).child(this.note || this.error)))

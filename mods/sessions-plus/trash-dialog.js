@@ -3,7 +3,6 @@ import { v_flex, h_flex } from "gpui-base";
 import { appHome, exec, terminals, panes, theme, window, shared, setShared, closeOverlay } from "herdr";
 import { NAMES, PENDING, OPERATIONS, CHANGE_KEY, OPERATION_TTL, operationPending, sessionRows, PROVIDERS } from "./model.js";
 import { createTrashClient } from "./trash-client.js";
-import { closeButton } from "./icons.js";
 
 export default class TrashDialog {
   init(p, cx) {
@@ -87,8 +86,7 @@ export default class TrashDialog {
         else return;
         cx.stop_propagation();
       })
-      .child(h_flex().flex_none().gap(8).items_center().child(div().flex_1().min_w(0).truncate().font_semibold().text_size(15).child(trash ? "Move Session to Trash?" : "Restore Session?"))
-        .child(closeButton("session-trash-close", "Close session dialog", () => { if (!this.busy) closeOverlay(this.p.overlay); }, t, Boolean(this.busy))))
+      .child(h_flex().flex_none().gap(8).items_center().child(div().flex_1().min_w(0).truncate().font_semibold().text_size(15).child(trash ? "Move Session to Trash?" : "Restore Session?")))
       .child(div().max_h(45).overflow_y_scrollbar().child(this.target.title || this.target.id || "Session"))
       .child(div().text_color(t.muted).child(trash ? "Move this session’s local history to Trash. You can restore it from Sessions → Trash until the Trash is emptied." : "Restore this session’s history to its original location. Existing files are never replaced."))
       .when(!trash && Boolean(this.target.message), el => el.child(div().text_size(11.5).text_color(t.muted).child(this.target.message)))

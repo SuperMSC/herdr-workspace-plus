@@ -77,7 +77,7 @@ Stage/Unstage must never discard working-tree edits or treat a filename as a Git
 6. Cancelling Trash preserves the item. Confirming Trash moves only the selected item to the native Trash; a symlink target stays intact.
 7. Changing the focused pane after opening a menu does not redirect its action. A remote target never invokes a local file action.
 8. Installation leaves the original layout, keys, and shared state byte-for-byte unchanged. It replaces both panel types, supports layouts with only one type, preserves other props, and initially prefers Files. An existing mod or destination layout causes a clear failure. Failed copying removes only the attempted installation.
-9. A Changes row menu targets that row's repository-relative path. Stage/Unstage immediately shows its modal progress view; busy Escape cannot dismiss it, and failures offer Retry and the header close icon. The operation affects only that file; partial staging and an initial repository work correctly without deleting working-tree data. Deleted files cannot be opened and reveal their parent folder instead.
+9. A Changes row menu targets that row's repository-relative path. Stage/Unstage immediately shows its progress view; busy Escape cannot dismiss it, and failures offer Retry, with a click outside or Escape to close. The operation affects only that file; partial staging and an initial repository work correctly without deleting working-tree data. Deleted files cannot be opened and reveal their parent folder instead.
 10. Commit Staged creates a commit from the index without staging unrelated files. A remote target never launches local OS actions or Git mutations.
 
 ## Sessions Plus companion
@@ -125,7 +125,7 @@ Quota query failures use a 13px warning-triangle SVG after the affected agent in
 
 Refresh controls use the same `refresh.svg`, a 14px glyph centered in a 24px square button, accessible labels and hover feedback. While loading, disable the button and spin the glyph at 850ms; never replace it with a font arrow or ellipsis. Keep the quota cooldown in the tooltip. Warning SVGs sit inside plain div wrappers so native tooltips are available.
 
-Dialog close controls share a 12px monochrome cross in a 24px square, rounded 4px, with a tooltip, accessible label and theme hover feedback. Keep the resting background and border clear. Place them at the top right across Files, Search, Changes, Sessions preview, Inbox and confirmation dialogs. Use `frame: "none"` with a rounded 10px bordered root to avoid duplicate host controls. Keep each mod self-contained with the same close helper and SVG. Retain Cancel as an operation action; disable close during pending mutations.
+Dialogs have no title close button. Open them as non-modal dialogs, so a click outside closes them as system dialogs do, and keep Escape. Use `frame: "none"` with a rounded 10px bordered root to avoid duplicate host controls. Retain Cancel as an operation action; Escape and Cancel stay disabled during pending mutations. A click outside closes only the dialog: the native operation still runs to completion.
 
 ## Gallery-derived workspace features
 

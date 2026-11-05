@@ -43,7 +43,7 @@ export default class Menu {
       closeOverlay(this.p.overlay);
     } else if (["createFile", "createFolder", "rename", "trash", "stage", "unstage"].includes(action)) {
       closeOverlay(this.p.overlay);
-      openOverlay({ mod: "files-plus", kind: "dialog", frame: "none", modal: true, width: 460, height: 290,
+      openOverlay({ mod: "files-plus", kind: "dialog", frame: "none", width: 460, height: 290,
         props: { role: "dialog", action, target } });
     } else {
       this.busy = true;
