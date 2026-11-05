@@ -6,9 +6,9 @@ import { spaces, panes, focused, exec, watchFolder, theme, settings, window, ope
 
 import { openFileTab, projectContext } from "./file-tabs.js";
 import { fileIcon, iconButton } from "./icons.js";
-import { LIBRARY_KEY, libraryFor, updateLibrary, remapLibrary, breadcrumbs } from "./library-model.js";
+import { LIBRARY_KEY, LIBRARY_VIEW_KEY, libraryFor, libraryView, updateLibrary, remapLibrary, breadcrumbs, forgetRecent, pathTree, treeRows } from "./library-model.js";
 
-import { CHANGE_KEY, SHOW_HIDDEN_KEY, visibleEntry, targetFor, menuHeight, applyPathChange } from "./model.js";
+import { CHANGE_KEY, SHOW_HIDDEN_KEY, visibleEntry, targetFor, menuHeight, applyPathChange, dirtyFolders, markColor } from "./model.js";
 
 function location() { return projectContext(); }
 const key = source => JSON.stringify(source || location());
@@ -41,7 +41,7 @@ async function directory(path, on, showHidden = false) {
 
 export default class Browser {
   init(_props, cx) {
-    this.source = _props.source; this.width = 320; this.mode = "tree"; this.browseFolder = "";
+    this.source = _props.source; this.width = 320; this.mode = "tree"; this.browseFolder = ""; this.libraryFolded = new Set(); this.clearArmed = false;
     this.handle = cx.focus_handle();
     this.lastChange = shared(CHANGE_KEY)?.revision;
     this.folderRequests = new Map();
@@ -161,7 +161,7 @@ export default class Browser {
   menu(relative, dir, cx, preferences = false) {
     cx.stop_propagation();
     const target = targetFor(this.root, relative, dir, this.on, window()?.platform);
-    if (target) openOverlay({ mod: "files-plus", kind: "popup", width: 252, height: menuHeight(target, { preferences }, globalThis.window.viewport_size().height / (settings().zoom || 1) * 0.85), props: { role: "menu", target, preferences } });
+    if (target) openOverlay({ mod: "files-plus", kind: "popup", width: 220, height: menuHeight(target, { preferences }, globalThis.window.viewport_size().height / (settings().zoom || 1) * 0.85), props: { role: "menu", target, preferences } });
   }
 
   consumeChange(cx) {
@@ -205,12 +205,48 @@ export default class Browser {
 
   visibleEntries() {
     if (this.mode === "tree") return this.listEntries();
-    return libraryFor(shared(LIBRARY_KEY), this.root, this.on)[this.mode].map(path => ({ path, name: path, dir: false, depth: 0 }));
+    const paths = libraryFor(shared(LIBRARY_KEY), this.root, this.on)[this.mode];
+    if (libraryView(shared(LIBRARY_VIEW_KEY)) === "tree") return treeRows(pathTree(paths), this.libraryFolded);
+    // Flat keeps the list's own order; the folder follows the name, dimmed.
+    return paths.map(path => { const at = path.lastIndexOf("/"); return { path, name: path.slice(at + 1), hint: at > 0 ? path.slice(0, at) : "", dir: false, depth: 0 }; });
+  }
+
+  foldLibrary(path, cx) {
+    if (this.libraryFolded.has(path)) this.libraryFolded.delete(path); else this.libraryFolded.add(path);
+    cx.notify();
+  }
+
+  /** Forget recent files: a folder's at once, or all of them after a second click. Files are never touched. */
+  forget(folder, cx) {
+    if (!folder && !this.clearArmed) {
+      const armed = this.clearArmed = Date.now();
+      cx.timer.after(3000, cx => { if (this.clearArmed === armed) { this.clearArmed = false; cx.notify(); } });
+      cx.notify();
+      return;
+    }
+    this.clearArmed = false;
+    const state = shared(LIBRARY_KEY), next = forgetRecent(state, this.root, this.on, folder);
+    if (next !== state) setShared(LIBRARY_KEY, next);
+    cx.notify();
+  }
+
+  libraryHeader(t, count) {
+    const view = libraryView(shared(LIBRARY_VIEW_KEY)), set = next => (_e, cx) => { setShared(LIBRARY_VIEW_KEY, next); cx.notify(); };
+    return h_flex().id("library-header").h(30).flex_none().pl(14).pr(8).pt(4).gap(2).items_center()
+      .child(div().flex_1().min_w(0).truncate().text_size(10.5).font_medium().text_color(t.dim).child(this.mode === "recent" ? "RECENT · THIS PROJECT" : "PINNED · THIS PROJECT"))
+      .child(this.segment("library-flat", "list", "Flat list", view === "flat", set("flat"), t))
+      .child(this.segment("library-tree", "nest", "Group by folder", view === "tree", set("tree"), t))
+      .when(this.mode === "recent" && count > 0, el => el.child(div().id("recent-clear").ml(4).px(7).h(22).flex_none().flex().items_center().rounded(5).cursor_pointer().text_size(11)
+        .text_color(this.clearArmed ? t.blocked : t.dim).when(Boolean(this.clearArmed), el => el.bg(t.hover))
+        .hover(s => s.bg(t.hover).text_color(this.clearArmed ? t.blocked : t.foreground))
+        .tooltip(this.clearArmed ? "Click again to clear the recent list. Files are not deleted." : "Clear the recent list")
+        .on_click((_e, cx) => { cx.stop_propagation(); this.forget("", cx); }).child(this.clearArmed ? "Clear all?" : "Clear")));
   }
 
   pick(entry, _e, cx) {
     this.handle.focus();
-    if (entry.dir) this.toggle(entry.path, cx);
+    if (entry.group) this.foldLibrary(entry.path, cx);
+    else if (entry.dir) this.toggle(entry.path, cx);
     else {
       try { openFileTab({ root: this.root, path: entry.path, on: this.on }, cx); this.show(entry.path, cx); }
       catch (error) { this.error = String(error.message ?? error); cx.notify(); }
@@ -219,16 +255,41 @@ export default class Browser {
 
   close() { this.disposed = true; this.context = null; }
 
+  dirtyFolders() {
+    if (this.dirtyMarks !== this.marks) { this.dirtyMarks = this.marks; this.dirty = dirtyFolders(this.marks, this.root); }
+    return this.dirty;
+  }
+
   row(entry, t, idPrefix = "file") {
-    const { path, name, dir, depth } = entry, open = this.folders.has(path), mark = this.marks[this.root + "/" + path];
-    return h_flex().id(idPrefix + "-" + path).h(28).flex_none().min_w(0).pl(8 + depth * 18).pr(8).gap(6).items_center().rounded(5).cursor_pointer()
-      .when(this.file === path, el => el.bg(t.selected)).hover(s => s.bg(t.hover))
+    const { path, name, dir, depth, group, hint } = entry, open = group ? !this.libraryFolded.has(path) : this.folders.has(path), mark = this.marks[this.root + "/" + path];
+    const inner = dir && !mark ? this.dirtyFolders().get(path) : null, active = this.file === path, tone = markColor(mark ?? inner, t);
+    // One 14px lane per level, each with a hairline, so nested rows read as a tree.
+    const guides = Array.from({ length: depth }, (_, i) => div().w(14).h_full().flex_none().flex().justify_center()
+      .child(div().w(1).h_full().bg(t.border)).id(`guide-${path}-${i}`));
+    return h_flex().id(idPrefix + "-" + path).h(26).flex_none().min_w(0).pl(4).pr(8).items_center().rounded(6).cursor_pointer()
+      .when(active, el => el.bg(t.selected)).when(!active, el => el.hover(s => s.bg(t.hover)))
       .on_click((e, cx) => this.pick(entry, e, cx)).on_mouse_down("right", (_e, cx) => this.menu(path, dir, cx))
-      .child(dir ? div().id("expand-" + path).w(14).h(24).flex_none().flex().items_center().on_click((_e, cx) => { cx.stop_propagation(); this.toggle(path, cx); }).child(svg("mods/files-plus/chevron-" + (open ? "down" : "right") + ".svg").size(12).text_color(t.dim)) : div().w(14).flex_none())
-      .child(fileIcon(path, dir)).child(div().flex_1().min_w(0).truncate().tooltip(path).child(name))
-      .when(Boolean(mark), el => el.child(div().text_size(11).text_color(mark === "A" ? t.ansi2 : mark === "D" || mark === "U" ? t.ansi1 : t.blocked).child(mark)))
-      .when(this.mode === "recent", el => el.child(iconButton("forget-" + path, "close", "Remove from recent files", (_e, cx) => { this.updateLibrary("forget", path); cx.notify(); }, t)))
-      .when(this.mode === "pinned", el => el.child(iconButton("unpin-" + path, "pin", "Unpin file", (_e, cx) => { this.updateLibrary("pin", path); cx.notify(); }, t, true)));
+      .children(guides)
+      .child(dir ? div().id("expand-" + path).w(16).h(24).flex_none().flex().items_center().justify_center().on_click((_e, cx) => { cx.stop_propagation(); if (group) this.foldLibrary(path, cx); else this.toggle(path, cx); }).child(svg("mods/files-plus/chevron-" + (open ? "down" : "right") + ".svg").size(10).text_color(open ? t.muted : t.dim)) : div().w(16).flex_none())
+      .child(div().w(16).mr(7).flex_none().flex().items_center().child(fileIcon(path, dir, open)))
+      .child(div().when(!hint, el => el.flex_1()).min_w(0).truncate().text_size(12.5).text_color(tone ?? t.foreground).when(active, el => el.font_medium()).tooltip(path).child(name))
+      .when(Boolean(hint), el => el.child(div().flex_1().min_w(0).ml(8).truncate().text_size(11.5).text_color(t.dim).child(hint)))
+      .when(Boolean(group), el => el.child(div().flex_none().mr(4).text_size(11).text_color(t.dim).child(String(entry.count))))
+      .when(Boolean(inner), el => el.child(div().size(5).mr(4).rounded(3).flex_none().bg(tone).tooltip("Contains changes")))
+      .when(Boolean(mark), el => el.child(div().w(14).flex_none().text_right().text_size(10.5).font_medium().text_color(tone).child(mark)))
+      .when(this.mode === "recent" && !group, el => el.child(iconButton("forget-" + path, "close", "Remove from recent files", (_e, cx) => { this.updateLibrary("forget", path); cx.notify(); }, t)))
+      .when(this.mode === "recent" && Boolean(group), el => el.child(iconButton("forget-" + path, "close", `Remove these ${entry.count} from recent files`, (_e, cx) => this.forget(path, cx), t)))
+      .when(this.mode === "pinned" && !group, el => el.child(iconButton("unpin-" + path, "pin", "Unpin file", (_e, cx) => { this.updateLibrary("pin", path); cx.notify(); }, t, true)));
+  }
+
+  /** One button of the view switch: the active one is raised, the rest stay quiet. */
+  segment(id, icon, label, active, click, t) {
+    return div().id(id).w(26).h(22).flex_none().flex().items_center().justify_center().rounded(5).cursor_pointer()
+      .tooltip(label).accessibility_label(label).text_color(active ? t.foreground : t.dim)
+      // Selected and hover colors read right in every theme, whether it writes them opaque or translucent.
+      .when(active, el => el.bg(t.selected)).when(!active, el => el.hover(s => s.bg(t.hover).text_color(t.muted)))
+      .on_click((e, cx) => { cx.stop_propagation(); click(e, cx); })
+      .child(svg(`mods/files-plus/icons/${icon}.svg`).size(13).flex_none());
   }
 
   rows(prefix, depth, out, t) { return [...out, ...this.listEntries(prefix, depth).map(entry => this.row(entry, t))]; }
@@ -248,26 +309,31 @@ export default class Browser {
     const visibleCrumbs = this.width < 420 && crumbs.length > 3 ? [crumbs[0], { label: "…", path: crumbs[crumbs.length - 3].path, dir: true }, ...crumbs.slice(-2)] : crumbs;
     const crumbMax = Math.min(180, Math.max(24, (this.width - 24 - (this.file ? 28 : 0)) / visibleCrumbs.length - 4));
     const tree = v_flex().id("files-navigation").flex_1().min_w(0).min_h(0)
-      .when(this.mode !== "tree", el => el.child(div().px(10).py(5).flex_none().text_size(11).text_color(t.dim).child(this.mode === "recent" ? "Recently opened · this project" : "Pinned files · this project")))
-      .child(v_flex().id("files-tree-" + this.mode + "-" + this.browseFolder).flex_1().min_h(0).overflow_y_scrollbar().p(6).on_mouse_down("right", (_e, cx) => this.menu(this.browseFolder, true, cx)).children(this.visibleEntries().map(entry => this.row(entry, t)))
+      .when(this.mode !== "tree", el => el.child(this.libraryHeader(t, library[this.mode].length)))
+      .child(v_flex().id("files-tree-" + this.mode + "-" + this.browseFolder).flex_1().min_h(0).overflow_y_scrollbar().px(6).py(4).on_mouse_down("right", (_e, cx) => this.menu(this.browseFolder, true, cx)).children(this.visibleEntries().map(entry => this.row(entry, t)))
         .when(!this.visibleEntries().length || Boolean(this.error && this.mode === "tree"), el => el.child(div().p(8).text_size(12).text_color(t.dim).child(this.mode === "tree" ? this.error || (this.loading ? "Loading files…" : this.root ? "No files" : "No folder") : this.mode === "recent" ? "Files you open will appear here." : "Use the pin beside a preview path to keep a file here.")))
         .when(this.limited && this.mode === "tree", el => el.child(div().p(8).text_size(11).text_color(t.dim).child("File list limited to 500 entries per folder and 5,000 total"))));
     return v_flex().id("files").size_full().min_h(0).min_w(0).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border).text_color(t.foreground).text_size(13).track_focus(this.handle)
       .on_size_change((size, cx) => { if (Math.abs(this.width - size.width) > 1) { this.width = size.width; cx.notify(); } })
-      .child(h_flex().h(42).flex_none().px(10).gap(3).items_center().border_b(1).border_color(t.border)
-        .child(div().font_semibold().flex_1().min_w(0).truncate().child("Files"))
-        .child(iconButton("files-tree-mode", "tree", "File tree", (_e, cx) => { this.mode = "tree"; this.show(null); cx.notify(); }, t, this.mode === "tree"))
-        .child(iconButton("files-recent", "history", "Recent files", (_e, cx) => { this.mode = "recent"; this.show(null); cx.notify(); }, t, this.mode === "recent"))
-        .child(iconButton("files-pinned", "pin", "Pinned files", (_e, cx) => { this.mode = "pinned"; this.show(null); cx.notify(); }, t, this.mode === "pinned"))
-        .child(iconButton("files-search", "search", "Search project", (_e, cx) => this.search(cx), t, false, !this.root))
-        .child(iconButton("files-plus-root-menu", "more", "File actions", (_e, cx) => this.menu(this.file ?? this.browseFolder, !this.file, cx, true), t)))
-      .child(h_flex().id("files-breadcrumbs").h(30).flex_none().px(8).gap(4).min_w(0).overflow_hidden().border_b(1).border_color(t.border)
-        .children(visibleCrumbs.map((crumb, index) => h_flex().w(Math.min(crumbMax, [...crumb.label].length * 7 + 12 + (index ? 12 : 0))).flex_none().min_w(0).gap(4).items_center()
-          .when(index > 0, el => el.child(div().flex_none().text_color(t.dim).child("›")))
-          .child(div().id("crumb-" + crumb.path).min_w(0).flex_1().truncate().text_size(11).text_color(crumb.dir ? t.muted : t.foreground).tooltip(crumb.path || this.root || "Files")
-            .when(crumb.dir, el => el.cursor_pointer().hover(s => s.text_color(t.accent))).on_click((_e, cx) => { if (crumb.dir) this.navigate(crumb.path, cx); }).child(crumb.label))))
-        .child(div().flex_1())
-        .when(Boolean(this.file), el => el.child(iconButton("files-pin-current", "pin", library.pinned.includes(this.file) ? "Unpin file" : "Pin file", (_e, cx) => { this.updateLibrary("pin", this.file); cx.notify(); }, t, library.pinned.includes(this.file)))))
+      // One header block: the title and controls, then the path, with a single divider below.
+      .child(v_flex().id("files-header").flex_none().px(12).pt(10).pb(6).gap(4)
+        .child(h_flex().h(26).gap(4).items_center()
+          .child(div().flex_1().min_w(0).truncate().text_size(13).font_semibold().child("Files"))
+          .child(h_flex().id("files-modes").flex_none().p(2).gap(1).rounded(7).border_1().border_color(t.border)
+            .child(this.segment("files-tree-mode", "tree", "File tree", this.mode === "tree", (_e, cx) => { this.mode = "tree"; this.show(null); cx.notify(); }, t))
+            .child(this.segment("files-recent", "history", "Recent files", this.mode === "recent", (_e, cx) => { this.mode = "recent"; this.show(null); cx.notify(); }, t))
+            .child(this.segment("files-pinned", "pin", "Pinned files", this.mode === "pinned", (_e, cx) => { this.mode = "pinned"; this.show(null); cx.notify(); }, t)))
+          .child(iconButton("files-search", "search", "Search project", (_e, cx) => this.search(cx), t, false, !this.root))
+          .child(iconButton("files-plus-root-menu", "more", "File actions", (_e, cx) => this.menu(this.file ?? this.browseFolder, !this.file, cx, true), t)))
+        .child(h_flex().id("files-breadcrumbs").h(22).flex_none().gap(4).min_w(0).overflow_hidden().items_center()
+          // Each crumb is as wide as its name, up to an even share of the row; longer names truncate.
+          .children(visibleCrumbs.map((crumb, index) => h_flex().max_w(crumbMax).flex_none().min_w(0).gap(4).items_center()
+            .when(index > 0, el => el.child(div().flex_none().text_size(11).text_color(t.dim).child("/")))
+            .child(div().id("crumb-" + crumb.path).min_w(0).truncate().text_size(11.5).text_color(crumb.dir && index < visibleCrumbs.length - 1 ? t.dim : t.muted).tooltip(crumb.path || this.root || "Files")
+              .when(crumb.dir, el => el.cursor_pointer().hover(s => s.text_color(t.accent))).on_click((_e, cx) => { if (crumb.dir) this.navigate(crumb.path, cx); }).child(crumb.label))))
+          .child(div().flex_1())
+          .when(Boolean(this.file), el => el.child(iconButton("files-pin-current", "pin", library.pinned.includes(this.file) ? "Unpin file" : "Pin file", (_e, cx) => { this.updateLibrary("pin", this.file); cx.notify(); }, t, library.pinned.includes(this.file))))))
+      .child(div().h(1).flex_none().mx(12).bg(t.border))
       .child(h_flex().id("files-content").flex_1().min_h(0).min_w(0).items_stretch().overflow_hidden()
         .child(tree));
   }

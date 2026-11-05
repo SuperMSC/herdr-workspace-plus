@@ -4,7 +4,7 @@ import { constants, closeSync, copyFileSync, lstatSync, mkdirSync, openSync, rea
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { integrateWorkspace, restoreNativeSpaces, useProjectSpaces } from "./workspace-layout.mjs";
+import { integrateWorkspace, restoreNativeSpaces, useProjectSpaces, usePaneHeader } from "./workspace-layout.mjs";
 import { DISPLAY_NAME, installedLayoutName } from "./layout-name.mjs";
 
 const packageRoot = dirname(fileURLToPath(import.meta.url));
@@ -39,7 +39,7 @@ function sourceFiles(root, relative = "") {
 }
 
 export function cloneLayout(source, { sessions = false, projects = false } = {}) {
-  let layout = restoreNativeSpaces(source).layout;
+  let layout = usePaneHeader(restoreNativeSpaces(source).layout).layout;
   if (projects) {
     const switched = useProjectSpaces(layout);
     if (!switched.found) throw new Error('The source layout has no Spaces block (content.mod = "spaces"). Choose another --layout or omit --project-spaces.');

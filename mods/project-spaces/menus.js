@@ -20,7 +20,7 @@ export function openPrompt(props) {
 
 /** Open a menu role at the pointer, sized to its rows. */
 export function openMenu(role, props, rows) {
-  openOverlay({ mod: MOD, kind: "popup", width: 236, height: Math.min(460, 14 + rows * 31), props: { role, ...props } });
+  openOverlay({ mod: MOD, kind: "popup", width: 220, height: Math.min(460, 14 + rows * 31), props: { role, ...props } });
 }
 
 function spaceItems(p) {

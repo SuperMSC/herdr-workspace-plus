@@ -5,7 +5,7 @@ import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { cloneLayout } from "./install.mjs";
-import { integrateWorkspace, restoreNativeSpaces, useProjectSpaces } from "./workspace-layout.mjs";
+import { integrateWorkspace, restoreNativeSpaces, useProjectSpaces, usePaneHeader } from "./workspace-layout.mjs";
 import { DISPLAY_NAME, installedLayoutName } from "./layout-name.mjs";
 
 const packageRoot = dirname(fileURLToPath(import.meta.url));
@@ -104,9 +104,9 @@ export function update({
     if (integrateLayout) {
       const integration = integrateWorkspace(next);
       if (!integration.integrated) throw new Error("This custom layout cannot be integrated automatically. Update without --integrate-layout to keep its existing interface.");
-      const nativeSpaces = restoreNativeSpaces(integration.layout);
-      next = nativeSpaces.layout;
-      changed = integration.changed || nativeSpaces.changed;
+      const nativeSpaces = restoreNativeSpaces(integration.layout), header = usePaneHeader(nativeSpaces.layout);
+      next = header.layout;
+      changed = integration.changed || nativeSpaces.changed || header.changed;
     }
     if (projects !== undefined) {
       const switched = useProjectSpaces(next, projects);
@@ -167,7 +167,7 @@ function usage() {
     "Preserves existing layouts, shared state, and session-trash recovery records.",
     "Creates the Agent Workspace layout only when absent, using --layout (default: main).",
     "--files-only leaves any existing Sessions mod untouched.",
-    "--integrate-layout integrates Sessions and quota and restores native Spaces in a supported existing layout.",
+    "--integrate-layout integrates Sessions and quota, restores native Spaces and uses the Files Plus pane header in a supported existing layout.",
     "--project-spaces installs or updates Project Spaces and uses it for the layout's Spaces sidebar.",
     "--native-spaces switches the layout back to Herdr's Spaces; the Project Spaces mod and its state stay.",
     "An installed Project Spaces mod is updated on every run.",
