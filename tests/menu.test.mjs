@@ -123,7 +123,7 @@ test("rename and trash remap exact descendants without matching sibling prefixes
 
 function dialogHarness(target, action, operation) {
   const closed = [], calls = [], changes = [];
-  const Dialog = view("dialog", { div: element, v_flex: element, h_flex: element,
+  const Dialog = view("dialog", { div: element, svg: element, v_flex: element, h_flex: element,
     Input: { new: element }, InputState: { new: () => ({ on() {}, focus() {} }) },
     closeOverlay: id => closed.push(id), exec() {}, theme: () => ({}), validateName,
     createFilesystem: () => ({ [action]: async (...args) => { calls.push(args); return operation?.(); } }),

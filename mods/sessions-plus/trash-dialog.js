@@ -1,8 +1,9 @@
-import { div } from "gpui-kit";
+import { div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { appHome, exec, terminals, panes, theme, window, shared, setShared, closeOverlay } from "herdr";
 import { NAMES, PENDING, OPERATIONS, CHANGE_KEY, OPERATION_TTL, operationPending, sessionRows, PROVIDERS } from "./model.js";
 import { createTrashClient } from "./trash-client.js";
+import { providerIcon } from "./icons.js";
 
 export default class TrashDialog {
   init(p, cx) {
@@ -76,26 +77,56 @@ export default class TrashDialog {
 
   render() {
     const t = theme(), trash = this.action === "trash";
-    const button = (id, label, primary, callback) => div().id(id).px(12).py(7).rounded(7).cursor_pointer()
-      .bg(primary ? (trash ? t.ansi1 : t.solid) : t.raised).text_color(primary ? t.solid_foreground : t.foreground)
-      .when(this.busy, el => el.opacity(0.5)).on_click(callback).child(label);
-    return v_flex().id("session-trash-dialog").size_full().min_h(0).p(18).gap(12).rounded(10).overflow_hidden().border_1().border_color(t.border).bg(t.popover).text_color(t.foreground).text_size(13)
+    const tone = trash ? t.blocked : t.accent;
+    const provider = PROVIDERS[this.target.provider] ?? this.target.provider ?? "Session";
+    const note = trash ? "Its local history goes to the Trash. You can restore it from Sessions → Trash until the Trash is emptied."
+      : "Its history goes back to where it was. Existing files are never replaced.";
+    const label = this.busy ? "Working…" : this.error ? "Retry" : trash ? "Move to Trash" : "Restore";
+    const status = this.busy ? (this.ready ? "Working…" : "Checking session files…") : "";
+
+    const button = (id, text, primary, callback) => h_flex().id(id).h(32).px(14).gap(8).items_center().rounded(8).text_size(13)
+      .font_medium().border_1().cursor_pointer().hover(s => s.opacity(0.88)).when(this.busy, el => el.opacity(0.5))
+      .border_color(primary ? (trash ? t.blocked : t.solid) : t.input)
+      .bg(primary ? (trash ? t.blocked : t.solid) : t.raised)
+      .text_color(primary ? (trash ? "#ffffff" : t.solid_foreground) : t.foreground)
+      .on_click(callback).child(text)
+      .when(primary && !this.busy, el => el.child(div().text_size(11).opacity(0.7).child("↵")));
+
+    const session = h_flex().flex_none().gap(10).items_center().px(12).py(9).rounded(8).border_1().border_color(t.border).bg(t.background)
+      .child(providerIcon(this.target.provider, 16))
+      .child(v_flex().flex_1().min_w(0).gap(1)
+        .child(div().text_size(13).font_medium().text_color(t.foreground).truncate().child(this.target.title || this.target.id || "Session"))
+        .child(div().text_size(11.5).text_color(t.dim).truncate().child(this.target.id ? `${provider} · ${this.target.id}` : provider)));
+
+    const files = v_flex().flex_1().min_h(0).rounded(8).border_1().border_color(t.border).overflow_hidden()
+      .child(h_flex().flex_none().h(26).px(12).items_center().border_b_1().border_color(t.border).bg(t.surface)
+        .text_size(11).text_color(t.dim).child(status || `${this.files.length} file${this.files.length === 1 ? "" : "s"}`))
+      .child(v_flex().id("session-trash-files").flex_1().min_h(0).px(12).py(6).gap(3).overflow_y_scrollbar().text_size(11.5).text_color(t.muted)
+        .children(this.files.map(file => div().truncate().text_ellipsis_start().child(file))));
+
+    return v_flex().id("session-trash-dialog").size_full().min_h(0).px(20).pt(20).pb(18).gap(14).rounded(12).overflow_hidden()
+      .border_1().border_color(t.border).bg(t.popover).text_color(t.foreground).text_size(13)
       .track_focus(this.handle).on_key_down((event, cx) => {
         if (event.key === "escape") { if (!this.busy) closeOverlay(this.p.overlay); }
         else if (event.key === "enter") this.submit(cx);
         else return;
         cx.stop_propagation();
       })
-      .child(h_flex().flex_none().gap(8).items_center().child(div().flex_1().min_w(0).truncate().font_semibold().text_size(15).child(trash ? "Move Session to Trash?" : "Restore Session?")))
-      .child(div().max_h(45).overflow_y_scrollbar().child(this.target.title || this.target.id || "Session"))
-      .child(div().text_color(t.muted).child(trash ? "Move this session’s local history to Trash. You can restore it from Sessions → Trash until the Trash is emptied." : "Restore this session’s history to its original location. Existing files are never replaced."))
-      .when(!trash && Boolean(this.target.message), el => el.child(div().text_size(11.5).text_color(t.muted).child(this.target.message)))
-      .child(v_flex().flex_1().min_h(0).gap(4).overflow_y_scrollbar().text_size(11.5).text_color(t.muted)
-        .children(trash ? this.files.map(file => div().child(file)) : [div().child(`${PROVIDERS[this.target.provider] ?? this.target.provider} · ${this.target.id}`)])
-        .when(this.busy, el => el.child(div().child(this.ready ? "Working…" : "Checking session files…"))))
-      .when(Boolean(this.error), el => el.child(div().max_h(70).overflow_y_scrollbar().text_color(t.ansi1).child(this.error)))
-      .child(h_flex().gap(8).justify_end()
+      .child(h_flex().flex_none().gap(12).items_start()
+        .child(h_flex().size(36).flex_none().items_center().justify_center().rounded(10).bg(tone + "1f")
+          .child(svg(`mods/sessions-plus/${trash ? "trash" : "refresh"}.svg`).size(16).text_color(tone)))
+        .child(v_flex().flex_1().min_w(0).gap(3)
+          .child(div().text_size(15).font_semibold().truncate().child(trash ? "Move Session to Trash?" : "Restore Session?"))
+          .child(div().text_size(12.5).text_color(t.muted).child(note)))
+        .child(div().flex_none().px(6).h(20).flex().items_center().rounded(5).border_1().border_color(t.border)
+          .text_size(10.5).text_color(t.dim).child("Esc")))
+      .child(session)
+      .when(!trash && Boolean(this.target.message), el => el.child(div().flex_none().text_size(11.5).text_color(t.muted).child(this.target.message)))
+      .when(trash, el => el.child(files))
+      .when(!trash, el => el.child(div().flex_1().min_h(0).text_size(11.5).text_color(t.dim).child(status)))
+      .when(Boolean(this.error), el => el.child(div().flex_none().max_h(54).overflow_y_scrollbar().text_size(12).text_color(t.blocked).child(this.error)))
+      .child(h_flex().flex_none().gap(8).justify_end()
         .child(button("session-trash-cancel", "Cancel", false, () => { if (!this.busy) closeOverlay(this.p.overlay); }))
-        .child(button("session-trash-confirm", this.busy ? "Working…" : this.error ? "Retry" : trash ? "Move to Trash" : "Restore", true, (_event, cx) => this.submit(cx))));
+        .child(button("session-trash-confirm", label, true, (_event, cx) => this.submit(cx))));
   }
 }

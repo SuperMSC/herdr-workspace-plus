@@ -48,7 +48,7 @@ export default class FilePreview {
   menu(cx) {
     cx.stop_propagation();
     const target = targetFor(this.root, this.path, false, this.on, window()?.platform);
-    if (target) openOverlay({ mod: "files-plus", kind: "popup", width: 220, height: menuHeight(target, {}, globalThis.window.viewport_size().height / (settings().zoom || 1) * 0.85), props: { role: "menu", target } });
+    if (target) openOverlay({ mod: "files-plus", kind: "popup", width: 200, height: menuHeight(target, {}, globalThis.window.viewport_size().height / (settings().zoom || 1) * 0.85), props: { role: "menu", target } });
   }
   close() { this.disposed = true; this.preview.close(); }
   render(cx) {

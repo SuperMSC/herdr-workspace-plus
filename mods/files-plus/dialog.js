@@ -1,10 +1,11 @@
-import { div } from "gpui-kit";
+import { div, svg } from "gpui-kit";
 import { v_flex, h_flex, Input, InputState } from "gpui-base";
 import { closeOverlay, exec, theme } from "herdr";
 import { createGitActions } from "./git-actions.js";
 import { createFilesystem, validateName } from "./filesystem.js";
 import { localActions, creationFolder } from "./model.js";
 import { changed } from "./menu.js";
+import { fileIcon } from "./icons.js";
 
 const TITLES = { createFile: "New File", createFolder: "New Folder", rename: "Rename", trash: "Move to Trash?", stage: "Stage File", unstage: "Unstage File" };
 
@@ -54,26 +55,54 @@ export default class Dialog {
 
   render() {
     const t = theme(), trash = this.action === "trash";
-    const button = (id, label, primary, click) => h_flex().id(id).h(32).px(14).items_center().rounded(8)
-      .bg(primary ? (trash ? t.ansi1 : t.solid) : t.raised).text_color(primary ? t.solid_foreground : t.foreground)
-      .when(this.busy, el => el.opacity(0.5)).cursor_pointer().on_click(click).child(label);
-    const path = ["createFile", "createFolder"].includes(this.action) && this.target ? creationFolder(this.target) : this.target?.path;
-    return v_flex().id("files-plus-dialog").track_focus(this.handle).size_full().min_h(0).p(18).gap(12)
-      .rounded(10).overflow_hidden().border_1().border_color(t.border).bg(t.popover).text_size(13).text_color(t.foreground)
+    const creating = ["createFile", "createFolder"].includes(this.action);
+    const tone = trash ? t.blocked : t.accent;
+    const path = creating && this.target ? creationFolder(this.target) : this.target?.path;
+    const name = path ? path.split("/").filter(Boolean).pop() ?? path : "No file selected";
+    const parent = path ? path.slice(0, Math.max(0, path.length - name.length - 1)) || "/" : "";
+    const isFolder = creating || this.target?.dir;
+    const icon = trash ? "trash" : isFolder ? "folder" : "file";
+    const note = this.immediate ? "Updating this file’s Git index entry. Working files are kept."
+      : trash ? (isFolder ? "The folder and everything in it go to the macOS Trash. You can put them back from there." : "It goes to the macOS Trash. You can put it back from there.")
+      : "Existing items are never replaced.";
+    const label = this.busy ? "Working…" : this.immediate ? "Retry" : trash ? "Move to Trash" : this.action === "rename" ? "Rename" : "Create";
+
+    const button = (id, text, primary, click) => h_flex().id(id).h(32).px(14).gap(8).items_center().rounded(8).text_size(13)
+      .font_medium().border_1().cursor_pointer().hover(s => s.opacity(0.88)).when(this.busy, el => el.opacity(0.5))
+      .border_color(primary ? (trash ? t.blocked : t.solid) : t.input)
+      .bg(primary ? (trash ? t.blocked : t.solid) : t.raised)
+      .text_color(primary ? (trash ? "#ffffff" : t.solid_foreground) : t.foreground)
+      .on_click(click).child(text)
+      .when(primary && !this.busy && (trash || this.immediate), el => el.child(div().text_size(11).opacity(0.7).child("↵")));
+
+    const target = h_flex().flex_none().gap(10).items_center().px(12).py(9).rounded(8).border_1().border_color(t.border).bg(t.background)
+      .child(fileIcon(path ?? "", Boolean(isFolder)))
+      .child(v_flex().flex_1().min_w(0).gap(1)
+        .child(div().text_size(13).font_medium().text_color(t.foreground).truncate().child(name))
+        .when(Boolean(parent), el => el.child(div().text_size(11.5).text_color(t.dim).truncate().text_ellipsis_start().child(parent))));
+
+    return v_flex().id("files-plus-dialog").track_focus(this.handle).size_full().min_h(0).px(20).pt(20).pb(18).gap(14)
+      .rounded(12).overflow_hidden().border_1().border_color(t.border).bg(t.popover).text_size(13).text_color(t.foreground)
       .on_key_down((event, cx) => {
         if (event.key === "escape") { if (!this.busy) closeOverlay(this.p.overlay); }
         else if (event.key === "enter" && (trash || this.immediate)) this.submit(cx);
         else return;
         cx.stop_propagation();
       })
-      .child(h_flex().flex_none().gap(8).items_center()
-        .child(div().flex_1().min_w(0).text_size(15).font_semibold().child(TITLES[this.action] ?? "File action")))
-      .child(div().max_h(48).overflow_y_scrollbar().text_size(12).text_color(t.muted).child(path ?? "No file selected"))
-      .child(this.immediate ? div().text_color(t.muted).child("Updating this file’s Git index entry. Working files are kept.") : trash ? div().text_color(t.muted).child("Move this item and its contents to the macOS Trash. You can restore it from there.") : div().h(36).px(10).flex_none().flex().items_center().rounded(7).border_1().border_color(t.border).child(Input.new(this.input).w_full().h_full().text_color(t.foreground)))
-      .child(div().flex_1().min_h(0).overflow_y_scrollbar().text_size(12).text_color(this.error ? t.ansi1 : t.dim)
-        .child(this.error || (this.busy ? "Working…" : trash || this.immediate ? "" : "Existing items are never replaced.")))
-      .child(h_flex().justify_end().gap(8)
+      .child(h_flex().flex_none().gap(12).items_start()
+        .child(h_flex().size(36).flex_none().items_center().justify_center().rounded(10).bg(tone + "1f")
+          .child(svg(`mods/files-plus/${icon}.svg`).size(16).text_color(tone)))
+        .child(v_flex().flex_1().min_w(0).gap(3)
+          .child(div().text_size(15).font_semibold().child(TITLES[this.action] ?? "File action"))
+          .child(div().text_size(12.5).text_color(t.muted).child(note)))
+        .child(div().flex_none().px(6).h(20).flex().items_center().rounded(5).border_1().border_color(t.border)
+          .text_size(10.5).text_color(t.dim).child("Esc")))
+      .child(target)
+      .when(!trash && !this.immediate, el => el.child(h_flex().h(36).px(10).flex_none().items_center().rounded(8).border_1()
+        .border_color(t.input).bg(t.background).child(Input.new(this.input).w_full().h_full().text_color(t.foreground))))
+      .child(div().flex_1().min_h(0).overflow_y_scrollbar().text_size(12).text_color(t.blocked).child(this.error || ""))
+      .child(h_flex().flex_none().justify_end().gap(8)
         .when(!this.immediate, el => el.child(button("files-plus-cancel", "Cancel", false, () => { if (!this.busy) closeOverlay(this.p.overlay); })))
-        .child(button("files-plus-confirm", this.busy ? "Working…" : this.immediate ? "Retry" : trash ? "Move to Trash" : this.action === "rename" ? "Rename" : "Create", true, (_event, cx) => this.submit(cx))));
+        .child(button("files-plus-confirm", label, true, (_event, cx) => this.submit(cx))));
   }
 }

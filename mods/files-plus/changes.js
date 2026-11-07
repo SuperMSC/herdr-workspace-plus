@@ -188,7 +188,7 @@ export default class Changes {
     cx.stop_propagation(); if (file.section === "history") return;
     const target = targetFor(this.root, file.path, false, this.on, window()?.platform); if (!target) return;
     Object.assign(target, { kind: "changes", xy: file.xy, deleted: file.deleted });
-    openOverlay({ mod: "files-plus", kind: "popup", width: 220, height: menuHeight(target, undefined, globalThis.window.viewport_size().height / (settings().zoom || 1) * 0.85), props: { role: "menu", target } });
+    openOverlay({ mod: "files-plus", kind: "popup", width: 200, height: menuHeight(target, undefined, globalThis.window.viewport_size().height / (settings().zoom || 1) * 0.85), props: { role: "menu", target } });
   }
 
   consumeChange(cx) {
