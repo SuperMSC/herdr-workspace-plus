@@ -1,6 +1,6 @@
 {
   "name": "agent-workspace",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "private": true,
   "type": "module",
   "description": "Independent Herdr Files, Changes, Sessions, and Status panels with context menus, session history, account quotas for Claude Code, Codex, and agy, and an optional project-grouped Spaces sidebar.",
