@@ -161,7 +161,7 @@ export default class Browser {
   menu(relative, dir, cx, preferences = false) {
     cx.stop_propagation();
     const target = targetFor(this.root, relative, dir, this.on, window()?.platform);
-    if (target) openOverlay({ mod: "files-plus", kind: "popup", width: 220, height: menuHeight(target, { preferences }, globalThis.window.viewport_size().height / (settings().zoom || 1) * 0.85), props: { role: "menu", target, preferences } });
+    if (target) openOverlay({ mod: "files-plus", kind: "popup", width: 200, height: menuHeight(target, { preferences }, globalThis.window.viewport_size().height / (settings().zoom || 1) * 0.85), props: { role: "menu", target, preferences } });
   }
 
   consumeChange(cx) {

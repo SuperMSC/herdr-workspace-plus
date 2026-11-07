@@ -126,7 +126,7 @@ test("prepare failures show Retry and never skip a successful preview before mut
     ? { code: 1, stdout: JSON.stringify({ error: "Session metadata is unreadable" }) }
     : { code: 0, stdout: JSON.stringify({ row: session(), files: ["session.jsonl"] }) } });
   const dialog = f.dialog(); await f.finish();
-  assert.match(dialog.error, /unreadable/); assert.equal(text(find(dialog.render(), "session-trash-confirm")), "Retry");
+  assert.match(dialog.error, /unreadable/); assert.equal(text(find(dialog.render(), "session-trash-confirm")), "Retry ↵");
   dialog.submit(f.cx); await f.finish();
   assert.equal(dialog.ready, true); assert.deepEqual(f.calls.map(call => call.args[1]), ["prepare", "prepare"]);
   assert.equal(f.closed.length, 0);
@@ -174,7 +174,7 @@ test("failed mutations retain dialog, clear the shared lock, and can Retry", asy
     : { code: 0, stdout: JSON.stringify({ row: session() }) } });
   const dialog = f.dialog(); dialog.submit(f.cx); await f.finish();
   assert.match(dialog.error, /already exists/); assert.equal(dialog.busy, false);
-  assert.equal(text(find(dialog.render(), "session-trash-confirm")), "Retry");
+  assert.equal(text(find(dialog.render(), "session-trash-confirm")), "Retry ↵");
   assert.deepEqual(f.state[model.OPERATIONS], {}); assert.equal(f.state[model.CHANGE_KEY], undefined); assert.equal(f.closed.length, 0);
   fail = false; dialog.submit(f.cx); await f.finish();
   assert.equal(f.calls[1].args[3], entry().token); assert.equal(f.state[model.CHANGE_KEY], 1); assert.equal(f.closed.length, 1);

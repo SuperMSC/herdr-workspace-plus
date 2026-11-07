@@ -89,7 +89,7 @@ export default class PaneHeader {
         }, t, pinned))
         .child(iconButton(`ph-more-${p.pane}`, "more", "File actions", (_e, cx) => {
           const target = targetFor(row.root, row.path, false, row.on ?? null, window()?.platform);
-          if (target) openOverlay({ mod: "files-plus", kind: "popup", width: 220, height: menuHeight(target, {}, globalThis.window.viewport_size().height / (settings().zoom || 1) * 0.85), props: { role: "menu", target } });
+          if (target) openOverlay({ mod: "files-plus", kind: "popup", width: 200, height: menuHeight(target, {}, globalThis.window.viewport_size().height / (settings().zoom || 1) * 0.85), props: { role: "menu", target } });
         }, t)))
       .when(this.hovered, el => el.children(this.controls(t, p)));
   }
