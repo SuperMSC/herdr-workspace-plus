@@ -311,3 +311,14 @@ test("--project-spaces installs the mod and points the cloned Spaces block at it
   assert.deepEqual(actual.children[0], { ...original.children[0], content: { mod: "project-spaces", props: { a: 1 } } });
   assert.throws(() => cloneLayout(f.document, { projects: true }), /no Spaces block/);
 });
+
+test("--agents-plus installs the mod and points the cloned Agents block at it", t => {
+  const f = fixture(t);
+  const original = { id: "root", type: "row", children: [{ id: "agents", type: "block", min: 90, content: { mod: "agents", props: { a: 1 } } }, ...f.document.children] };
+  writeFileSync(join(f.home, "layouts", "main.json"), JSON.stringify(original));
+  const result = install({ ...f, sessions: false, agents: true });
+  assert.ok(existsSync(join(result.agents, "model.js")));
+  const actual = JSON.parse(readFileSync(result.layout, "utf8"));
+  assert.deepEqual(actual.children[0], { ...original.children[0], content: { mod: "agents-plus", props: { a: 1 } } });
+  assert.throws(() => cloneLayout(f.document, { agents: true }), /no Agents block/);
+});

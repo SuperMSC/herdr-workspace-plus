@@ -39,6 +39,21 @@ export function createGitReader(execute, readFile, { root, on = null }) {
       const results = await Promise.all([git([...base, "--name-status", "-z"]), git([...base, "--numstat", "-z"])]);
       return commitFiles(checked(results[0]), numstat(checked(results[1])), commit);
     },
+    // A whole commit as one diff: each file starts at its `diff --git` line; the
+    // index/mode/---/+++ lines before its first hunk are left out.
+    async commitDiff(commit) {
+      const text = checked(await git(comparison(commit)));
+      const lines = [];
+      let header = false;
+      for (const line of text.replace(/\n$/, "").split("\n")) {
+        if (line.startsWith("diff --git ")) { lines.push(line); header = true; continue; }
+        if (line.startsWith("@@")) header = false;
+        if (header && !/^(Binary files|GIT binary patch)/.test(line)) continue;
+        lines.push(line.length > 4000 ? `${line.slice(0, 4000)}… (line truncated)` : line);
+        if (lines.length >= 4000) { lines.push("Preview truncated · showing the first 4,000 diff lines"); break; }
+      }
+      return { lines: lines.length ? lines : ["No text diff in this commit"] };
+    },
     async diff(file) {
       if (!literalPath(file?.path)) throw new Error("Invalid repository path");
       let text, additions;

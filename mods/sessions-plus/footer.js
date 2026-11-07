@@ -2,12 +2,15 @@ import { div, svg } from "gpui-kit";
 import { h_flex } from "gpui-base";
 import { spaces, agents, terminals, shared, openOverlay, theme, run, window, keys } from "herdr";
 import StatusBar from "./statusbar.js";
+import Resources from "./resources.js";
 import { INBOX_DISMISSED, inboxRows } from "./inbox-model.js";
 
 export default class Footer {
   init(p, cx) {
     this.status = new StatusBar();
     this.status.init({ ...p, embedded: true }, cx);
+    this.resources = new Resources();
+    this.resources.init(p, cx);
   }
 
   commandLabel() {
@@ -35,6 +38,7 @@ export default class Footer {
           .child(svg("mods/sessions-plus/inbox.svg").size(13).flex_none()).child(`${list.length} agents`)
           .when(blocked > 0, el => el.child(div().text_color(t.blocked).child(`· ${blocked} needs you`)))))
       .child(div().id("workspace-quota-inline").flex_1().min_w(0).h_full().child(this.status.render()))
+      .child(div().id("workspace-resources").flex_none().child(this.resources.render()))
       .child(div().id("workspace-commands").flex_none().text_color(t.dim).cursor_pointer()
         .on_click(() => run("app.palette")).child(this.commandLabel()));
   }
