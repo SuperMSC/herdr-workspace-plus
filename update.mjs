@@ -5,7 +5,7 @@ import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { cloneLayout } from "./install.mjs";
-import { integrateWorkspace, restoreNativeSpaces, useProjectSpaces, usePaneHeader } from "./workspace-layout.mjs";
+import { integrateWorkspace, restoreNativeSpaces, useProjectSpaces, useAgentsPlus, usePaneHeader } from "./workspace-layout.mjs";
 import { DISPLAY_NAME, installedLayoutName } from "./layout-name.mjs";
 
 const packageRoot = dirname(fileURLToPath(import.meta.url));
@@ -50,6 +50,8 @@ export function update({
   sessionsSource = join(packageRoot, "mods", "sessions-plus"),
   projects,
   projectsSource = join(packageRoot, "mods", "project-spaces"),
+  agents,
+  agentsSource = join(packageRoot, "mods", "agents-plus"),
 } = {}) {
   if (typeof home !== "string" || !home) throw new Error("--home must be a directory path.");
   if (typeof layout !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(layout) || layout.endsWith(".json")) {
@@ -64,6 +66,10 @@ export function update({
   // Project Spaces is opt-in: updated when asked for, or when it is already installed.
   if (projects === true || (projects === undefined && entry(join(mods, "project-spaces")))) {
     plans.push({ name: "project-spaces", source: projectsSource, required: ["main.js", "mod.json", "model.js"] });
+  }
+  // Agents Plus is opt-in the same way.
+  if (agents === true || (agents === undefined && entry(join(mods, "agents-plus")))) {
+    plans.push({ name: "agents-plus", source: agentsSource, required: ["main.js", "mod.json", "model.js"] });
   }
   for (const plan of plans) {
     plan.source = directory(resolve(plan.source), `${plan.name} source`);
@@ -97,8 +103,8 @@ export function update({
   // Ordinary updates preserve existing layouts without reading their original source.
   let serialized = null, originalLayout = null, layoutUpdated = false;
   if (!existingLayout) {
-    serialized = JSON.stringify(cloneLayout(JSON.parse(readFileSync(join(layouts, `${layout}.json`), "utf8")), { sessions, projects: projects === true }), null, 2) + "\n";
-  } else if (integrateLayout || projects !== undefined) {
+    serialized = JSON.stringify(cloneLayout(JSON.parse(readFileSync(join(layouts, `${layout}.json`), "utf8")), { sessions, projects: projects === true, agents: agents === true }), null, 2) + "\n";
+  } else if (integrateLayout || projects !== undefined || agents !== undefined) {
     originalLayout = readFileSync(layoutTarget, "utf8");
     let next = JSON.parse(originalLayout), changed = false;
     if (integrateLayout) {
@@ -111,6 +117,12 @@ export function update({
     if (projects !== undefined) {
       const switched = useProjectSpaces(next, projects);
       if (!switched.found) throw new Error('This layout has no Spaces block (content.mod = "spaces" or "project-spaces"); it was left unchanged.');
+      next = switched.layout;
+      changed = changed || switched.changed;
+    }
+    if (agents !== undefined) {
+      const switched = useAgentsPlus(next, agents);
+      if (!switched.found) throw new Error('This layout has no Agents block (content.mod = "agents" or "agents-plus"); it was left unchanged.');
       next = switched.layout;
       changed = changed || switched.changed;
     }
@@ -161,7 +173,7 @@ function usage() {
   return [
     displayName,
     "",
-    "Usage: node update.mjs [--home PATH] [--layout NAME] [--files-only] [--integrate-layout] [--project-spaces | --native-spaces]",
+    "Usage: node update.mjs [--home PATH] [--layout NAME] [--files-only] [--integrate-layout] [--project-spaces | --native-spaces] [--agents-plus | --native-agents]",
     "",
     "Updates installed mods from this package and removes obsolete mod files. No backups.",
     "Preserves existing layouts, shared state, and session-trash recovery records.",
@@ -170,7 +182,9 @@ function usage() {
     "--integrate-layout integrates Sessions and quota, restores native Spaces and uses the Files Plus pane header in a supported existing layout.",
     "--project-spaces installs or updates Project Spaces and uses it for the layout's Spaces sidebar.",
     "--native-spaces switches the layout back to Herdr's Spaces; the Project Spaces mod and its state stay.",
-    "An installed Project Spaces mod is updated on every run.",
+    "--agents-plus installs or updates Agents Plus and uses it for the layout's Agents list.",
+    "--native-agents switches the layout back to Herdr's Agents; the Agents Plus mod and its setting stay.",
+    "Installed Project Spaces and Agents Plus mods are updated on every run.",
     "Default home: HERDR_APP_HOME, otherwise ~/.config/herdr-app.",
     "Does not run git pull, start Herdr, or switch its active layout.",
   ].join("\n");
@@ -186,6 +200,11 @@ function main(argv) {
     if (arg === "--project-spaces" || arg === "--native-spaces") {
       if (Object.hasOwn(options, "projects")) throw new Error("Use one of --project-spaces and --native-spaces.");
       options.projects = arg === "--project-spaces";
+      continue;
+    }
+    if (arg === "--agents-plus" || arg === "--native-agents") {
+      if (Object.hasOwn(options, "agents")) throw new Error("Use one of --agents-plus and --native-agents.");
+      options.agents = arg === "--agents-plus";
       continue;
     }
     if (arg !== "--home" && arg !== "--layout") throw new Error(`Unknown option: ${arg}\n${usage()}`);

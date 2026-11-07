@@ -5,9 +5,9 @@ import { div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, VirtualListScrollHandle, v_resizable, resizable_panel } from "gpui-base";
 import { spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, window, openOverlay, shared, setShared } from "herdr";
 import { CHANGE_KEY, targetFor, menuHeight } from "./model.js";
-import { fileKey, fileTree, diffRows, splitRows } from "./git-model.js";
+import { fileKey, fileTree, diffRows, splitRows, splitDisplay, inlineDisplay, diffCounts, treeFolders } from "./git-model.js";
 import { createGitReader, READ } from "./git-reader.js";
-import { diffView } from "./git-diff.js";
+import { diffView, splitHeader } from "./git-diff.js";
 
 function location() { const { cwd, on } = projectContext(); return { cwd, on }; }
 const button = (id, label, selected, action, t) => div().id(id).px(7).py(4).rounded(5).text_size(11).flex_none().cursor_pointer().bg(selected ? t.selected : t.background).text_color(selected ? t.foreground : t.muted).hover(e => e.bg(t.hover)).tooltip(id === "git-expand" ? "Open larger diff preview" : id === "git-refresh" ? "Refresh Git data" : label).accessibility_label(id === "git-expand" ? "Open larger diff preview" : id === "git-refresh" ? "Refresh Git data" : label).on_click((_e, cx) => action(cx)).child(label);
@@ -21,7 +21,7 @@ export default class Changes {
     this.refreshRequest = 0; this.diffRequest = 0; this.historyRequest = 0; this.commitRequest = 0;
     this.reloadAgain = false; this.hasStaged = false; this.files = []; this.historyFiles = []; this.commits = [];
     this.rows = []; this.split = []; this.diffWidth = 0; this.message = ""; this.branch = {};
-    this.handle = cx.focus_handle(); this.diffScroll = VirtualListScrollHandle.new();
+    this.handle = cx.focus_handle(); this.diffScroll = VirtualListScrollHandle.new(); this.showFiles = Boolean(this.props.showFiles);
     this.input = InputState.new({ placeholder: "Commit message" });
     this.input.on("change", (_e, cx) => {
       const hadMessage = Boolean(this.message.trim()); this.message = this.input.value();
@@ -81,7 +81,10 @@ export default class Changes {
         const initial = this.props?.selection;
         if (!this.initialSelectionApplied && initial && this.root) {
           this.initialSelectionApplied = true;
-          if (initial.commit) this.selectCommit({ hash: initial.commit, parents: initial.parents || [], subject: initial.subject || initial.commit.slice(0, 8) }, cx, initial.path);
+          if (initial.commit) {
+            const commit = { hash: initial.commit, parents: initial.parents || [], subject: initial.subject || initial.commit.slice(0, 8) };
+            if (this.props.expanded) this.selectCommit(commit, cx, initial.path); else this.showCommit(commit, cx);
+          }
           else { this.open = initial.path; this.section = initial.section; }
         }
         if (this.page === "history") {
@@ -120,8 +123,8 @@ export default class Changes {
   }
 
   setLines(lines) {
-    this.rows = diffRows(lines); this.split = splitRows(this.rows);
-    this.diffWidth = Math.max(300, ...lines.map(line => Math.min(line.length, 4000) * 7 + 100));
+    const rows = diffRows(lines); this.rows = inlineDisplay(rows); this.split = splitDisplay(splitRows(rows)); this.counts = diffCounts(rows);
+    this.diffWidth = Math.max(300, ...this.rows.map(row => Math.min(row.text.length, 4000) * 7 + 130));
   }
 
   pick(file, cx) {
@@ -140,6 +143,7 @@ export default class Changes {
     this.page = page; if (this.props.expanded) this.showFiles = true; this.open = null; this.section = null; this.diffRequest++; this.setLines([]); this.note = null; this.diffLoading = false;
     if (page === "history") {
       if (!this.historyLoaded) this.loadHistory(cx, true);
+      else if (!this.props.expanded) { const commit = this.selectedCommit || this.commits[0]; if (commit) this.showCommit(commit, cx); }
       else if (this.historyFiles.length) this.pick(this.historyFiles[0], cx);
     } else { this.closed = false; if (this.files.length) this.pick(this.files[0], cx); }
     cx.notify();
@@ -155,7 +159,9 @@ export default class Changes {
         if (!this.current(context) || this.root !== root || this.historyRequest !== request) return;
         this.commits = reset ? page.commits : [...this.commits, ...page.commits.filter(commit => !this.commits.some(old => old.hash === commit.hash))];
         this.historyMore = page.more; this.historyLoaded = true;
-        if (!this.selectedCommit && this.page === "history" && this.commits.length) this.selectCommit(this.commits[0], cx);
+        if (!this.selectedCommit && this.page === "history" && this.commits.length) {
+          if (this.props.expanded) this.selectCommit(this.commits[0], cx); else this.showCommit(this.commits[0], cx);
+        }
       } catch (error) { if (this.current(context) && this.historyRequest === request) this.historyError = String(error.message ?? error); }
       finally { if (this.current(context) && this.historyRequest === request) this.historyLoading = false; if (!this.disposed) cx.notify(); }
     });
@@ -179,7 +185,27 @@ export default class Changes {
     cx.notify();
   }
 
+  // The sidebar's History: the selected commit's whole diff under the commit list.
+  showCommit(commit, cx) {
+    this.selectedCommit = commit; this.open = null; this.section = "history"; this.note = null; this.setLines([]); this.diffLoading = true;
+    const context = this.context, request = ++this.diffRequest;
+    this.diffScroll?.scroll_to_item(0);
+    cx.spawn(async cx => {
+      const current = () => this.current(context) && this.diffRequest === request && this.selectedCommit?.hash === commit.hash;
+      try { const result = await this.reader().commitDiff(commit); if (current()) this.setLines(result.lines); }
+      catch (error) { if (current()) this.note = `Cannot load this commit: ${error.message ?? error}`; }
+      finally { if (current()) this.diffLoading = false; if (!this.disposed) cx.notify(); }
+    });
+    cx.notify();
+  }
+
+  openCommit(commit) {
+    if (!this.root) return;
+    openOverlay({ mod: "files-plus", kind: "dialog", frame: "none", width: 1100, height: 760, props: { role: "changes", source: { cwd: this.root, on: this.on }, expanded: true, showFiles: true, listMode: this.listMode, diffMode: this.diffMode, selection: { commit: commit.hash, parents: commit.parents, subject: commit.subject } } });
+  }
+
   expand() {
+    if (this.page === "history" && !this.props.expanded) { if (this.selectedCommit) this.openCommit(this.selectedCommit); return; }
     const file = this.selectedFile(); if (!file || !this.root) return;
     openOverlay({ mod: "files-plus", kind: "dialog", frame: "none", width: 1100, height: 760, props: { role: "changes", source: { cwd: this.root, on: this.on }, expanded: true, listMode: this.listMode, diffMode: this.diffMode, selection: { path: file.path, section: file.section, commit: file.commit, parents: file.parents, subject: this.selectedCommit?.subject } } });
   }
@@ -229,7 +255,7 @@ export default class Changes {
   fileRow(file, t) {
     if (file.directory) return h_flex().id(`git-dir-${file.key}`).h(26).flex_none().pl(8 + file.depth * 12).gap(6).items_center().cursor_pointer().hover(e => e.bg(t.hover))
       .on_click((_e, cx) => { if (this.collapsed.has(file.key)) this.collapsed.delete(file.key); else this.collapsed.add(file.key); cx.notify(); })
-      .child(div().text_color(t.dim).child(file.collapsed ? "▸" : "▾")).child(fileIcon(file.name, true)).child(div().truncate().text_color(t.muted).child(file.name));
+      .child(svg(`mods/files-plus/chevron-${file.collapsed ? "right" : "down"}.svg`).size(12).flex_none().text_color(t.dim)).child(fileIcon(file.name, true)).child(div().truncate().text_color(t.muted).child(file.name));
     const selected = this.selectedFile(), name = this.listMode === "tree" ? file.path.split("/").pop() : file.path;
     return h_flex().id(`change-${fileKey(file)}`).h(28).flex_none().pl(8 + (file.depth || 0) * 12).pr(8).gap(6).items_center().rounded(5).cursor_pointer()
       .when(selected && fileKey(selected) === fileKey(file), e => e.bg(t.selected)).hover(e => e.bg(t.hover)).on_click((_e, cx) => this.pick(file, cx)).on_mouse_down("right", (_e, cx) => this.menu(file, cx))
@@ -238,6 +264,26 @@ export default class Changes {
       .when(file.binary, e => e.child(div().text_size(10).text_color(t.dim).child("binary")))
       .when(file.add > 0, e => e.child(div().flex_none().text_size(10).text_color(t.ansi2).child(`+${file.add}`)))
       .when(file.del > 0, e => e.child(div().flex_none().text_size(10).text_color(t.ansi1).child(`−${file.del}`)));
+  }
+
+  // Every folder of the listed sections: any open folds them all, else all open.
+  folders() {
+    const files = this.page === "history" ? this.historyFiles : this.files, sections = this.page === "history" ? ["history"] : ["staged", "unstaged"];
+    return sections.flatMap(section => treeFolders(files.filter(file => file.section === section)));
+  }
+
+  foldAllButton(t) {
+    const folders = this.folders(), open = folders.some(key => !this.collapsed.has(key)), label = open ? "Collapse all folders" : "Expand all folders";
+    return div().id("git-fold-all").w(24).h(24).p(0).flex_none().flex().items_center().justify_center().rounded(4)
+      .text_color(t.muted).tooltip(label).accessibility_label(label)
+      .when(!folders.length, el => el.cursor_default().opacity(0.45))
+      .when(folders.length > 0, el => el.cursor_pointer().hover(s => s.bg(t.hover).text_color(t.foreground)))
+      .on_click((_e, cx) => {
+        if (!folders.length) return;
+        for (const key of folders) open ? this.collapsed.add(key) : this.collapsed.delete(key);
+        cx.notify();
+      })
+      .child(svg(`mods/files-plus/${open ? "collapse" : "expand"}-all.svg`).size(14).flex_none());
   }
 
   fileList(t) {
@@ -255,49 +301,70 @@ export default class Changes {
   }
 
   historyList(t) {
-    return v_flex().id("git-history").flex_none().h(this.props.expanded ? 165 : 130).overflow_y_scrollbar().p(5).border_b(1).border_color(t.border)
-      .children(this.commits.map(commit => v_flex().id(`git-commit-${commit.hash}`).flex_none().px(7).py(5).rounded(5).cursor_pointer().when(this.selectedCommit?.hash === commit.hash, e => e.bg(t.selected)).hover(e => e.bg(t.hover))
-        .on_click((_e, cx) => this.selectCommit(commit, cx)).child(div().truncate().child(commit.subject || "(no subject)"))
+    const full = !this.props.expanded;
+    return v_flex().id("git-history").when(full, e => e.flex_1().min_h(0)).when(!full, e => e.flex_none().h(165).border_b(1).border_color(t.border)).overflow_y_scrollbar().p(5)
+      .children(this.commits.map(commit => v_flex().id(`git-commit-${commit.hash}`).flex_none().px(7).py(5).rounded(5).cursor_pointer()
+        .when(this.selectedCommit?.hash === commit.hash, e => e.bg(t.selected)).hover(e => e.bg(t.hover))
+        .on_click((_e, cx) => { if (full) this.showCommit(commit, cx); else this.selectCommit(commit, cx); }).child(div().truncate().child(commit.subject || "(no subject)"))
         .child(div().truncate().text_size(10).text_color(t.dim).child(`${commit.hash.slice(0, 8)} · ${commit.author} · ${new Date(commit.time * 1000).toLocaleDateString()}`))))
       .when(this.historyMore && !this.historyLoading, e => e.child(button("history-more", "Load 50 more", false, cx => this.loadHistory(cx), t)))
       .when(this.historyLoading || this.historyError || !this.commits.length, e => e.child(div().p(7).text_size(11).text_color(this.historyError ? t.ansi1 : t.dim).child(this.historyError || (this.historyLoading ? "Loading commits…" : "No commits yet"))));
   }
 
   panes(t) {
-    const selected = this.selectedFile();
-    const navigation = v_flex().size_full().min_h(0).min_w(0)
+    const selected = this.selectedFile(), commitsOnly = this.page === "history" && !this.props.expanded;
+    const commit = commitsOnly ? this.selectedCommit : null;
+    const navigation = commitsOnly ? v_flex().size_full().min_h(0).min_w(0).child(this.historyList(t)) : v_flex().size_full().min_h(0).min_w(0)
       .when(this.page === "history", e => e.child(this.historyList(t)))
       .child(h_flex().h(29).flex_none().px(6).gap(3).items_center()
         .child(button("git-tree", "Tree", this.listMode === "tree", cx => { this.listMode = "tree"; cx.notify(); }, t))
         .child(button("git-flat", "Flat", this.listMode === "flat", cx => { this.listMode = "flat"; cx.notify(); }, t))
-        .child(div().flex_1()).child(div().text_size(10).text_color(t.dim).child(this.page === "history" ? `${this.historyFiles.length} files` : `${this.fileCount || 0} files`)))
+        .child(div().flex_1()).child(div().text_size(10).text_color(t.dim).child(this.page === "history" ? `${this.historyFiles.length} files` : `${this.fileCount || 0} files`))
+        .when(this.listMode === "tree", e => e.child(this.foldAllButton(t))))
       .child(this.fileList(t))
       .when(this.limited && this.page === "changes", e => e.child(div().px(10).py(3).text_size(10).text_color(t.dim).child("Showing the first 1,000 changed files")));
     const preview = v_flex().size_full().min_h(0).min_w(0)
       .child(h_flex().h(32).flex_none().px(6).gap(3).items_center().border_b(1).border_color(t.border)
         .child(button("git-inline", "Inline", this.diffMode === "inline", cx => { this.diffMode = "inline"; this.diffScroll.scroll_to_item(0); cx.notify(); }, t))
         .child(button("git-split", "Side by side", this.diffMode === "split", cx => { this.diffMode = "split"; this.diffScroll.scroll_to_item(0); cx.notify(); }, t))
-        .child(div().flex_1()).when(Boolean(selected) && !this.props.expanded, e => e.child(button("git-expand", "↗", false, () => this.expand(), t))))
+        .child(div().flex_1()).when((Boolean(selected) || Boolean(commit)) && !this.props.expanded, e => e.child(button("git-expand", "↗", false, () => this.expand(), t))))
       .when(Boolean(selected), e => e.child(div().h(23).flex_none().px(10).py(3).truncate().text_size(10).text_color(t.dim).child(`${selected.section === "staged" ? "HEAD → Index" : selected.section === "history" ? `${selected.commit.slice(0, 8)} · ${selected.parents?.length > 1 ? "first parent" : "parent"}` : "Index → Working tree"} · ${selected.path}`)))
-      .when(this.diffMode === "split", e => e.child(h_flex().h(21).flex_none().text_size(10).text_color(t.dim).border_b(1).border_color(t.border)
-        .child(div().flex_1().px(10).child("Before")).child(div().flex_1().px(10).border_l(1).border_color(t.border).child("After"))))
-      .child(diffView(this, t, settings().font_family ?? "JetBrains Mono"));
+      .when(Boolean(commit), e => e.child(div().h(23).flex_none().px(10).py(3).truncate().text_size(10).text_color(t.dim).child(`${commit.hash.slice(0, 8)} · ${commit.parents?.length > 1 ? "first parent" : "parent"} · ${commit.subject || "(no subject)"}`)))
+      .when(this.diffMode === "split", e => e.child(splitHeader(this.counts ?? { removed: 0, added: 0 }, t)))
+      .child(diffView(this, t, settings().font_family ?? "JetBrains Mono"))
+      .child(this.footer(t));
     if (this.props.expanded && !this.showFiles) return div().flex_1().min_h(0).min_w(0).child(preview);
-    const id = "git-vertical-" + (this.props.expanded ? "expanded" : "sidebar") + "-" + this.page;
+    // The sidebar shares one split between Changes and History so switching keeps the diff's height.
+    const id = this.props.expanded ? "git-vertical-expanded-" + this.page : "git-vertical-sidebar";
     const stored = shared("files-plus.git-pane-sizes.v1")?.[id];
-    const initial = Number.isFinite(stored) ? Math.max(100, Math.min(600, stored)) : this.page === "history" ? 340 : 210;
+    const size = Number.isFinite(stored) ? stored : shared("files-plus.git-pane-sizes.v1")?.["git-vertical-sidebar-changes"];
+    const initial = Number.isFinite(size) ? Math.max(100, Math.min(600, size)) : this.props.expanded && this.page === "history" ? 340 : 210;
     return div().id("git-resizable-content").flex_1().min_h(0).min_w(0).child(v_resizable(id).size_full()
       .on_resize((sizes, cx) => {
         if (Number.isFinite(sizes[0])) setShared("files-plus.git-pane-sizes.v1", { ...(shared("files-plus.git-pane-sizes.v1") || {}), [id]: sizes[0] });
         cx.notify();
       })
-      .child(resizable_panel().size(initial).size_range(this.page === "history" ? 220 : 90).child(navigation))
+      .child(resizable_panel().size(initial).size_range(this.props.expanded && this.page === "history" ? 220 : 90).child(navigation))
       .child(resizable_panel().size_range(140).child(preview)));
+  }
+
+  // Notes, the commit box or History's note. They sit in the diff's half so the divider
+  // stays put when the page changes: the split's total height is the same for both pages.
+  footer(t) {
+    const enabled = Boolean(this.message.trim() && this.root && this.hasStaged && !this.on && window()?.platform === "macos" && !this.busy && !this.loading);
+    return v_flex().flex_none()
+      .when(Boolean(this.note || this.error), e => e.child(div().px(10).py(5).text_size(11).text_color(t.ansi1).child(this.note || this.error)))
+      .when(this.page === "changes", e => e
+        .child(div().px(10).py(5).text_size(10).text_color(t.dim).child(this.on || window()?.platform !== "macos" ? "Index actions and commits require local macOS." : "Commit uses staged changes. Right-click a file to stage or unstage."))
+        .child(h_flex().flex_none().p(8).gap(6).border_t(1).border_color(t.border)
+          .child(div().id("commit-message").flex_1().min_w(0).h(32).px(8).flex().items_center().rounded(7).border_1().border_color(this.typing ? t.accent : t.border).cursor_text().on_mouse_down("left", (_e, cx) => cx.stop_propagation()).child(Input.new(this.input).h_full().text_size(12).text_color(t.foreground)))
+          .child(div().id("commit").h(32).px(10).flex_none().flex().items_center().rounded(7).bg(enabled ? t.solid : t.raised).text_color(enabled ? t.solid_foreground : t.dim).text_size(11).when(enabled, e => e.cursor_pointer()).on_click((_e, cx) => this.commit(cx)).child(this.busy ? "Committing…" : "Commit Staged"))))
+      .when(this.page === "history", e => e.child(div().px(10).py(5).text_size(10).text_color(t.dim).child("History is read-only · upstream counts use the last fetched refs.")));
   }
 
   render(cx) {
     this.scheduleSync(cx);
-    const t = theme(), selected = this.selectedFile(), enabled = Boolean(this.message.trim() && this.root && this.hasStaged && !this.on && window()?.platform === "macos" && !this.busy && !this.loading);
+    const t = theme();
     const loading = Boolean(this.loading || this.historyLoading);
     const branch = this.branch.name || (this.root ? "Branch unavailable" : "No repository"), counts = this.branch.upstream ? `↑${this.branch.ahead} ↓${this.branch.behind}` : "No upstream";
     return v_flex().id("changes").size_full().min_h(0).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border).text_color(t.foreground).text_size(12).track_focus(this.handle)
@@ -311,13 +378,6 @@ export default class Changes {
           .on_click((_e, cx) => { if (!this.loading && !this.historyLoading) { this.refresh(cx); if (this.page === "history") this.loadHistory(cx, true); cx.notify(); } })
           .child(svg("mods/files-plus/refresh.svg").id("git-refresh-icon").size(14).flex_none().when(loading, el => el.spin(850)))))
       .child(h_flex().h(26).flex_none().px(10).gap(8).items_center().text_size(10).text_color(t.dim).child(div().flex_1().min_w(0).truncate().tooltip(this.branch.upstream ? `${branch} → ${this.branch.upstream}` : branch).child(branch)).child(div().flex_none().tooltip("Ahead/behind the last fetched upstream refs").child(counts)))
-      .child(this.panes(t))
-      .when(Boolean(this.note || this.error), e => e.child(div().px(10).py(5).text_size(11).text_color(t.ansi1).child(this.note || this.error)))
-      .when(this.page === "changes", e => e
-        .child(div().px(10).py(5).text_size(10).text_color(t.dim).child(this.on || window()?.platform !== "macos" ? "Index actions and commits require local macOS." : "Commit uses staged changes. Right-click a file to stage or unstage."))
-        .child(h_flex().flex_none().p(8).gap(6).border_t(1).border_color(t.border)
-          .child(div().id("commit-message").flex_1().min_w(0).h(32).px(8).flex().items_center().rounded(7).border_1().border_color(this.typing ? t.accent : t.border).cursor_text().on_mouse_down("left", (_e, cx) => cx.stop_propagation()).child(Input.new(this.input).h_full().text_size(12).text_color(t.foreground)))
-          .child(div().id("commit").h(32).px(10).flex_none().flex().items_center().rounded(7).bg(enabled ? t.solid : t.raised).text_color(enabled ? t.solid_foreground : t.dim).text_size(11).when(enabled, e => e.cursor_pointer()).on_click((_e, cx) => this.commit(cx)).child(this.busy ? "Committing…" : "Commit Staged"))))
-      .when(this.page === "history", e => e.child(div().px(10).py(5).text_size(10).text_color(t.dim).child("History is read-only · upstream counts use the last fetched refs.")));
+      .child(this.panes(t));
   }
 }

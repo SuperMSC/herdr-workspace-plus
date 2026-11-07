@@ -523,3 +523,33 @@ test("Project Spaces refuses a layout without a Spaces block and leaves it uncha
   assert.throws(() => update({ ...f, projects: true }), /no Spaces block/);
   assert.equal(readFileSync(path, "utf8"), serialized);
 });
+
+test("Agents Plus is opt-in, switches only Agents blocks and switches back", t => {
+  const f = fixture(t), source = oldWorkspaceLayout();
+  const agents = { id: "agents", type: "block", size: { weight: 1 }, min: 90, content: { mod: "agents", props: { keep: true } } };
+  source.children.unshift(agents);
+  const path = join(f.home, "layouts", "files-plus.json");
+  write(path, JSON.stringify(source));
+  const plain = update(f);
+  assert.equal(plain.mods.some(mod => mod.endsWith("/agents-plus")), false);
+  assert.equal(existsSync(join(f.home, "mods", "agents-plus")), false);
+
+  const on = update({ ...f, agents: true });
+  assert.equal(on.layoutUpdated, true);
+  assert.ok(existsSync(join(f.home, "mods", "agents-plus", "model.js")));
+  const switched = JSON.parse(readFileSync(path, "utf8"));
+  assert.deepEqual(findLayoutNode(switched, "agents"), { ...agents, content: { mod: "agents-plus", props: { keep: true } } });
+  write(join(f.home, "mods", "agents-plus", "stale.js"), "old");
+  const again = update(f);
+  assert.equal(again.layoutUpdated, false);
+  assert.ok(again.mods.some(mod => mod.endsWith("/agents-plus")));
+  assert.equal(existsSync(join(f.home, "mods", "agents-plus", "stale.js")), false);
+
+  const off = update({ ...f, agents: false });
+  assert.equal(off.layoutUpdated, true);
+  assert.deepEqual(findLayoutNode(JSON.parse(readFileSync(path, "utf8")), "agents"), agents);
+  assert.ok(existsSync(join(f.home, "mods", "agents-plus", "main.js")));
+  const path2 = join(f.home, "layouts", "files-plus.json");
+  write(path2, JSON.stringify({ id: "files", type: "block", content: { mod: "files-plus" } }));
+  assert.throws(() => update({ ...f, agents: true }), /no Agents block/);
+});

@@ -20,13 +20,17 @@ const find = (tree, id) => descendants(tree).find(node => node.attributes.id ===
 const text = node => typeof node === "string" ? node : (node?.children ?? []).map(text).join(" ");
 
 function fixture({ spaces = [], agents = [], bindings = [], platform = "macos", props = {} } = {}) {
-  const state = { spaces, agents, bindings, platform }, calls = [], initialized = [], instances = [];
+  const state = { spaces, agents, bindings, platform }, calls = [], initialized = [], instances = [], resources = [];
   let renders = 0;
   const dependencies = {
     INBOX_DISMISSED, inboxRows, terminals: () => [], shared: () => ({}), openOverlay: (...args) => calls.push(["overlay", ...args]),
     div: element, svg: element, h_flex: element, theme: () => ({}),
     spaces: () => state.spaces, agents: () => state.agents.map((agent, index) => ({ address: `t${index}`, ...agent })), keys: () => state.bindings,
     window: () => ({ platform: state.platform }), run: (...args) => calls.push(args),
+    Resources: class {
+      init(p, cx) { resources.push({ props: p, cx }); }
+      render() { return element().id("fixture-resources").child("324 MB · 3"); }
+    },
     StatusBar: class {
       constructor() { instances.push(this); }
       init(p, cx) { initialized.push({ instance: this, props: p, cx }); }
@@ -38,7 +42,7 @@ function fixture({ spaces = [], agents = [], bindings = [], platform = "macos", 
   const Footer = new Function(...Object.keys(dependencies), source)(...Object.values(dependencies));
   const footer = new Footer(), cx = { notify() {} };
   footer.init(props, cx);
-  return { footer, state, calls, initialized, instances, cx, render: () => footer.render(), renders: () => renders };
+  return { footer, state, calls, initialized, instances, resources, cx, render: () => footer.render(), renders: () => renders };
 }
 
 test("the footer retains local device and zero-agent context without an active space", () => {
@@ -111,4 +115,12 @@ test("the agent count and needs-you badge open the Inbox without ending an agent
   find(f.render(), "workspace-inbox").events.on_click();
   assert.equal(f.calls.length, 1); assert.equal(f.calls[0][0], "overlay");
   assert.equal(f.calls[0][1].props.role, "inbox");
+});
+
+test("resource use sits before the command hint and shares the footer's props", () => {
+  const f = fixture({ props: { node: "/opt/node" } }), tree = f.render();
+  const ids = tree.children.map(child => child.attributes.id);
+  assert.deepEqual(ids.slice(-2), ["workspace-resources", "workspace-commands"]);
+  assert.match(text(find(tree, "workspace-resources")), /324 MB/);
+  assert.equal(f.resources.length, 1); assert.equal(f.resources[0].props.node, "/opt/node");
 });

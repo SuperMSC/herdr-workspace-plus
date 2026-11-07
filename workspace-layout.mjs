@@ -153,8 +153,20 @@ export function restoreNativeSpaces(source) {
  * geometry stay. `found`: the layout has a Spaces block of either kind.
  */
 export function useProjectSpaces(source, on = true) {
+  return swapMod(source, "spaces", "project-spaces", on);
+}
+
+/**
+ * Point Agents blocks at Agents Plus (`on`), or back at Herdr's Agents. IDs, props and
+ * geometry stay. `found`: the layout has an Agents block of either kind.
+ */
+export function useAgentsPlus(source, on = true) {
+  return swapMod(source, "agents", "agents-plus", on);
+}
+
+function swapMod(source, native, plus, on) {
   const layout = structuredClone(source);
-  const from = on ? "spaces" : "project-spaces", to = on ? "project-spaces" : "spaces";
+  const from = on ? native : plus, to = on ? plus : native;
   let changed = false, found = false;
   for (const { node } of nodes(layout)) {
     if (node.type !== "block" || (node.content?.mod !== from && node.content?.mod !== to)) continue;

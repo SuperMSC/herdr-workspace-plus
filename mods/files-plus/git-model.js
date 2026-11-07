@@ -119,3 +119,103 @@ export function splitRows(rows) {
   }
   return result;
 }
+
+/** Keys of every folder `fileTree` would show for these files, folded or not. */
+export function treeFolders(files) {
+  return fileTree(files).filter(row => row.directory).map(row => row.key);
+}
+
+/** Tabs to spaces at `size` stops, so columns line up in a monospace cell. */
+export function expandTabs(text, size = 4) {
+  if (!text.includes("\t")) return text;
+  let out = "";
+  for (const char of text) out += char === "\t" ? " ".repeat(size - (out.length % size)) : char;
+  return out;
+}
+
+/**
+ * The changed span of a removed/added pair: common prefix and suffix are left out.
+ * Returns `[[start, end], [start, end]]` for before and after, or null when nothing
+ * is shared (the whole line is the change) or nothing differs.
+ */
+export function lineMarks(before, after) {
+  if (before === after) return null;
+  const max = Math.min(before.length, after.length);
+  let start = 0;
+  while (start < max && before[start] === after[start]) start++;
+  let end = 0;
+  while (end < max - start && before[before.length - 1 - end] === after[after.length - 1 - end]) end++;
+  // Whitespace alone in common says nothing; marking the whole line would say nothing either.
+  if (!before.slice(0, start).trim() && !before.slice(before.length - end).trim()) return null;
+  return [[start, before.length - end], [start, after.length - end]];
+}
+
+const indentOf = text => text.length - text.trimStart().length;
+
+/**
+ * Split rows ready to draw: tabs expanded, each hunk's common indentation removed
+ * (relative indentation stays), and changed spans marked on paired lines. Cells are
+ * copies; `splitRows` output and inline rows are left as they were.
+ */
+export function splitDisplay(split) {
+  const result = [], hunk = [];
+  const flush = () => {
+    const texts = hunk.flatMap(row => [row.before, row.after]).filter(Boolean).map(cell => expandTabs(cell.text)).filter(text => text.trim());
+    const indent = texts.length ? Math.min(...texts.map(indentOf)) : 0;
+    for (const row of hunk) {
+      const before = row.before && { ...row.before, text: expandTabs(row.before.text).slice(indent) || " " };
+      const after = row.after === row.before ? before : row.after && { ...row.after, text: expandTabs(row.after.text).slice(indent) || " " };
+      if (before && after && before !== after && before.kind === "-" && after.kind === "+") {
+        const marks = lineMarks(before.text, after.text);
+        if (marks) { before.mark = marks[0]; after.mark = marks[1]; }
+      }
+      result.push({ before, after, indent });
+    }
+    hunk.length = 0;
+  };
+  for (const row of split) {
+    if (row.header) { flush(); result.push(row); }
+    else hunk.push(row);
+  }
+  flush();
+  return result;
+}
+
+/** Removed and added line counts of diff rows. */
+export function diffCounts(rows) {
+  let removed = 0, added = 0;
+  for (const row of rows) { if (row.kind === "-") removed++; else if (row.kind === "+") added++; }
+  return { removed, added };
+}
+
+/**
+ * Inline rows ready to draw, the inline counterpart of `splitDisplay`: tabs expanded,
+ * each hunk's common indentation removed, and the n-th removed line of a change block
+ * paired with its n-th added line for changed-span marks. Rows are copies.
+ */
+export function inlineDisplay(rows) {
+  const result = [], hunk = [];
+  const flush = () => {
+    const texts = hunk.map(row => expandTabs(row.text)).filter(text => text.trim());
+    const indent = texts.length ? Math.min(...texts.map(indentOf)) : 0;
+    const shown = hunk.map(row => ({ ...row, text: expandTabs(row.text).slice(indent) || " " }));
+    for (let i = 0; i < shown.length;) {
+      if (shown[i].kind !== "-") { i++; continue; }
+      const removed = [], added = [];
+      while (i < shown.length && shown[i].kind === "-") removed.push(shown[i++]);
+      while (i < shown.length && shown[i].kind === "+") added.push(shown[i++]);
+      for (let j = 0; j < Math.min(removed.length, added.length); j++) {
+        const marks = lineMarks(removed[j].text, added[j].text);
+        if (marks) { removed[j].mark = marks[0]; added[j].mark = marks[1]; }
+      }
+    }
+    result.push(...shown);
+    hunk.length = 0;
+  };
+  for (const row of rows) {
+    if ([" ", "+", "-"].includes(row.kind)) hunk.push(row);
+    else { flush(); result.push(row); }
+  }
+  flush();
+  return result;
+}

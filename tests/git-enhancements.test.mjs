@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { test } from "node:test";
 import { createGitReader, READ } from "../mods/files-plus/git-reader.js";
-import { branchInfo, diffRows, splitRows, fileTree, statusFiles, fileKey, PAGE_SIZE } from "../mods/files-plus/git-model.js";
+import { branchInfo, diffRows, splitRows, splitDisplay, inlineDisplay, diffCounts, treeFolders, fileTree, statusFiles, fileKey, PAGE_SIZE, lineMarks, expandTabs } from "../mods/files-plus/git-model.js";
 
 const run = promisify(execFile);
 const identity = { ...process.env, GIT_AUTHOR_NAME: "Git Preview Test", GIT_AUTHOR_EMAIL: "preview@example.invalid", GIT_COMMITTER_NAME: "Git Preview Test", GIT_COMMITTER_EMAIL: "preview@example.invalid" };
@@ -139,7 +139,7 @@ async function changesHarness() {
   const pending = [], timers = [], overlays = [], calls = [];
   const cx = { notify() { notifications++; }, stop_propagation() {}, focus_handle: () => ({ focus() {} }), spawn(task) { pending.push(task(cx)); }, timer: { every() {}, after(_ms, task) { timers.push(task); } } };
   const dependencies = {
-    projectContext: () => ({ cwd: active, on: null }), closeButton: element, v_resizable: element, resizable_panel: element, fileIcon: element, div: element, svg: element, h_flex: element, v_flex: element, fileKey, fileTree, diffRows, splitRows, createGitReader, READ,
+    projectContext: () => ({ cwd: active, on: null }), closeButton: element, v_resizable: element, resizable_panel: element, fileIcon: element, div: element, svg: element, h_flex: element, v_flex: element, fileKey, fileTree, diffRows, splitRows, splitDisplay, inlineDisplay, diffCounts, treeFolders, splitHeader: () => null, createGitReader, READ,
     diffView: () => element().id("diff-preview"), theme: () => ({}), settings: () => ({}), window: () => ({ platform: "macos" }),
     Input: { new: element }, InputState: { new: () => ({ on() {}, set_value() {}, release() {} }) }, VirtualListScrollHandle: { new: () => ({ scroll_to_item() {}, release() {} }) },
     spaces: () => [{ active: true, folder: active }], focused: () => ({}), panes: () => [], shared: () => change, setShared() {}, CHANGE_KEY: "changes", targetFor() {}, menuHeight: () => 200,
@@ -186,4 +186,53 @@ test("no-newline markers do not separate matching before/after replacement rows"
   const rows = splitRows(diffRows(["@@ -1 +1 @@", "-before", "\\ No newline at end of file", "+after", "\\ No newline at end of file"]));
   assert.equal(rows[1].before.text, "before"); assert.equal(rows[1].after.text, "after");
   assert.match(rows[2].header.text, /Before \/ After: no newline/);
+});
+
+test("split display hides each hunk's common indentation and marks the changed span", () => {
+  const pad = n => " ".repeat(n);
+  const rows = diffRows(["@@ -1,3 +1,3 @@ SQL", ` ${pad(16)}WHERE`, `-${pad(20)}f4 = 'a'`, `+${pad(20)}f4 = 'b'`, "@@ -9 +9 @@", "-x\tone", "+x\ttwo"]);
+  const shown = splitDisplay(splitRows(rows));
+  assert.equal(shown[0].header.text, "@@ -1,3 +1,3 @@ SQL");
+  assert.equal(shown[1].before.text, "WHERE"); assert.equal(shown[1].before, shown[1].after);
+  assert.equal(shown[2].before.text, "    f4 = 'a'"); assert.equal(shown[2].after.text, "    f4 = 'b'");
+  assert.deepEqual(shown[2].before.mark, [10, 11]); assert.deepEqual(shown[2].after.mark, [10, 11]);
+  assert.equal(shown[4].before.text, "x   one"); assert.equal(shown[4].indent, 0);
+  // The rows the inline view draws are untouched.
+  assert.equal(rows[1].text, `${pad(16)}WHERE`); assert.equal(rows[2].mark, undefined);
+});
+
+test("line marks skip identical lines and lines sharing only whitespace", () => {
+  assert.equal(lineMarks("same", "same"), null);
+  assert.equal(lineMarks("  one", "  two"), null);
+  assert.deepEqual(lineMarks("call(1)", "call(22)"), [[5, 6], [5, 7]]);
+  assert.deepEqual(lineMarks("abc", "abXc"), [[2, 2], [2, 3]]);
+  assert.equal(expandTabs("a\tb", 4), "a   b");
+});
+
+test("diff counts and tree folders cover every level, folded or not", () => {
+  assert.deepEqual(diffCounts(diffRows(["@@ -1 +1,2 @@", "-a", "+b", "+c", " d"])), { removed: 1, added: 2 });
+  const files = [{ path: "ETL/TB/main.py", section: "unstaged" }, { path: "ETL/x.py", section: "unstaged" }, { path: "top.py", section: "unstaged" }];
+  assert.deepEqual(treeFolders(files), ["unstaged:ETL", "unstaged:ETL/TB"]);
+  assert.deepEqual(fileTree(files, new Set(treeFolders(files))).map(row => row.path), ["ETL", "top.py"]);
+});
+
+test("inline display pairs removed and added lines for marks and hides the hunk's common indent", () => {
+  const rows = diffRows(["@@ -1,3 +1,3 @@", "         keep", "-        call(1)", "-        gone()", "+        call(22)", "@@ -9 +9 @@", "+x"]);
+  const shown = inlineDisplay(rows);
+  assert.deepEqual(shown.map(row => row.text), ["@@ -1,3 +1,3 @@", "keep", "call(1)", "gone()", "call(22)", "@@ -9 +9 @@", "x"]);
+  assert.deepEqual(shown[2].mark, [5, 6]); assert.deepEqual(shown[4].mark, [5, 7]); assert.equal(shown[3].mark, undefined);
+  assert.equal(shown[2].old, 2); assert.equal(rows[2].text, "        call(1)");
+});
+
+test("a commit's whole diff keeps file and hunk lines and drops the per-file preamble", async () => {
+  const hash = "a".repeat(40), parent = "b".repeat(40), calls = [];
+  const out = ["diff --git a/x.py b/x.py", "index 1..2 100644", "--- a/x.py", "+++ b/x.py", "@@ -1 +1 @@", "-a", "+b",
+    "diff --git a/img.png b/img.png", "new file mode 100644", "Binary files /dev/null and b/img.png differ", ""].join("\n");
+  const reader = createGitReader(async (_c, args) => { calls.push(args); return { code: 0, stdout: out, stderr: "" }; }, async () => "", { root: "/repo" });
+  const { lines } = await reader.commitDiff({ hash, parents: [parent] });
+  assert.deepEqual(lines, ["diff --git a/x.py b/x.py", "@@ -1 +1 @@", "-a", "+b", "diff --git a/img.png b/img.png", "Binary files /dev/null and b/img.png differ"]);
+  assert.ok(calls[0].includes(parent) && calls[0].includes(hash) && !calls[0].includes("--"));
+  const shown = inlineDisplay(diffRows(lines));
+  assert.equal(shown[0].kind, ""); assert.equal(shown[2].kind, "-");
+  await assert.rejects(() => reader.commitDiff({ hash: "nope", parents: [] }), /Invalid commit/);
 });
