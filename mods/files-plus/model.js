@@ -125,3 +125,21 @@ export function markColor(mark, t) {
   const base = mark === "A" ? t.ansi2 : mark === "D" || mark === "U" ? t.ansi1 : mixColor(t.ansi3, t.ansi1, 0.2);
   return mixColor(base, t.foreground, 0.35);
 }
+
+// Expand all opens the tree a few levels down, never into dependency or build folders,
+// and stops at a folder budget so the periodic refresh stays cheap.
+export const AUTO_SKIP = new Set(["node_modules", ".git", "__pycache__", ".venv", "venv", "dist", "build", "target", ".next", ".cache", ".idea", ".mypy_cache", ".pytest_cache", ".ruff_cache"]);
+export const EXPAND_DEPTH = 4;
+export const EXPAND_LIMIT = 80;
+
+/** Open folders below `base` (not `base` itself). */
+export function openBelow(folders, base = "") {
+  return [...folders].filter(path => path !== base && (!base || path.startsWith(base + "/")));
+}
+
+/** Listed sub-folders of `parents` that expand all may open, as full paths. */
+export function childFolders(entries, parents, showHidden = false) {
+  return parents.flatMap(parent => (entries.get(parent) ?? [])
+    .filter(entry => entry.dir && !AUTO_SKIP.has(entry.name) && visibleEntry(entry.name, showHidden))
+    .map(entry => parent ? `${parent}/${entry.name}` : entry.name));
+}
