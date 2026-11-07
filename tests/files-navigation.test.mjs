@@ -173,3 +173,27 @@ test("Recent lists flat with dimmed folders or by folder, folds folders, and cle
   assert.deepEqual(library.libraryFor(f.state[library.LIBRARY_KEY], "/project").recent, []);
   assert(!find(f.render(), "recent-clear"));
 });
+
+test("the fold button opens folders a few levels down, skipping dependency folders, then collapses them", async () => {
+  const f = harness(); await f.flush();
+  find(f.render(), "files-fold-all").events.on_click({}, f.cx); await f.flush();
+  assert.deepEqual([...f.browser.folders], ["src"]);
+  assert.deepEqual(f.browser.visibleEntries().map(e => e.path), ["src", "src/a.py", "src/b.py", "readme.md"]);
+  find(f.render(), "files-fold-all").events.on_click({}, f.cx);
+  assert.deepEqual([...f.browser.folders], []);
+  const entries = new Map([["", [{ name: "src", dir: true }, { name: "node_modules", dir: true }, { name: ".git", dir: true }, { name: ".config", dir: true }, { name: "a.py", dir: false }]]]);
+  assert.deepEqual(model.childFolders(entries, [""]), ["src"]);
+  assert.deepEqual(model.childFolders(entries, [""], true), ["src", ".config"]);
+  assert.deepEqual(model.openBelow(new Set(["src", "src/x", "lib"]), "src"), ["src/x"]);
+  assert.deepEqual(model.openBelow(new Set(["src", "lib"])), ["src", "lib"]);
+});
+
+test("in grouped Recent the fold button folds and unfolds every group", async () => {
+  const f = harness({ [library.LIBRARY_VIEW_KEY]: "tree" }); await f.flush();
+  for (const path of ["a/x.py", "b/y.py"]) f.state[library.LIBRARY_KEY] = library.updateLibrary(f.state[library.LIBRARY_KEY], "/project", null, "open", path);
+  f.browser.mode = "recent";
+  find(f.render(), "files-fold-all").events.on_click({}, f.cx);
+  assert.deepEqual([...f.browser.libraryFolded].sort(), ["a", "b"]);
+  find(f.render(), "files-fold-all").events.on_click({}, f.cx);
+  assert.equal(f.browser.libraryFolded.size, 0);
+});

@@ -8,7 +8,7 @@ import { openFileTab, projectContext } from "./file-tabs.js";
 import { fileIcon, iconButton } from "./icons.js";
 import { LIBRARY_KEY, LIBRARY_VIEW_KEY, libraryFor, libraryView, updateLibrary, remapLibrary, breadcrumbs, forgetRecent, pathTree, treeRows } from "./library-model.js";
 
-import { CHANGE_KEY, SHOW_HIDDEN_KEY, visibleEntry, targetFor, menuHeight, applyPathChange, dirtyFolders, markColor } from "./model.js";
+import { CHANGE_KEY, SHOW_HIDDEN_KEY, visibleEntry, targetFor, menuHeight, applyPathChange, dirtyFolders, markColor, EXPAND_DEPTH, EXPAND_LIMIT, openBelow, childFolders } from "./model.js";
 
 function location() { return projectContext(); }
 const key = source => JSON.stringify(source || location());
@@ -211,6 +211,51 @@ export default class Browser {
     return paths.map(path => { const at = path.lastIndexOf("/"); return { path, name: path.slice(at + 1), hint: at > 0 ? path.slice(0, at) : "", dir: false, depth: 0 }; });
   }
 
+  // The header's fold button: in the tree, collapse every open folder below the current one,
+  // or open a few levels; in grouped Recent / Pinned, fold or unfold every group.
+  foldState() {
+    if (this.mode === "tree") return { usable: Boolean(this.root), open: openBelow(this.folders, this.browseFolder).length > 0 };
+    if (libraryView(shared(LIBRARY_VIEW_KEY)) !== "tree") return { usable: false, open: false };
+    const paths = libraryFor(shared(LIBRARY_KEY), this.root, this.on)[this.mode];
+    const groups = treeRows(pathTree(paths)).filter(row => row.group).map(row => row.path);
+    return { usable: groups.length > 0, open: groups.some(path => !this.libraryFolded.has(path)), groups };
+  }
+
+  foldAll(cx) {
+    const state = this.foldState();
+    if (!state.usable || this.expanding) return;
+    if (this.mode !== "tree") {
+      if (state.open) for (const path of state.groups) this.libraryFolded.add(path);
+      else this.libraryFolded.clear();
+    } else if (state.open) {
+      for (const path of openBelow(this.folders, this.browseFolder)) { this.folders.delete(path); this.entries.delete(path); }
+    } else this.expandAll(cx);
+    cx.notify();
+  }
+
+  expandAll(cx) {
+    const context = this.context;
+    if (!context) return;
+    this.expanding = true;
+    cx.spawn(async cx => {
+      try {
+        let level = [this.browseFolder], opened = 0;
+        for (let depth = 0; depth < EXPAND_DEPTH && level.length && opened < EXPAND_LIMIT; depth++) {
+          const next = childFolders(this.entries, level, context.showHidden).filter(path => !this.folders.has(path)).slice(0, EXPAND_LIMIT - opened);
+          for (const path of next) this.folders.add(path);
+          opened += next.length;
+          for (let i = 0; i < next.length; i += 8) {
+            await Promise.all(next.slice(i, i + 8).map(path => this.entries.has(path) ? null : this.loadFolder(path, context).catch(() => {})));
+            if (!this.current(context)) return;
+          }
+          cx.notify();
+          if (this.limited) break;
+          level = next;
+        }
+      } finally { this.expanding = false; if (!this.disposed) cx.notify(); }
+    });
+  }
+
   foldLibrary(path, cx) {
     if (this.libraryFolded.has(path)) this.libraryFolded.delete(path); else this.libraryFolded.add(path);
     cx.notify();
@@ -323,6 +368,7 @@ export default class Browser {
             .child(this.segment("files-tree-mode", "tree", "File tree", this.mode === "tree", (_e, cx) => { this.mode = "tree"; this.show(null); cx.notify(); }, t))
             .child(this.segment("files-recent", "history", "Recent files", this.mode === "recent", (_e, cx) => { this.mode = "recent"; this.show(null); cx.notify(); }, t))
             .child(this.segment("files-pinned", "pin", "Pinned files", this.mode === "pinned", (_e, cx) => { this.mode = "pinned"; this.show(null); cx.notify(); }, t)))
+          .child((fold => iconButton("files-fold-all", fold.open ? "collapse-all" : "expand-all", this.expanding ? "Expanding folders…" : fold.open ? "Collapse all folders" : this.mode === "tree" ? "Expand folders (4 levels; skips node_modules, .git and build folders)" : "Expand all groups", (_e, cx) => this.foldAll(cx), t, false, !fold.usable || this.expanding))(this.foldState()))
           .child(iconButton("files-search", "search", "Search project", (_e, cx) => this.search(cx), t, false, !this.root))
           .child(iconButton("files-plus-root-menu", "more", "File actions", (_e, cx) => this.menu(this.file ?? this.browseFolder, !this.file, cx, true), t)))
         .child(h_flex().id("files-breadcrumbs").h(22).flex_none().gap(4).min_w(0).overflow_hidden().items_center()
