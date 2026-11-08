@@ -346,12 +346,12 @@ export default class ProjectSpaces extends View {
 
   // ---- drawing ----
 
-  // Only what's unusual, after the name: the branch unless it's main/master or the name,
-  // the repository when it isn't the project's own, and ahead/behind.
+  // After the name: the branch (unless it repeats the name), the repository when it
+  // isn't the project's own, and ahead/behind.
   gitTail(g, row, groupName, t) {
     const raw = g.branch ?? "detached";
     const same = a => a.toLowerCase() === row.w.name.toLowerCase();
-    const branch = same(raw) || raw === "master" || raw === "main" ? "" : raw;
+    const branch = same(raw) ? "" : raw;
     const repo = same(g.name) || g.name === groupName ? "" : g.name;
     const label = [repo, branch].filter(Boolean).join(" · ");
     return h_flex().flex_1().min_w(0).gap(5).justify_end().items_center().text_size(11.5).text_color(t.dim)
