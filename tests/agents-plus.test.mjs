@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { RANK, buildGroups, groupOrder, pinModeOf, sortOf, PIN_MODES } from "../mods/agents-plus/model.js";
+import { RANK, buildGroups, groupOrder, pinModeOf, sortOf, PIN_MODES, dropNested, countByTab } from "../mods/agents-plus/model.js";
 
 const agent = (address, space, extra = {}) => ({ address, space, space_name: space.toUpperCase(), status: "idle", pinned: false, ...extra });
 const list = [
@@ -45,4 +45,15 @@ test("a space split apart by sorting still makes one group, and settings fall ba
   assert.deepEqual(buildGroups(scattered, { byPriority: false, rankOf }).map(g => g.members.length), [2, 1]);
   assert.equal(pinModeOf("bogus"), PIN_MODES[0]); assert.equal(pinModeOf("split").id, "split");
   assert.equal(sortOf(undefined).id, "priority"); assert.equal(sortOf("grouped").id, "grouped");
+});
+
+test("a kept sub-agent shown in its parent's tree gets no row of its own, unless pinned", () => {
+  const kept = [agent("p1", "a"), agent("k1", "a"), agent("k2", "a", { pinned: true }), agent("x1", "b")];
+  assert.deepEqual(dropNested(kept, new Set(["k1", "k2"])).map(a => a.address), ["p1", "k2", "x1"]);
+  assert.deepEqual(dropNested(kept, new Set()).map(a => a.address), ["p1", "k1", "k2", "x1"]);
+});
+
+test("countByTab counts the listed agents in each tab", () => {
+  const counts = countByTab([agent("a1", "a", { tab: "t1" }), agent("a2", "a", { tab: "t1" }), agent("b1", "b", { tab: "t2" })]);
+  assert.equal(counts.get("t1"), 2); assert.equal(counts.get("t2"), 1); assert.equal(counts.get("t3"), undefined);
 });
