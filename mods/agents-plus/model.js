@@ -57,3 +57,14 @@ export function buildGroups(list, { byPriority, pins = "together", rankOf }) {
 
 /** Agents in the order the groups show them, for agent.next / agent.prev. */
 export const groupOrder = groups => groups.flatMap(g => g.members);
+
+/** A kept sub-agent (one with a pane) is in agents() too: where a tree shows it
+ *  (`nested`, its addresses), it gets no row of its own, unless it's pinned. */
+export const dropNested = (list, nested) => list.filter(a => a.pinned || !nested.has(a.address));
+
+/** How many listed agents each tab holds: a tab with several names each by its own title. */
+export function countByTab(list) {
+  const counts = new Map();
+  for (const a of list) counts.set(a.tab, (counts.get(a.tab) ?? 0) + 1);
+  return counts;
+}
