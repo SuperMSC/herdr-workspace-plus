@@ -1,8 +1,8 @@
 import { div, svg, image } from "gpui-kit";
 import { h_flex, v_flex, Input } from "gpui-base";
 import { agents, terminals, spaces, panes, focused, theme, run, shared, setShared, setAgentOrder } from "herdr";
-import { DENSITY_KEY } from "./model.js";
-import { DIRECTORY_PINS_KEY, normalizeDirectoryPins } from "./directory-pins.js";
+import { DENSITY_KEY, SIDEBAR_COLUMNS } from "./model.js";
+import { DIRECTORY_PINS_KEY, normalizeDirectoryPins, setDirectoryPin } from "./directory-pins.js";
 import { unifiedRows, validateUnifiedTarget } from "./unified-model.js";
 const chrome = name => `mods/workspace-chrome/${name}.svg`;
 const label = (value, limit = 500) => String(value ?? "").replace(/[\x00-\x1f\x7f]/g, " ").slice(0, limit);
@@ -90,6 +90,38 @@ export default class UnifiedSidebar {
     } catch (error) { this.error = label(error.message || error); }
     cx.notify();
   }
+  unpinDirectory(row, owner, cx) {
+    try {
+      const snapshot = this.fresh(), pins = normalizeDirectoryPins(shared(DIRECTORY_PINS_KEY));
+      const live = target => snapshot.spaces.filter(space => space.id === target.id).length === 1 && snapshot.spaces.some(space => space.id === target.id && (space.machine ?? null) === (target.machine ?? null));
+      let kind, id;
+      if (row.kind === "space") {
+        if (!validateUnifiedTarget(row.target, snapshot)) throw new Error("This directory changed or closed. Choose its current row.");
+        kind = "space"; id = row.spaceId;
+      } else if (row.kind === "group") {
+        const group = row.sourceGroup, state = owner.state();
+        const current = owner.lastGroups?.find(item => item.key === row.groupKey);
+        if (!group || !current || !group.rows.some(source => live(source.w) && current.rows.some(item => item.w.id === source.w.id) && (state.assign?.[source.w.id] ?? source.auto?.key) === row.groupKey)) throw new Error("This project changed or closed. Choose its current row.");
+        kind = "group"; id = row.groupKey;
+      } else throw new Error("Choose a directory or project pin.");
+      const key = kind === "space" ? "spaces" : "groups";
+      if (pins[key].includes(id)) setShared(DIRECTORY_PINS_KEY, setDirectoryPin(pins, kind, id, false));
+      this.epoch++; this.cacheKey = null; this.nextCheck = 0; this.error = "";
+    } catch (error) { this.error = label(error.message || error); }
+    cx.notify();
+  }
+  directoryPin(row, owner, cx) {
+    if (!["group", "space"].includes(row.kind) || row.section !== "pinned") return null;
+    const t = theme(), pins = normalizeDirectoryPins(shared(DIRECTORY_PINS_KEY)), direct = Boolean(row.directoryPinned), disabled = Boolean(row.target?.disabled);
+    const inherited = row.kind === "space" && (row.directoryInheritedPin || pins.groups.includes(row.groupKey));
+    const title = direct ? (row.kind === "group" ? "Unpin project" : inherited ? "Unpin directory (project remains pinned)" : "Unpin directory") : inherited ? "Pinned with project" : row.kind === "group" ? "Pinned with its directories and tasks" : "Pinned with its tasks";
+    return div().id("unified-directory-pin-" + row.id).size(19).flex_none().rounded(4).flex().items_center().justify_center().text_color(direct && !disabled ? t.accent : t.dim).tooltip(disabled ? row.target.reason || "Pin actions unavailable for this directory" : title).accessibility_label(title)
+      .when(direct && !disabled, el => el.cursor_pointer().hover(el => el.bg(t.hover))
+        .on_mouse_down("left", (_event, cx) => cx.stop_propagation())
+        .on_mouse_up("left", (_event, cx) => { cx.stop_propagation(); owner.drag = owner.over = null; })
+        .on_click((_event, cx) => { cx.stop_propagation(); this.unpinDirectory(row, owner, cx); }))
+      .child(svg(chrome("pin")).size(12));
+  }
   program(row) { return row.program || row.agent?.program || row.terminal?.program || null; }
   metadata(row, full = false) {
     if (!full && typeof row.inlineMetadata === "string") return label(row.inlineMetadata, 700);
@@ -107,48 +139,63 @@ export default class UnifiedSidebar {
     const depth = treeDepth(row);
     return Array.from({ length: depth }, (_, level) => div().id(`unified-guide-${row.id}-${level}`).absolute().left(13 + level * TREE_STEP).top(0).bottom(0).w(0).border_l(1).border_color(t.dim).opacity(0.5));
   }
-  entityRow(row, index, frame, cx) {
+  entityRow(row, index, frame, cx, directoryPin = null) {
     const t = theme(), density = frame.density || "detailed", detailed = density !== "compact", target = row.target, disabled = Boolean(target?.disabled), program = this.program(row), depth = treeDepth(row);
     const task = label(row.title || row.taskTitle || row.agent?.title || row.terminal?.name || row.tabName || target?.address || "Workspace item", 2000), metadata = this.metadata(row), agent = ["agent", "terminal"].includes(target?.kind);
     const completeTask = label(row.taskTitle || task, 2048), ownStatus = statusName(row.status), knownStatus = ["blocked", "done", "working", "idle"].includes(row.status);
     const localMetadata = metadata.trim().toLocaleLowerCase() === task.trim().toLocaleLowerCase() || metadata.trim().toLocaleLowerCase() === "unknown" ? "" : metadata;
-    const childStatus = ["blocked", "done", "working", "idle"].includes(row.branchStatus) && row.branchStatus !== row.status ? `Child activity: ${statusName(row.branchStatus)}` : "";
-    const details = [localMetadata, knownStatus ? ownStatus : "", childStatus].filter(Boolean).join(" · ");
-    const fullDetails = [this.metadata(row, true), ownStatus, row.branchStatus && row.branchStatus !== row.status ? `Child activity: ${statusName(row.branchStatus)}` : ""].filter(Boolean).join(" · ");
-    const tooltip = [completeTask, fullDetails, row.parentId ? `Parent: ${label(row.parentId, 256)}` : "", target?.address, target?.reason].filter(Boolean).join("\n");
-    const folding = div().id(`unified-fold-${row.id}`).w(18).h(16).flex_none().rounded(4).flex().items_center().justify_center().text_color(t.dim)
-      .when(Boolean(row.foldable), el => el.cursor_pointer().hover(el => el.bg(t.hover)).on_click((_event, cx) => { cx.stop_propagation(); this.fold(row, cx); })
-        .child(svg(chrome(row.folded ? "chevron-right" : "chevron-down")).size(10)))
+    const childStatus = ["blocked", "done", "working", "idle"].includes(row.branchStatus) && row.branchStatus !== row.status ? "Child activity: " + statusName(row.branchStatus) : "";
+    const contextDetails = [localMetadata, childStatus].filter(Boolean).join(" · ");
+    const statusColor = disabled || row.status === "idle" ? t.dim : t[row.status] || t.accent;
+    const hasDetails = detailed && Boolean(contextDetails || knownStatus), showAgentPin = agent && (row.pinned || this.hovered === row.id);
+    const hasColumns = agent || row.kind === "space" || knownStatus || Boolean(directoryPin);
+    const fullDetails = [this.metadata(row, true), ownStatus, row.branchStatus && row.branchStatus !== row.status ? "Child activity: " + statusName(row.branchStatus) : ""].filter(Boolean).join(" · ");
+    const tooltip = [completeTask, fullDetails, row.parentId ? "Parent: " + label(row.parentId, 256) : "", target?.address, target?.reason].filter(Boolean).join("\n");
+    const folding = div().id("unified-fold-" + row.id).w(18).h(16).flex_none().rounded(4).flex().items_center().justify_center().text_color(t.dim)
+      .when(Boolean(row.foldable), el => el.cursor_pointer().hover(el => el.bg(t.hover)).on_click((_event, cx) => { cx.stop_propagation(); this.fold(row, cx); }).child(svg(chrome(row.folded ? "chevron-right" : "chevron-down")).size(10)))
       .when(!row.foldable, el => el.child(div().w(1)));
     let icon = row.kind === "tab" ? svg(chrome("layers")).size(12).flex_none().text_color(t.dim) : div().size(8).flex_none().rounded(4).bg(t[row.status] || t.dim);
-    if (row.kind === "space") icon = svg(chrome("folder")).id(`unified-directory-icon-${row.id}`).size(14).text_color(t.muted || t.dim);
+    if (row.kind === "space") icon = svg(chrome("folder")).id("unified-directory-icon-" + row.id).size(14).text_color(t.muted || t.dim);
     if (program?.icon) icon = program.tint ? svg(program.icon).size(14).flex_none().text_color(t.foreground) : image(program.icon).size(14).flex_none();
-    const body = h_flex().id(`unified-entity-${row.id}`).relative().min_w(0).min_h(detailed ? 28 : 32).py(detailed ? 5 : 0).when(!detailed, el => el.h(32)).flex_none().pl(4 + depth * TREE_STEP).pr(5).gap(5).items_start().when(!detailed, el => el.items_center()).rounded(7).tooltip(tooltip)
-      .bg(row.focused || row.active ? t.selected : "#00000000").text_color(disabled ? t.dim : t.foreground).when(row.kind === "space", el => el.bg(row.active ? t.selected : t.raised).rounded(6)).cursor_pointer().hover(el => el.bg(row.focused || row.active ? t.selected : t.hover))
+    const statusGlyph = row.status === "working" ? svg(chrome("spinner")).size(11).text_color(t.working).spin(900) : div().size(row.status === "blocked" ? 8 : 7).rounded(4).bg(row.status === "idle" ? "#00000000" : t[row.status] || t.dim).when(row.status === "idle", el => el.border_1().border_color(t.idle || t.dim));
+    const statusControl = knownStatus ? div().id("unified-status-" + row.id).size(13).flex().items_center().justify_center().tooltip(ownStatus).child(statusGlyph) : null;
+    const pinControl = !agent ? directoryPin : showAgentPin ? div().id("unified-pin-" + row.id).size(19).flex_none().rounded(4).flex().items_center().justify_center().text_color(row.pinned ? t.accent : t.dim).tooltip(row.pinned ? "Unpin agent" : "Pin agent")
+      .cursor_pointer().hover(el => el.bg(t.hover)).on_click((_event, cx) => { cx.stop_propagation(); this.pin(row, cx); }).child(svg(chrome(row.pinned ? "pin-off" : "pin")).size(12)) : null;
+    const actions = h_flex().id("unified-actions-" + row.id).w(hasColumns ? SIDEBAR_COLUMNS.width : 0).flex_none().gap(SIDEBAR_COLUMNS.gap).items_center().when(detailed, el => el.items_start())
+      .when(hasColumns, el => el.child(div().id((agent ? "unified-agent-pin-slot-" : "unified-directory-pin-slot-") + row.id).size(SIDEBAR_COLUMNS.pin).flex_none().when(Boolean(pinControl), el => el.child(pinControl))))
+      .when(hasColumns, el => el.child(div().id("unified-status-slot-" + row.id).w(SIDEBAR_COLUMNS.summary).h(13).flex_none().flex().items_center().justify_end().when(Boolean(statusControl), el => el.child(statusControl))));
+    const metadataLine = hasDetails ? h_flex().id("unified-meta-" + row.id).absolute().left(53 + depth * TREE_STEP).right(SIDEBAR_COLUMNS.inset).bottom(3).min_w(0).overflow_hidden().h(13).gap(5).items_center().justify_end().text_size(10.5).line_height("13px").tooltip(fullDetails)
+      .when(Boolean(contextDetails), el => el.child(div().id("unified-context-" + row.id).flex_1().min_w(0).truncate().text_color(t.dim).child(contextDetails)))
+      .when(knownStatus, el => el.child(div().id("unified-status-text-" + row.id).flex_none().font_medium().text_color(statusColor).child(ownStatus))) : null;
+    const body = h_flex().id("unified-entity-" + row.id).relative().min_w(0).min_h(detailed ? 26 : 28).py(detailed ? 3 : 0).when(!detailed, el => el.h(28)).flex_none().pl(4 + depth * TREE_STEP).pr(SIDEBAR_COLUMNS.inset).gap(5).items_start().when(!detailed, el => el.items_center()).rounded(7).tooltip(tooltip)
+      .bg(row.focused ? t.selected : "#00000000").text_color(disabled ? t.dim : t.foreground).when(row.kind === "space", el => el.rounded(4)).cursor_pointer().hover(el => el.bg(row.focused ? t.selected : t.hover))
       .on_click((_event, cx) => this.navigate(row, cx))
       .on_hover((on, cx) => { const next = on ? row.id : this.hovered === row.id ? null : this.hovered; if (next !== this.hovered) { this.hovered = next; cx.notify(); } })
-      .children(this.guides(row, t)).child(folding).child(div().id(`unified-icon-${row.id}`).w(18).h(16).mr(3).flex_none().flex().items_center().justify_center().child(icon))
-      .child(v_flex().flex_1().min_w(0).gap(3)
-        .child(div().id(`unified-task-${row.id}`).min_w(0).text_size(12).font_weight(400).when(row.kind === "space", el => el.font_semibold().text_size(12.5)).when(detailed, el => el.max_h(32).overflow_hidden().whitespace_normal().line_height("16px")).when(!detailed, el => el.truncate()).child(task))
-        .when(detailed && Boolean(details), el => el.child(div().id(`unified-meta-${row.id}`).truncate().text_size(10.5).text_color(t.dim).tooltip(fullDetails).child(details))))
-      .child(h_flex().flex_none().gap(3).items_center()
-        .when(knownStatus, el => el.child(div().id(`unified-status-${row.id}`).size(13).flex_none().flex().items_center().justify_center().tooltip(ownStatus).child(row.status === "working" ? svg(chrome("spinner")).size(11).text_color(t.working).spin(900) : div().size(row.status === "blocked" ? 8 : 7).rounded(4).bg(row.status === "idle" ? "#00000000" : t[row.status] || t.dim).when(row.status === "idle", el => el.border_1().border_color(t.idle || t.dim)))))
-        .when(agent && (row.pinned || this.hovered === row.id), el => el.child(div().id(`unified-pin-${row.id}`).size(19).flex_none().rounded(4).flex().items_center().justify_center().text_color(row.pinned ? t.accent : t.dim).tooltip(row.pinned ? "Unpin agent" : "Pin agent")
-          .cursor_pointer().hover(el => el.bg(t.hover)).on_click((_event, cx) => { cx.stop_propagation(); this.pin(row, cx); }).child(svg(chrome(row.pinned ? "pin-off" : "pin")).size(12)))));
+      .children(this.guides(row, t)).child(folding).child(div().id("unified-icon-" + row.id).w(18).h(16).mr(3).flex_none().flex().items_center().justify_center().child(icon))
+      .child(v_flex().flex_1().min_w(0).gap(2)
+        .child(div().id("unified-task-" + row.id).min_w(0).text_size(12).font_weight(400).when(row.kind === "space", el => el.font_semibold().text_size(12.5)).when(detailed, el => el.max_h(32).overflow_hidden().whitespace_normal().line_height("16px")).when(!detailed, el => el.truncate()).child(task))
+        .when(hasDetails, el => el.child(div().id("unified-meta-slot-" + row.id).h(13).flex_none())))
+      .child(actions)
+      .when(Boolean(metadataLine), el => el.child(metadataLine));
     return body;
   }
+  projectGap(row, index) {
+    const previous = this.result?.rows?.[index - 1];
+    if (!previous || !["group", "space"].includes(row.kind) || ["section", "statussection"].includes(previous.kind)) return 0;
+    return row.groupKey && row.groupKey !== previous.groupKey ? 6 : 0;
+  }
   draw(row, index, frame, owner, cx, canonical) {
-    const st = { ...frame.state, mode: "project" }, t = theme(), depth = treeDepth(row);
+    const st = { ...frame.state, mode: "project" }, t = theme(), depth = treeDepth(row), pin = this.directoryPin(row, owner, cx), spacing = this.projectGap(row, index);
     if (row.kind === "group" && row.sourceGroup && canonical.groups.has(row.sourceGroup.key) && frame.state.mode !== "status") {
       const joining = owner.drag?.kind === "space" && owner.over?.kind === "group" && owner.over.id === row.sourceGroup.key;
-      return v_flex().id(`unified-group-${row.id}`).relative().w_full().min_w(0).flex_none().bg(joining ? t.selected : t.raised).rounded(6).border_b(1).border_color(t.border).when(joining, el => el.border_1().border_color(t.accent)).when(!joining, el => el.hover(el => el.bg(t.hover))).mt(index ? 12 : 4).mb(4).pl(depth * TREE_STEP).children(this.guides(row, t)).child(owner.groupHead({ ...row.sourceGroup, folded: row.folded, onFold: cx => this.fold(row, cx) }, st, t, index, frame.density, true));
+      return v_flex().id(`unified-group-${row.id}`).relative().w_full().min_w(0).flex_none().bg(joining ? t.selected : "#00000000").rounded(4).when(joining, el => el.border_1().border_color(t.accent)).when(!joining, el => el.hover(el => el.bg(t.hover))).mt(spacing).pl(depth * TREE_STEP).children(this.guides(row, t)).child(owner.groupHead({ ...row.sourceGroup, folded: row.folded, onFold: cx => this.fold(row, cx) }, st, t, index, frame.density, true, pin));
     }
     if (row.kind === "space" && row.sourceSpace?.auto?.key && row.sourceGroup && canonical.groups.has(row.sourceGroup.key) && canonical.spaces.has(row.sourceSpace.w?.id) && frame.state.mode !== "status") {
-      return h_flex().id(`unified-space-${row.id}`).relative().w_full().min_w(0).flex_none().bg(row.sourceSpace.w.active ? t.selected : t.raised).rounded(6).border_b(1).border_color(t.border).hover(el => el.bg(row.sourceSpace.w.active ? t.selected : t.hover)).pl(4 + depth * TREE_STEP).pr(5).gap(5).items_start().children(this.guides(row, t))
-        .child(div().w(18).h(18).mt(frame.density === "compact" ? 7 : 5).flex_none().rounded(4).flex().items_center().justify_center().text_color(t.dim).when(Boolean(row.foldable), el => el.cursor_pointer().hover(el => el.bg(t.hover)).on_click((_event, cx) => { cx.stop_propagation(); this.fold(row, cx); }).child(svg(chrome(row.folded ? "chevron-right" : "chevron-down")).size(10))))
-        .child(div().flex_1().min_w(0).child(owner.row(row.sourceSpace, row.sourceGroup, st, t, frame.density, true)));
+      return h_flex().id(`unified-space-${row.id}`).relative().w_full().min_w(0).flex_none().bg("#00000000").rounded(4).hover(el => el.bg(t.hover)).mt(spacing).pl(4 + depth * TREE_STEP).pr(SIDEBAR_COLUMNS.inset).gap(5).items_start().children(this.guides(row, t))
+        .child(div().w(18).h(18).mt(frame.density === "compact" ? 4 : 3).flex_none().rounded(4).flex().items_center().justify_center().text_color(t.dim).when(Boolean(row.foldable), el => el.cursor_pointer().hover(el => el.bg(t.hover)).on_click((_event, cx) => { cx.stop_propagation(); this.fold(row, cx); }).child(svg(chrome(row.folded ? "chevron-right" : "chevron-down")).size(10))))
+        .child(div().flex_1().min_w(0).child(owner.row(row.sourceSpace, row.sourceGroup, st, t, frame.density, true, pin)));
     }
-    if (["section", "statussection"].includes(row.kind)) return h_flex().id(`unified-section-${row.id}`).h(27).mt(index ? 6 : 0).pl(4 + depth * TREE_STEP).pr(5).gap(5).flex_none().items_center().border_t(1).border_color(t.border).text_size(10.5).text_color(t.muted || t.dim)
+    if (["section", "statussection"].includes(row.kind)) return h_flex().id(`unified-section-${row.id}`).h(27).mt(index ? 6 : 0).pl(4 + depth * TREE_STEP).pr(SIDEBAR_COLUMNS.inset).gap(5).flex_none().items_center().border_t(1).border_color(t.border).text_size(10.5).text_color(t.muted || t.dim)
       .when(Boolean(row.foldable), el => el.cursor_pointer().hover(el => el.bg(t.hover)).on_click((_event, cx) => this.fold(row, cx)))
       .child(div().w(18).h(16).flex_none().flex().items_center().justify_center().when(Boolean(row.foldable), el => el.child(svg(chrome(row.folded ? "chevron-right" : "chevron-down")).size(9))))
       .child(div().w(18).h(16).mr(3).flex_none().flex().items_center().justify_center()
@@ -156,13 +203,17 @@ export default class UnifiedSidebar {
         .when(Boolean(row.status), el => el.child(div().size(5).rounded(3).bg(t[row.status] || t.dim))))
       .child(div().flex_1().font_semibold().child(row.title || row.name || "Workspaces"))
       .when(Boolean(row.count ?? row.childCount), el => el.child(div().text_size(10).child(String(row.count ?? row.childCount))));
-    if (row.kind === "group") return h_flex().id(`unified-readonly-group-${row.id}`).relative().w_full().min_w(0).min_h(34).pl(4 + depth * TREE_STEP).pr(5).gap(5).flex_none().items_center().bg(t.raised).border_b(1).border_color(t.border).children(this.guides(row, t))
+    if (row.kind === "group") return h_flex().id(`unified-readonly-group-${row.id}`).relative().w_full().min_w(0).min_h(28).mt(spacing).pl(4 + depth * TREE_STEP).pr(SIDEBAR_COLUMNS.inset).gap(5).flex_none().items_center().bg("#00000000").rounded(4).hover(el => el.bg(t.hover)).children(this.guides(row, t))
       .when(Boolean(row.foldable), el => el.cursor_pointer().on_click((_event, cx) => this.fold(row, cx)))
       .when(Boolean(row.sourceGroup) && canonical.groups.has(row.groupKey), el => el.on_mouse_down("right", (_event, cx) => { cx.stop_propagation(); owner.groupMenu(row.sourceGroup); }))
       .child(div().w(18).h(18).flex_none().flex().items_center().justify_center().when(Boolean(row.foldable), el => el.child(svg(chrome(row.folded ? "chevron-right" : "chevron-down")).size(10))))
       .child(div().w(18).h(18).mr(3).flex_none().flex().items_center().justify_center().child(svg(chrome("folder")).size(15)))
-      .child(div().flex_1().min_w(0).truncate().text_size(12.5).font_semibold().child(row.title || row.name || "Workspaces"));
-    return this.entityRow(row, index, frame, cx)
+      .child(div().flex_1().min_w(0).truncate().text_size(12.5).font_semibold().child(row.title || row.name || "Workspaces"))
+      .child(h_flex().w(SIDEBAR_COLUMNS.width).flex_none().gap(SIDEBAR_COLUMNS.gap).items_center()
+        .child(div().size(SIDEBAR_COLUMNS.pin).flex_none().when(Boolean(pin), el => el.child(pin)))
+        .child(div().w(SIDEBAR_COLUMNS.summary).flex_none().text_right().text_size(11).text_color(t.dim).child(String(row.count ?? row.childCount ?? ""))));
+    return this.entityRow(row, index, frame, cx, pin)
+      .when(row.kind === "space", el => el.mt(spacing))
       .when(row.kind === "space" && Boolean(row.sourceSpace?.auto) && canonical.spaces.has(row.spaceId), el => el.on_mouse_down("right", (_event, cx) => { cx.stop_propagation(); owner.spaceMenu(row.sourceSpace); }));
   }
   render(frame, owner, cx) {
@@ -170,8 +221,8 @@ export default class UnifiedSidebar {
     const result = this.result || { rows: [], agentOrder: [], pages: 1 }, rows = result.rows || [], t = theme(), st = frame.state || {}, collapsed = frame.collapsed, view = st.mode === "status" ? "status" : "project";
     if (this.result) setAgentOrder(result.agentOrder || []);
     const canonical = { groups: new Set((owner.lastGroups || []).map(group => group.key)), spaces: new Set((owner.lastRows || []).map(row => row.w?.id)) };
-    const normalButton = (id, text, action, selected = false, disabled = false) => div().id(id).h(CONTROL.height).min_w(CONTROL.textWidth).px(8).py(0).flex_none().rounded(CONTROL.radius).text_size(11.5).line_height("16px").flex().items_center().justify_center().bg(selected ? t.selected : t.background).text_color(disabled ? t.dim : selected ? t.accent : t.muted).disabled(disabled)
-      .when(disabled, el => el.opacity(0.4).cursor_default()).when(!disabled, el => el.cursor_pointer().hover(el => el.bg(t.hover))).on_click((_event, cx) => { cx.stop_propagation(); if (!disabled) action(cx); }).child(text);
+    const normalButton = (id, text, action, selected = false, disabled = false) => div().id(id).h(CONTROL.height).min_w(CONTROL.textWidth).px(8).py(0).flex_none().rounded(CONTROL.radius).text_size(11.5).line_height("16px").flex().items_center().justify_center().when(selected, el => el.bg(t.selected)).text_color(disabled ? t.dim : selected ? t.accent : t.muted).disabled(disabled)
+      .when(disabled, el => el.opacity(0.4).cursor_default()).when(!disabled, el => el.cursor_pointer().hover(el => el.bg(t.hover).text_color(t.foreground))).on_click((_event, cx) => { cx.stop_propagation(); if (!disabled) action(cx); }).child(text);
     const iconButton = (id, icon, title, action, disabled = false) => normalButton(id, svg(icon).size(CONTROL.glyph).flex_none(), action, false, disabled).w(CONTROL.height).min_w(CONTROL.height).p(0).text_color(t.muted).tooltip(title).accessibility_label(title);
     const textSegment = (id, text, action, selected) => div().id(id).h(CONTROL.segmentHeight).min_w(CONTROL.textWidth).px(8).py(0).flex_none().flex().items_center().justify_center().rounded(CONTROL.segmentRadius).text_size(11.5).line_height("16px").cursor_pointer().text_color(selected ? t.foreground : t.dim)
       .tooltip(text).accessibility_label(text).when(selected, el => el.bg(t.selected)).when(!selected, el => el.hover(el => el.bg(t.hover).text_color(t.muted))).on_click((_event, cx) => { cx.stop_propagation(); action(cx); }).child(text);

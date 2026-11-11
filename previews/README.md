@@ -10,7 +10,7 @@ Validation: 645 tests passed, all four production mods passed native check, and 
 
 ## 0.12 unified sidebar
 
-unified-sidebar.png shows the actual 0.12 native Project Spaces + UnifiedSidebar components at 268px using sample data. It includes directories grouped inside Pinned and Needs attention, two-line task titles, a child agent, and the single whole-tree toggle. The snapshot is populated asynchronously by the production projection. All 769 tests now pass with the default test-file concurrency. The Deliverables lock and atomic-read races were fixed, with 14 deterministic filesystem race tests and 20 cross-process stress rounds (960 writes, 4,800 reads and 20 revision races) passing. Final native checks cover directory placement and both toggle states; an isolated layout resize retained metadata and supported exact restoration.
+unified-sidebar.png shows the actual 0.12 native Project Spaces + UnifiedSidebar components at 268px using sample data. It includes directories grouped inside Pinned and Needs attention, two-line task titles, a child agent, and the single whole-tree toggle. The snapshot is populated asynchronously by the production projection. All 782 tests now pass with the default test-file concurrency. The Deliverables lock and atomic-read races were fixed, with 14 deterministic filesystem race tests and 20 cross-process stress rounds (960 writes, 4,800 reads and 20 revision races) passing. Final native checks cover directory placement and both toggle states; an isolated layout resize retained metadata and supported exact restoration.
 
 unified-hierarchy.png shows the same production components with a three-level project / workspace / terminal tree. Names and icons use consistent indentation; nested task metadata omits repeated parent names.
 
@@ -19,3 +19,9 @@ unified-directory-pins.png shows directory-level pinning with the current Files-
 
 
 toolbar-frame.png shows the production Sessions toolbar button selected inside its own native block. Its 26px height and 6px corner radius match the shipped panel buttons; removing the negative margin preserves the left round corners. The isolated preview app and its empty core were stopped after verification.
+
+
+The 0.12.1 sidebar update uses transparent directory rows, persistent direct-pin controls, 38px Detailed workspace rows and 28px Compact rows. Base row spacing is 2px, with 6px extra at project boundaries. All 782 tests and the installed native check passed. Earlier sample PNGs retain the original 0.12 card styling; the latest layout was checked in the running app without publishing live conversation content.
+
+
+Version 0.12.1 uses a shared 78px trailing dock for projects, directories and terminals: a 19px pin slot, 3px gap and 56px right-aligned summary, all with a 5px right inset. Details and action buttons are transparent at rest, with hover feedback following the shipped Spaces/chrome controls. Detailed status text shares its icon column right edge and remains aligned on resize; hovering reveals the already-reserved pin control without narrowing or reflowing titles.

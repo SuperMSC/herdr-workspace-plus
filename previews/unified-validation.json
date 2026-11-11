@@ -1,6 +1,6 @@
 {
-  "version": "0.12.0",
-  "tests": 769,
+  "version": "0.12.1",
+  "tests": 782,
   "matched": 205,
   "layoutUpdated": true,
   "protectedConfigurationsUnchanged": true,
@@ -65,15 +65,15 @@
   "textButtonsMinimumWidth": 64,
   "iconButtonsSize": 24,
   "densityButtonCentered": true,
-  "fullWidthDirectoryCards": true,
-  "fullWidthGroupCards": true,
+  "fullWidthDirectoryCards": false,
+  "fullWidthGroupCards": false,
   "uiStyleVerifiedInInstalledApp": true,
   "testRunMode": "default concurrency",
   "latestInstalledNativeChecks": 1,
   "iconButtonsRadius": 4,
   "textSegmentsHeight": 22,
   "textSegmentsRadius": 5,
-  "toolbarReference": "Files Plus production icon and segment helpers",
+  "toolbarReference": "Files Plus dimensions; shipped Spaces/chrome transparent action buttons",
   "directoryPinsPersisted": true,
   "directoryPinScopes": [
     "space",
@@ -107,5 +107,48 @@
     "radius": 6,
     "negativeMarginRemoved": true,
     "nativeSelectedStateVerified": true
-  }
+  },
+  "flatDirectoryRows": true,
+  "fullWidthHoverTargets": true,
+  "focusedTaskOnlySelection": true,
+  "directoryPinIndicators": true,
+  "directDirectoryPinClickToUnpin": true,
+  "inheritedPinsShowSource": true,
+  "detailedSpaceRowHeight": 38,
+  "detailedGroupRowHeight": 40,
+  "compactRowHeight": 28,
+  "detailedTaskVerticalPadding": 3,
+  "normalRowGap": 2,
+  "additionalProjectGap": 6,
+  "semanticStatusText": true,
+  "statusColorUsesOwnState": true,
+  "statusTextSeparateFromContext": true,
+  "metadataLineHeight": 13,
+  "nativeVisibleStatusText": [
+    "working",
+    "idle"
+  ],
+  "fixedAgentActionWidth": 78,
+  "statusTextAlignedWithIcon": true,
+  "statusTextAlignmentWidths": [
+    160,
+    268,
+    420
+  ],
+  "hoverDoesNotResizeTitles": true,
+  "trailingColumns": {
+    "pin": 19,
+    "gap": 3,
+    "summary": 56,
+    "width": 78,
+    "inset": 5,
+    "levels": [
+      "project",
+      "directory",
+      "task"
+    ]
+  },
+  "toolbarActionsTransparentAtRest": true,
+  "toolbarActionsHoverFeedback": true,
+  "commonTrailingColumnsVerifiedInInstalledApp": true
 }

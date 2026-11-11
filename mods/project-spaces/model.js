@@ -5,6 +5,7 @@
 // group, or choosing "Move to project", records a manual assignment that wins over that.
 
 export const STATE_KEY = "project-spaces.v1";
+export const SIDEBAR_COLUMNS = { pin: 19, gap: 3, summary: 56, width: 78, inset: 5 };
 export const MODES = [
   { id: "project", label: "Project" },
   { id: "status", label: "Status" },

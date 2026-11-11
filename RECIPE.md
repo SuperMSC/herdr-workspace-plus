@@ -202,6 +202,14 @@ Keep native rows paginated and snapshot processing cached. Detailed permits two 
 
 Layout migration is opt-in via --unified-sidebar / --separate-sidebar and records the exact original owned blocks for reversible restoration. Only the recognized standard sidebar pair may be replaced; preserve unrelated layout nodes, keys and settings. Refuse unknown/conflicting shapes instead of deleting user blocks. Default updates preserve the chosen mode.
 
-Unified toolbar sizing follows Files Plus: keep normal/icon and segmented controls in separate centralized helpers, verify their geometry against icons.js and browser.segment, and retain content-sized text widths. Do not import JavaScript from another mod folder or change application-wide semantic tokens to restyle these controls.
+Unified toolbar sizing follows Files Plus: keep normal/icon and segmented controls in separate centralized helpers, verify their geometry against icons.js and browser.segment, and retain content-sized text widths. Action buttons follow the shipped Spaces/chrome pattern: transparent at rest, with theme hover feedback; never paint the Files panel background over sidebar chrome. Keep selected segment feedback distinct from action buttons. Do not import JavaScript from another mod folder or change application-wide semantic tokens to restyle these controls.
 
 Directory pins use their own shared record, keyed by exact workspace IDs and canonical project keys. Keep them independent of terminal pin labels and project assignments. Explicit pins move the whole directory, including previews and empty tabs; unpin restores automatic grouping. All pinned child directories carry their project heading. Cross-directory parent branches may split for display while captured parent identity remains unchanged for action validation.
+
+Show persistent, normally flowing pin controls on explicitly pinned project and workspace rows in both views. Direct unpin revalidates live ownership and removes only the captured directory preference. Inherited and automatically grouped pins are muted source indicators. Keep project and directory rows transparent; use full-row hover and retain selection only on the focused task.
+
+Detailed task metadata separates muted, truncating context from non-shrinking semantic status text. Color and label the task own state; keep child activity explicitly prefixed and full tooltips intact. Idle remains muted, and unknown states do not invent an Idle label.
+
+Reserve terminal status and pin slots continuously; hover changes pin visibility without changing title width. Anchor detailed status text to the same trailing edge as its status icon, retaining automatic right alignment as the sidebar resizes. Keep metadata height reserved in normal flow.
+
+Use the shared sidebar trailing-column constants for project, space and task rows: a reserved 19px pin slot on the left and a 56px summary on the right, separated by 3px. Branch names, counts, status glyphs and status text share one 5px right inset. Preserve vertically centered controls in Compact mode.

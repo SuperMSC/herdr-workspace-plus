@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import * as projectModel from "../mods/project-spaces/model.js";
-import { buildGroups, DENSITY_KEY, normalizeState } from "../mods/project-spaces/model.js";
-import { DIRECTORY_PINS_KEY, normalizeDirectoryPins } from "../mods/project-spaces/directory-pins.js";
+import { buildGroups, DENSITY_KEY, SIDEBAR_COLUMNS, normalizeState } from "../mods/project-spaces/model.js";
+import { DIRECTORY_PINS_KEY, normalizeDirectoryPins, setDirectoryPin } from "../mods/project-spaces/directory-pins.js";
 import { unifiedRows, validateUnifiedTarget } from "../mods/project-spaces/unified-model.js";
 const program={key:"codex",name:"Codex",agent:true,shell:false,icon:null};
 function fixture(on=null){
@@ -26,11 +26,11 @@ function harness({on=null}={}){
  const cx={timer:{after(ms,callback){assert(ms>=0);timers.push({at:clock+ms,callback});}},focus_handle:()=>({release(){}}),notify(){assert(!rendering,'render must not notify');notifications.push(1);},stop_propagation(){}};
  class FixtureDate extends Date { static now(){return clock;} }
  const flush=()=>{for(let round=0;round<20;round++){const index=timers.findIndex(timer=>timer.at<=clock);if(index<0)return;timers.splice(index,1)[0].callback(cx);}throw new Error("Fixture timer loop");};
- const deps={Date:FixtureDate,div:element,svg:element,image:element,h_flex:element,v_flex:element,Input:{new:element},DENSITY_KEY,DIRECTORY_PINS_KEY,normalizeDirectoryPins,
+ const deps={Date:FixtureDate,div:element,svg:element,image:element,h_flex:element,v_flex:element,Input:{new:element},DENSITY_KEY,SIDEBAR_COLUMNS,DIRECTORY_PINS_KEY,normalizeDirectoryPins,setDirectoryPin,
   agents:()=>f.snapshots.agents,terminals:()=>f.snapshots.terminals,spaces:()=>f.snapshots.spaces,panes:()=>f.snapshots.panes,focused:()=>f.snapshots.focus,theme:()=>({working:'#147',dim:'#777',idle:'#666',raised:'#111',selected:'#225',border:'#333',hover:'#444',accent:'#5bf',background:'#050',muted:'#888',foreground:'#eee'}),shared:key=>storage.get(key),setShared(key,value){assert(!rendering);storage.set(key,value);},run(...args){assert(!rendering);calls.push(args);},setAgentOrder:value=>orders.push(value),validateUnifiedTarget,
   unifiedRows:input=>{modelCalls++;return unifiedRows(input);}};
  const Class=new Function(...Object.keys(deps),source)(...Object.values(deps)),view=new Class();view.init({},cx);
- const owner={lastGroups:f.groups,lastRows:f.groups.flatMap(group=>group.rows),queryInput:{},projectFilter:'all',drag:null,state:()=>state,save(value){assert(!rendering);state=value;},viewMenu(){calls.push(['menu']);},spaceMenu(row){calls.push(['space-menu',row.w.id]);},groupMenu(group){calls.push(['group-menu',group.key]);},groupHead(group){return element().id('owner-group-'+group.key).child(group.name);},row(row){return element().id('owner-space-'+row.w.id).child(row.w.name);}};
+ const owner={lastGroups:f.groups,lastRows:f.groups.flatMap(group=>group.rows),queryInput:{},projectFilter:'all',drag:null,state:()=>state,save(value){assert(!rendering);state=value;},viewMenu(){calls.push(['menu']);},spaceMenu(row){calls.push(['space-menu',row.w.id]);},groupMenu(group){calls.push(['group-menu',group.key]);},groupHead(group,_st,_t,_index,_density,_tree,pin){return element().id('owner-group-'+group.key).child(group.name).when(Boolean(pin),el=>el.child(pin));},row(row,_group,_st,_t,_density,_tree,pin){return element().id('owner-space-'+row.w.id).child(row.w.name).when(Boolean(pin),el=>el.child(pin));}};
  const frame=()=>({state,density:storage.get(DENSITY_KEY)||'detailed',query:owner.queryText||'',filter:owner.projectFilter,collapsed:false,groups:f.groups,fullGroups:f.groups,snapshots:f.snapshots});
  return{...f,view,owner,cx,calls,orders,storage,notifications,frame,modelCalls:()=>modelCalls,advance(ms){clock+=ms;flush();},render(patch={},elapsed=200){clock+=elapsed;const current={...frame(),...patch};let tree;for(let round=0;round<4;round++){rendering=true;try{tree=view.render(current,owner,cx);}finally{rendering=false;}if(!timers.some(timer=>timer.at<=clock))break;flush();}return tree;},click(id,patch={}){const item=nodes(this.render(patch)).find(node=>node.attrs.id===id);assert(item,`missing ${id}`);item.events.on_click({},cx);}};
 }
@@ -58,7 +58,7 @@ test('Detailed tasks use two lines and full bounded tooltip, Compact stays singl
  const entity=nodes(tree).find(node=>node.attrs.id===`unified-entity-${row.id}`);entity.events.on_hover(true,f.cx);
  assert(nodes(f.render()).some(node=>node.attrs.id===`unified-pin-${row.id}`));
  const compact=f.render({density:'compact'}),compactTask=nodes(compact).find(node=>node.attrs.id===`unified-task-${row.id}`),compactEntity=nodes(compact).find(node=>node.attrs.id===`unified-entity-${row.id}`);
- assert.equal(compactEntity.attrs.h,32);assert(Object.hasOwn(compactTask.attrs,'truncate'));assert(!Object.hasOwn(compactTask.attrs,'h'));
+ assert.equal(compactEntity.attrs.h,28);assert(Object.hasOwn(compactTask.attrs,'truncate'));assert(!Object.hasOwn(compactTask.attrs,'h'));
 });
 test('done stays in its status branch while focused until the user leaves, with no cross-incarnation hold',()=>{
  const f=harness();f.agent.status='done';f.agent.focused=true;f.render({state:{...f.owner.state(),mode:'status'}});
@@ -133,7 +133,7 @@ test('canonical project, space and merged-agent title columns advance on the sam
  const spaceX=spaceWrap.attrs.pl+flow(spaceWrap)[0].attrs.w+spaceWrap.attrs.gap+nativeSpace.attrs.pl+nativeSpace.childNodes[0].attrs.w+(nativeSpace.childNodes[0].attrs.mr||0)+nativeSpace.attrs.gap;
  const task=all.find(node=>node.attrs.id===`unified-entity-${agent.id}`),taskX=task.attrs.pl+flow(task)[0].attrs.w+task.attrs.gap+flow(task)[1].attrs.w+(flow(task)[1].attrs.mr||0)+task.attrs.gap;
  assert.deepEqual([groupX,spaceX,taskX],[53,73,93]);assert.equal(spaceX-groupX,20);assert.equal(taskX-spaceX,20);
- assert.equal(nativeSpace.attrs.h,42);assert.equal(flow(spaceWrap)[0].attrs.h,18);assert.equal(flow(spaceWrap)[0].attrs.mt,5);const compactTree=f.render({density:'compact'}),compact=nodes(compactTree).find(node=>node.attrs.id==='space-s1'),compactWrap=nodes(compactTree).find(node=>node.attrs.id===`unified-space-${space.id}`);assert.equal(compact.attrs.h,32);assert.equal(flow(compactWrap)[0].attrs.mt,7);
+ assert.equal(nativeSpace.attrs.h,38);assert.equal(flow(spaceWrap)[0].attrs.h,18);assert.equal(flow(spaceWrap)[0].attrs.mt,3);const compactTree=f.render({density:'compact'}),compact=nodes(compactTree).find(node=>node.attrs.id==='space-s1'),compactWrap=nodes(compactTree).find(node=>node.attrs.id===`unified-space-${space.id}`);assert.equal(compact.attrs.h,28);assert.equal(flow(compactWrap)[0].attrs.mt,4);
  const legacy=Main.prototype.row.call(f.owner,space.sourceSpace,space.sourceGroup,{...f.owner.state(),mode:'project'},{},'compact');assert.equal(legacy.attrs.pl,26);
 });
 
@@ -159,7 +159,7 @@ test('visible tree guides are finite, per-row and event-free without changing ca
 test('short shell titles shrink to one content line and Unknown stays only in tooltip',()=>{
  const f=harness();f.render();const original=f.view.result.rows.find(row=>row.address==='t1'),row={...original,title:'zsh',taskTitle:'zsh',agent:false,kind:'terminal',status:'unknown',actualStatus:'unknown',branchStatus:'unknown',inlineMetadata:'zsh',program:{name:'zsh',shell:true}};
  const tree=f.view.entityRow(row,0,f.frame(),f.cx),task=nodes(tree).find(node=>node.attrs.id===`unified-task-${row.id}`),allText=nodes(tree).flatMap(node=>node.childNodes.filter(value=>typeof value==='string')).join(' ');
- assert(!Object.hasOwn(tree.attrs,'h'));assert.equal(tree.attrs.min_h,28);assert(Object.hasOwn(tree.attrs,'items_start'));assert.equal(task.attrs.max_h,32);assert(!Object.hasOwn(task.attrs,'h'));
+ assert(!Object.hasOwn(tree.attrs,'h'));assert.equal(tree.attrs.min_h,26);assert(Object.hasOwn(tree.attrs,'items_start'));assert.equal(task.attrs.max_h,32);assert(!Object.hasOwn(task.attrs,'h'));
  assert(!nodes(tree).some(node=>node.attrs.id===`unified-meta-${row.id}`));assert(!allText.includes('Unknown'));assert(!allText.includes('Idle'));assert(tree.attrs.tooltip.includes('Unknown'));
  const icon=nodes(tree).find(node=>node.attrs.id===`unified-icon-${row.id}`);assert.equal(icon.attrs.h,16);assert.equal(icon.attrs.mr,3);
 });
@@ -180,11 +180,11 @@ test('promoted task metadata keeps distinct remote and manual context while supp
  assert.equal(f.view.metadata({...row,inlineMetadata:''}),'');assert.equal(f.view.metadata({...row,sourceSpace:null}),row.metadata);
 });
 
-test('canonical space cards retain full-width backgrounds around the caret at every depth',()=>{
+test('canonical spaces keep a full-width hover target without stacking active directory backgrounds',()=>{
  const f=harness();f.render();const source=f.view.result.rows.find(row=>row.kind==='space'),canonical={groups:new Set(f.groups.map(group=>group.key)),spaces:new Set(f.owner.lastRows.map(row=>row.w.id))};
- const root=f.view.draw({...source,depth:0,displayDepth:0},0,f.frame(),f.owner,f.cx,canonical);assert.equal(root.attrs.rounded,6);assert.equal(root.attrs.border_b,1);assert(Object.hasOwn(root.attrs,'bg'));assert.equal(flow(root)[0].attrs.w,18);
- const nested=f.view.draw({...source,depth:1,displayDepth:1},0,f.frame(),f.owner,f.cx,canonical);assert.equal(nested.attrs.bg,'#225');assert.equal(nested.attrs.rounded,6);assert.equal(nested.attrs.border_b,1);assert(Object.hasOwn(nested.attrs,'w_full'));assert.equal(nested.attrs.pl-root.attrs.pl,20);assert.equal(nested.attrs.hover(element()).attrs.bg,'#225');
- const inactive={...source,depth:2,displayDepth:2,sourceSpace:{...source.sourceSpace,w:{...source.sourceSpace.w,active:false}}},card=f.view.draw(inactive,0,f.frame(),f.owner,f.cx,canonical);assert.equal(card.attrs.bg,'#111');assert.equal(card.attrs.hover(element()).attrs.bg,'#444');assert.equal(card.attrs.pl,44);
+ const root=f.view.draw({...source,depth:0,displayDepth:0},0,f.frame(),f.owner,f.cx,canonical);assert.equal(root.attrs.rounded,4);assert(!Object.hasOwn(root.attrs,'border_b'));assert.equal(root.attrs.bg,'#00000000');assert.equal(flow(root)[0].attrs.w,18);
+ const nested=f.view.draw({...source,depth:1,displayDepth:1},0,f.frame(),f.owner,f.cx,canonical);assert.equal(nested.attrs.bg,'#00000000');assert.equal(nested.attrs.rounded,4);assert(!Object.hasOwn(nested.attrs,'border_b'));assert(Object.hasOwn(nested.attrs,'w_full'));assert.equal(nested.attrs.pl-root.attrs.pl,20);assert.equal(nested.attrs.hover(element()).attrs.bg,'#444');
+ const inactive={...source,depth:2,displayDepth:2,sourceSpace:{...source.sourceSpace,w:{...source.sourceSpace.w,active:false}}},card=f.view.draw(inactive,0,f.frame(),f.owner,f.cx,canonical);assert.equal(card.attrs.bg,'#00000000');assert.equal(card.attrs.hover(element()).attrs.bg,'#444');assert.equal(card.attrs.pl,44);
 });
 
 
@@ -215,25 +215,25 @@ test('Pinned and Status sections participate in global folding with explicit reo
 });
 
 test('directories moved into Status retain a folder icon and heading style without gaining drag actions',()=>{
- const f=harness();const tree=f.render({state:{...f.owner.state(),mode:'status'}}),space=f.view.result.rows.find(row=>row.kind==='space');assert(space);const entity=nodes(tree).find(node=>node.attrs.id===`unified-entity-${space.id}`),title=nodes(entity).find(node=>node.attrs.id===`unified-task-${space.id}`);assert(nodes(entity).some(node=>node.attrs.id===`unified-directory-icon-${space.id}`));assert(Object.hasOwn(title.attrs,'font_semibold'));assert.equal(entity.attrs.rounded,6);assert(entity.events.on_mouse_down);assert(!entity.events.on_mouse_move);assert(!entity.events.on_mouse_up);
+ const f=harness();const tree=f.render({state:{...f.owner.state(),mode:'status'}}),space=f.view.result.rows.find(row=>row.kind==='space');assert(space);const entity=nodes(tree).find(node=>node.attrs.id===`unified-entity-${space.id}`),title=nodes(entity).find(node=>node.attrs.id===`unified-task-${space.id}`);assert(nodes(entity).some(node=>node.attrs.id===`unified-directory-icon-${space.id}`));assert(Object.hasOwn(title.attrs,'font_semibold'));assert.equal(entity.attrs.rounded,4);assert(entity.events.on_mouse_down);assert(!entity.events.on_mouse_move);assert(!entity.events.on_mouse_up);
 });
 
 
-test('toolbar sizing follows Files production icon and segment helpers while text retains its own width',()=>{
+test('toolbar keeps Files sizing and segments with transparent native-style action buttons',()=>{
  const f=harness();for(let i=0;i<40;i++)f.snapshots.terminals.push({...f.child,address:'toolbar-'+i,created_ms:100+i,pid:1000+i,labels:{}});const tree=f.render(),all=nodes(tree),t={background:'#050',muted:'#888',dim:'#777',selected:'#225',foreground:'#eee',border:'#333',hover:'#444'};
  const filesIcons=readFileSync(new URL('../mods/files-plus/icons.js',import.meta.url),'utf8').replace(/^import .*;\n/gm,'').replace(/export function /g,'function '),filesIconButton=new Function('div','svg','image','iconName',filesIcons+';return iconButton;')(element,element,element,()=> 'file'),referenceIcon=filesIconButton('reference','more','Actions',()=>{},t);
- const iconIds=['unified-new-space','unified-toggle-all','unified-settings','unified-prev','unified-next'];for(const id of iconIds){const button=all.find(node=>node.attrs.id===id);assert(button,id);for(const key of ['h','w','p','rounded','bg','text_color'])assert.equal(button.attrs[key],referenceIcon.attrs[key],id+':'+key);assert.equal(button.attrs.min_w,24,id);assert.equal(button.childNodes[0].attrs.size,referenceIcon.childNodes[0].attrs.size,id);assert.equal(button.attrs.disabled,id==='unified-prev',id);assert(Object.hasOwn(button.attrs,'items_center'),id);assert(Object.hasOwn(button.attrs,'justify_center'),id);}
+ const iconIds=['unified-new-space','unified-toggle-all','unified-settings','unified-prev','unified-next'];for(const id of iconIds){const button=all.find(node=>node.attrs.id===id);assert(button,id);for(const key of ['h','w','p','rounded','text_color'])assert.equal(button.attrs[key],referenceIcon.attrs[key],id+':'+key);assert(!Object.hasOwn(button.attrs,'bg'),id);assert(!Object.hasOwn(button.attrs,'border_1'),id);if(!button.attrs.disabled)assert.deepEqual(button.attrs.hover(element()).attrs,{bg:t.hover,text_color:t.foreground},id);assert.equal(button.attrs.min_w,24,id);assert.equal(button.childNodes[0].attrs.size,referenceIcon.childNodes[0].attrs.size,id);assert.equal(button.attrs.disabled,id==='unified-prev',id);assert(Object.hasOwn(button.attrs,'items_center'),id);assert(Object.hasOwn(button.attrs,'justify_center'),id);}
  const browser=readFileSync(new URL('../mods/files-plus/browser.js',import.meta.url),'utf8'),methodStart=browser.indexOf('  segment(id,'),method=browser.slice(methodStart,browser.indexOf('\n  rows(',methodStart)),filesSegment=new Function('div','svg','return ({'+method+'}).segment;')(element,element),containerSource=browser.match(/h_flex\(\)\.id\("files-modes"\).*?\.border_color\(t\.border\)/)[0],referenceContainer=new Function('h_flex','t','return '+containerSource)(element,t);
  const segmentIds=['unified-view-project','unified-view-status','unified-filter-all','unified-filter-active','unified-filter-attention'];for(const id of segmentIds){const button=all.find(node=>node.attrs.id===id),active=['unified-view-project','unified-filter-all'].includes(id),reference=filesSegment('reference','tree','Title',active,()=>{},t);for(const key of ['h','rounded','text_color'])assert.equal(button.attrs[key],reference.attrs[key],id+':'+key);assert.equal(button.attrs.min_w,64,id);assert(!Object.hasOwn(button.attrs,'w'),id);assert.equal(button.attrs.px,8,id);assert.equal(button.attrs.text_size,11.5,id);assert.equal(button.attrs.line_height,'16px',id);if(active)assert.equal(button.attrs.bg,reference.attrs.bg,id);else assert.deepEqual(button.attrs.hover(element()).attrs,reference.attrs.hover(element()).attrs,id);}
  for(const id of ['unified-view-segments','unified-filter-segments']){const container=all.find(node=>node.attrs.id===id);for(const key of ['p','gap','rounded','border_color'])assert.equal(container.attrs[key],referenceContainer.attrs[key],id+':'+key);assert(Object.hasOwn(container.attrs,'border_1'),id);}
- const density=all.find(node=>node.attrs.id==='unified-density');assert.equal(density.attrs.h,referenceIcon.attrs.h);assert.equal(density.attrs.rounded,referenceIcon.attrs.rounded);assert.equal(density.attrs.w,64);assert(Object.hasOwn(density.attrs,'justify_center'));assert.equal(tree.childNodes[0].attrs.h,32);assert(all.some(node=>node.attrs.h===28&&node.attrs.rounded===6&&Object.hasOwn(node.attrs,'border_1')));
+ const density=all.find(node=>node.attrs.id==='unified-density');assert.equal(density.attrs.h,referenceIcon.attrs.h);assert.equal(density.attrs.rounded,referenceIcon.attrs.rounded);assert.equal(density.attrs.w,64);assert(!Object.hasOwn(density.attrs,'bg'));assert(!Object.hasOwn(density.attrs,'border_1'));assert(Object.hasOwn(density.attrs,'justify_center'));assert.equal(tree.childNodes[0].attrs.h,32);assert(all.some(node=>node.attrs.h===28&&node.attrs.rounded===6&&Object.hasOwn(node.attrs,'border_1')));
  const fold=all.find(node=>String(node.attrs.id||'').startsWith('unified-fold-'));assert.equal(fold.attrs.w,18);assert.equal(fold.attrs.h,16);
 });
 
-test('canonical group cards wrap indentation and expose full-row joining feedback',()=>{
+test('canonical groups stay flat while retaining full-row joining feedback',()=>{
  const f=harness();f.groups[0].custom=true;f.render();const source=f.view.result.rows.find(row=>row.kind==='group'),row={...source,depth:2,displayDepth:2},canonical={groups:new Set(f.groups.map(group=>group.key)),spaces:new Set(f.owner.lastRows.map(row=>row.w.id))};assert(source);
- const card=f.view.draw(row,3,f.frame(),f.owner,f.cx,canonical);assert(Object.hasOwn(card.attrs,'w_full'));assert.equal(card.attrs.bg,'#111');assert.equal(card.attrs.rounded,6);assert.equal(card.attrs.border_b,1);assert.equal(card.attrs.mt,12);assert.equal(card.attrs.mb,4);assert.equal(card.attrs.pl,40);assert.equal(card.attrs.hover(element()).attrs.bg,'#444');
- f.owner.drag={kind:'space',id:'another-space'};f.owner.over={kind:'group',id:row.sourceGroup.key};const joining=f.view.draw(row,0,f.frame(),f.owner,f.cx,canonical);assert.equal(joining.attrs.bg,'#225');assert(Object.hasOwn(joining.attrs,'border_1'));assert.equal(joining.attrs.border_color,'#5bf');assert.equal(joining.attrs.mt,4);assert(!Object.hasOwn(joining.attrs,'hover'));
+ const card=f.view.draw(row,3,f.frame(),f.owner,f.cx,canonical);assert(Object.hasOwn(card.attrs,'w_full'));assert.equal(card.attrs.bg,'#00000000');assert.equal(card.attrs.rounded,4);assert(!Object.hasOwn(card.attrs,'border_b'));assert.equal(card.attrs.mt,0);assert(!Object.hasOwn(card.attrs,'mb'));assert.equal(card.attrs.pl,40);assert.equal(card.attrs.hover(element()).attrs.bg,'#444');
+ f.owner.drag={kind:'space',id:'another-space'};f.owner.over={kind:'group',id:row.sourceGroup.key};const joining=f.view.draw(row,0,f.frame(),f.owner,f.cx,canonical);assert.equal(joining.attrs.bg,'#225');assert(Object.hasOwn(joining.attrs,'border_1'));assert.equal(joining.attrs.border_color,'#5bf');assert.equal(joining.attrs.mt,0);assert(!Object.hasOwn(joining.attrs,'hover'));
  const readonly=f.view.draw({...row,sourceGroup:null},0,f.frame(),f.owner,f.cx,canonical);assert(Object.hasOwn(readonly.attrs,'w_full'));assert.equal(readonly.attrs.min_w,0);
 });
 
@@ -249,4 +249,80 @@ test("Status directory and project context menus expose directory pinning withou
 
 test("task hover keeps the original parent relationship visible when directory pinning separates display branches",()=>{
  const f=harness();f.render();const row=f.view.result.rows.find(r=>r.address==='t2'),tree=f.view.entityRow({...row,parentId:'original-parent'},0,f.frame(),f.cx);assert(tree.attrs.tooltip.includes('Parent: original-parent'));
+});
+
+
+function productionDirectoryOwner(f) {
+ const mainSource=readFileSync(new URL('../mods/project-spaces/main.js',import.meta.url),'utf8').replace(/^import[\s\S]*?;\n/gm,'').replace('export default class','return class');
+ const deps={...projectModel,View:class{},div:element,svg:element,h_flex:element,v_flex:element,shared:key=>f.storage.get(key),spaces:()=>f.snapshots.spaces,run:(...args)=>f.calls.push(args)};
+ const Main=new Function(...Object.keys(deps),mainSource)(...Object.values(deps));Object.setPrototypeOf(f.owner,Main.prototype);delete f.owner.row;delete f.owner.groupHead;f.owner.home='/Users/demo';
+ return f;
+}
+
+function directoryPinFixture(kind='space',mode='project') {
+ const f=productionDirectoryOwner(harness()),key=f.groups[0].key;
+ f.storage.set(DIRECTORY_PINS_KEY,{spaces:['remote-space',...(kind==='space'?[f.space.id]:[])],groups:['other-project',...(kind==='group'?[key]:[])]});
+ const patch={state:{...f.owner.state(),mode}},tree=f.render(patch),row=f.view.result.rows.find(item=>item.kind===kind),control=nodes(tree).find(node=>node.attrs.id==='unified-directory-pin-'+row.id);
+ assert(row);assert(control);return {...f,key,patch,row,control,tree};
+}
+
+test('explicit directory and project pins stay visible across Projects and Status and unpin without navigation, folding or terminal labels',()=>{
+ for(const kind of ['space','group'])for(const mode of ['project','status']){
+  const f=directoryPinFixture(kind,mode),before=JSON.stringify(f.snapshots),stateBefore=JSON.stringify(f.owner.state()),foldBefore=[f.view.foldMode,[...f.view.opened],[...f.view.folded]],control=f.control;
+  assert.equal(nodes(f.tree).filter(node=>node.attrs.id==='unified-directory-pin-'+f.row.id).length,1);assert.equal(control.attrs.text_color,'#5bf');assert.equal(control.attrs.size,19);assert.equal(control.childNodes[0].attrs.size,12);assert.equal(control.attrs.tooltip,kind==='group'?'Unpin project':'Unpin directory');assert(Object.hasOwn(control.attrs,'cursor_pointer'));assert.equal(f.view.hovered,undefined);
+  let stopped=0;const cx={...f.cx,stop_propagation(){stopped++;}};f.owner.drag={kind:'space',id:f.space.id};f.owner.over={kind:'group',id:f.key};control.events.on_mouse_down({},cx);control.events.on_mouse_up({},cx);control.events.on_click({},cx);
+  assert.equal(stopped,3);assert.equal(f.owner.drag,null);assert.equal(f.owner.over,null);assert.deepEqual(f.storage.get(DIRECTORY_PINS_KEY),{spaces:['remote-space'],groups:['other-project']});assert.equal(JSON.stringify(f.snapshots),before);assert.equal(JSON.stringify(f.owner.state()),stateBefore);assert.deepEqual([f.view.foldMode,[...f.view.opened],[...f.view.folded]],foldBefore);assert.equal(f.calls.length,0);assert.equal(f.view.error,'');
+ }
+});
+
+test('captured directory pin clicks preserve the latest unrelated pins and never re-pin an already removed target',()=>{
+ for(const kind of ['space','group'])for(const removedBeforeClick of [false,true]){
+  const f=directoryPinFixture(kind),latest={spaces:['new-remote-space'],groups:['new-remote-project']};if(!removedBeforeClick)latest[kind==='space'?'spaces':'groups'].push(kind==='space'?f.space.id:f.key);f.storage.set(DIRECTORY_PINS_KEY,latest);f.control.events.on_click({},f.cx);
+  assert.deepEqual(f.storage.get(DIRECTORY_PINS_KEY),{spaces:['new-remote-space'],groups:['new-remote-project']});assert.equal(f.calls.length,0);assert.equal(f.view.error,'');
+ }
+});
+
+test('a stale directory pin action rejects a closed, duplicated or different-machine space',()=>{
+ for(const change of [f=>f.snapshots.spaces.splice(0),f=>f.snapshots.spaces.push({...f.space}),f=>f.snapshots.spaces.splice(0,1,{...f.space,machine:'other-machine'})]){
+  const f=directoryPinFixture(),before=JSON.stringify(f.storage.get(DIRECTORY_PINS_KEY));change(f);f.control.events.on_click({},f.cx);assert.equal(JSON.stringify(f.storage.get(DIRECTORY_PINS_KEY)),before);assert.match(f.view.error,/changed or closed/);assert.equal(f.calls.length,0);
+ }
+});
+
+test('a stale project pin action rejects missing, reassigned or ambiguous current members',()=>{
+ for(const change of [f=>f.snapshots.spaces.splice(0),f=>f.snapshots.spaces.push({...f.space}),f=>f.snapshots.spaces.splice(0,1,{...f.space,machine:'other-machine'}),f=>f.owner.save({...f.owner.state(),assign:{[f.space.id]:'different-project'}}),f=>{f.owner.lastGroups=[];}]){
+  const f=directoryPinFixture('group'),before=JSON.stringify(f.storage.get(DIRECTORY_PINS_KEY));change(f);f.control.events.on_click({},f.cx);assert.equal(JSON.stringify(f.storage.get(DIRECTORY_PINS_KEY)),before);assert.match(f.view.error,/changed or closed/);assert.equal(f.calls.length,0);
+ }
+});
+
+test('inherited project and automatic task pins expose muted source markers without an unpin action',()=>{
+ for(const mode of ['project','status']){
+  const inherited=directoryPinFixture('group',mode),space=inherited.view.result.rows.find(row=>row.kind==='space'),inheritedMarker=nodes(inherited.tree).find(node=>node.attrs.id==='unified-directory-pin-'+space.id);assert(inheritedMarker);assert.equal(inheritedMarker.attrs.text_color,'#777');assert.equal(inheritedMarker.attrs.tooltip,'Pinned with project');assert(!inheritedMarker.events.on_click);assert(!inheritedMarker.events.on_mouse_down);assert(!inheritedMarker.events.on_mouse_up);
+  for(const kind of ['space','group']){const f=productionDirectoryOwner(harness());f.agent.pinned=true;if(kind==='group')f.groups[0].custom=true;const tree=f.render({state:{...f.owner.state(),mode}}),row=f.view.result.rows.find(row=>row.kind===kind),control=nodes(tree).find(node=>node.attrs.id==='unified-directory-pin-'+row.id);assert(control);assert.equal(control.attrs.text_color,'#777');assert.equal(control.attrs.tooltip,kind==='group'?'Pinned with its directories and tasks':'Pinned with its tasks');assert(!control.events.on_click);assert(!control.events.on_mouse_down);assert(!control.events.on_mouse_up);assert.equal(f.storage.size,0);assert.equal(f.calls.length,0);}
+ }
+});
+
+test('direct and inherited directory pins explain why their parent project remains pinned after removing the direct pin',()=>{
+ const f=productionDirectoryOwner(harness()),key=f.groups[0].key;f.storage.set(DIRECTORY_PINS_KEY,{spaces:[f.space.id],groups:[key]});let tree=f.render(),row=f.view.result.rows.find(row=>row.kind==='space'),control=nodes(tree).find(node=>node.attrs.id==='unified-directory-pin-'+row.id);assert.equal(control.attrs.tooltip,'Unpin directory (project remains pinned)');assert.equal(control.attrs.text_color,'#5bf');control.events.on_click({},f.cx);assert.deepEqual(f.storage.get(DIRECTORY_PINS_KEY),{spaces:[],groups:[key]});tree=f.render();row=f.view.result.rows.find(row=>row.kind==='space');control=nodes(tree).find(node=>node.attrs.id==='unified-directory-pin-'+row.id);assert.equal(row.section,'pinned');assert.equal(control.attrs.tooltip,'Pinned with project');assert.equal(control.attrs.text_color,'#777');assert(!control.events.on_click);assert.equal(f.calls.length,0);
+});
+
+test('removing a directory pin never changes an independently pinned task',()=>{
+ const f=directoryPinFixture();f.agent.pinned=true;f.control.events.on_click({},f.cx);const tree=f.render(),row=f.view.result.rows.find(row=>row.kind==='space'),control=nodes(tree).find(node=>node.attrs.id==='unified-directory-pin-'+row.id);assert.equal(f.agent.pinned,true);assert.equal(row.section,'pinned');assert.equal(control.attrs.text_color,'#777');assert.equal(control.attrs.tooltip,'Pinned with its tasks');assert(!control.events.on_click);assert.equal(f.calls.length,0);
+});
+
+
+test("compact rows stay readable while project boundaries get more space than rows in the same project",()=>{
+ const f=harness(),extra={id:'s2',machine:null,name:'Other',folder:'/work/other',active:false,status:null,tabs:[]};f.snapshots.spaces.push(extra);const rows=f.snapshots.spaces.map((w,i)=>({w,i,g:null,place:w.folder}));f.groups.splice(0,f.groups.length,...buildGroups(rows,normalizeState({mode:'project'})));f.owner.lastGroups=f.groups;f.owner.lastRows=f.groups.flatMap(g=>g.rows);let tree=f.render(),directory=f.view.result.rows.find(r=>r.kind==='space'&&r.spaceId==='s2'),card=nodes(tree).find(n=>n.attrs.id==='unified-space-'+directory.id);assert.equal(card.attrs.mt,6);assert.equal(nodes(tree).find(n=>n.attrs.id==='unified-sidebar-rows').attrs.gap,2);
+ const key=f.groups[0].key,state={...f.owner.state(),assign:{s2:key}};f.owner.save(state);f.groups.splice(0,f.groups.length,...buildGroups(rows,state));f.owner.lastGroups=f.groups;f.owner.lastRows=f.groups.flatMap(g=>g.rows);tree=f.render();directory=f.view.result.rows.find(r=>r.kind==='space'&&r.spaceId==='s2');card=nodes(tree).find(n=>n.attrs.id==='unified-space-'+directory.id);assert.equal(card.attrs.mt,0);const compact=f.render({density:'compact'}),task=f.view.result.rows.find(r=>r.address==='t1'),entity=nodes(compact).find(n=>n.attrs.id==='unified-entity-'+task.id);assert.equal(entity.attrs.h,28);
+});
+
+test("active directories stay transparent while only the focused task keeps its selected background",()=>{
+ const f=harness();f.space.active=true;f.agent.focused=true;let tree=f.render(),directory=f.view.result.rows.find(r=>r.kind==='space'),task=f.view.result.rows.find(r=>r.address==='t1');assert.equal(nodes(tree).find(n=>n.attrs.id==='unified-space-'+directory.id).attrs.bg,'#00000000');const entity=nodes(tree).find(n=>n.attrs.id==='unified-entity-'+task.id);assert.equal(entity.attrs.bg,'#225');assert.equal(entity.attrs.py,3);assert.equal(entity.childNodes.find(n=>n?.attrs?.gap===2)?.attrs.gap,2);tree=f.render({state:{...f.owner.state(),mode:'status'}});directory=f.view.result.rows.find(r=>r.kind==='space');assert.equal(nodes(tree).find(n=>n.attrs.id==='unified-entity-'+directory.id).attrs.bg,'#00000000');
+});
+
+
+test("hover keeps the title width stable and status text right-aligned with its fixed icon column at every sidebar width",()=>{
+ const f=harness();f.render();const row={...f.view.result.rows.find(r=>r.address==='t1'),inlineMetadata:''};
+ const signature=tree=>{const all=nodes(tree),actions=all.find(n=>n.attrs.id==='unified-actions-'+row.id),status=all.find(n=>n.attrs.id==='unified-status-slot-'+row.id),pin=all.find(n=>n.attrs.id==='unified-agent-pin-slot-'+row.id),meta=all.find(n=>n.attrs.id==='unified-meta-'+row.id);assert.equal(actions.attrs.w,SIDEBAR_COLUMNS.width);assert.equal(status.attrs.w,SIDEBAR_COLUMNS.summary);assert.equal(status.attrs.h,13);assert.equal(pin.attrs.size,19);assert(Object.hasOwn(meta.attrs,'absolute'));assert(Object.hasOwn(meta.attrs,'justify_end'));for(const width of [160,268,420])assert.equal(width-meta.attrs.right,width-tree.attrs.pr);return{flow:flow(tree).map(n=>({w:n.attrs.w,size:n.attrs.size,mr:n.attrs.mr,min_w:n.attrs.min_w})),left:meta.attrs.left,right:meta.attrs.right};};
+ const before=f.view.entityRow(row,0,f.frame(),f.cx),plain=signature(before);assert(!nodes(before).some(n=>n.attrs.id==='unified-pin-'+row.id));before.events.on_hover(true,f.cx);const hovered=f.view.entityRow(row,0,f.frame(),f.cx);assert(nodes(hovered).some(n=>n.attrs.id==='unified-pin-'+row.id));assert.deepEqual(signature(hovered),plain);hovered.events.on_hover(false,f.cx);assert.deepEqual(signature(f.view.entityRow(row,0,f.frame(),f.cx)),plain);
+ const unknown=f.view.entityRow({...row,status:'unknown',branchStatus:'unknown'},0,f.frame(),f.cx);assert.equal(nodes(unknown).find(n=>n.attrs.id==='unified-actions-'+row.id).attrs.w,SIDEBAR_COLUMNS.width);assert.equal(nodes(unknown).find(n=>n.attrs.id==='unified-agent-pin-slot-'+row.id).attrs.size,19);assert(!nodes(unknown).some(n=>n.attrs.id==='unified-status-text-'+row.id));
 });
