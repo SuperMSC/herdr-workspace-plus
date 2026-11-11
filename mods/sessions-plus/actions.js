@@ -1,14 +1,19 @@
 import { div } from "gpui-kit";
 import { v_flex } from "gpui-base";
-import { theme, window, openOverlay, closeOverlay } from "herdr";
+import { theme, window, openOverlay, closeOverlay, terminals, settings } from "herdr";
 
 export default class Actions {
   init(p, cx) {
     this.p = p;
     this.target = { ...p.target };
+    const live = terminals().find(item => item.address === this.target.address && item.state === "live" && this.target.live && Number.isSafeInteger(this.target.updated) && item.created_ms === this.target.updated);
+    this.pickerTarget = live ? { ...live, on: live.address.includes("/") ? live.address.slice(0, live.address.lastIndexOf("/")) : null } : null;
     this.canTrash = !this.target.live && !this.target.remote && window()?.platform === "macos";
     this.items = [{ id: "rename", label: "Rename" }, { id: "trash", label: "Move to Trash…", disabled: !this.canTrash },
-      { id: "preview", label: "Preview recent messages", disabled: this.target.remote || !this.target.id || !this.target.key }];
+      { id: "preview", label: "Preview recent messages", disabled: this.target.remote || !this.target.id || !this.target.key },
+      { id: "timeline", label: "Work timeline", disabled: this.target.remote || !this.target.id || !this.target.store },
+      { id: "gallery", label: "Session images", disabled: this.target.remote || !this.target.id || !this.target.store },
+      { id: "screen-picker", label: "Screen picker", disabled: !this.pickerTarget }];
     this.at = 0;
     this.handle = cx.focus_handle();
     this.handle.focus();
@@ -18,8 +23,15 @@ export default class Actions {
     const item = this.items[index];
     if (!item || item.disabled) return;
     closeOverlay(this.p.overlay);
+    const role = ["timeline", "gallery", "screen-picker"].includes(item.id) ? item.id : item.id === "preview" ? "preview" : item.id === "rename" ? "rename" : "trash-dialog";
+    if (["timeline", "gallery", "screen-picker"].includes(item.id)) {
+      const viewport = globalThis.window.viewport_size(), zoom = Number(settings().zoom) || 1;
+      openOverlay({ mod: "sessions-plus", kind: "dialog", frame: "none", width: Math.min(940, viewport.width / zoom * .93), height: Math.min(760, viewport.height / zoom * .9),
+        props: { role, target: item.id === "screen-picker" ? this.pickerTarget : { ...this.target }, node: this.p.node, stores: this.p.stores } });
+      return;
+    }
     openOverlay({ mod: "sessions-plus", kind: "dialog", frame: "none", width: item.id === "preview" ? 600 : item.id === "rename" ? 420 : 460, height: item.id === "preview" ? 460 : item.id === "rename" ? 240 : 360,
-      props: { role: item.id === "preview" ? "preview" : item.id === "rename" ? "rename" : "trash-dialog", action: "trash", target: { ...this.target }, node: this.p.node, stores: this.p.stores } });
+      props: { role, action: "trash", target: { ...this.target }, node: this.p.node, stores: this.p.stores } });
   }
 
   render() {

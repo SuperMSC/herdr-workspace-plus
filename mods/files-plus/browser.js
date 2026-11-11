@@ -48,21 +48,21 @@ export default class Browser {
     this.saved = new Map();
     this.entries = new Map(); this.folders = new Set(); this.pending = new Set(); this.marks = {};
     this.refresh(cx);
-    cx.timer.every(10000, cx => this.refresh(cx));
+    this.refreshTimer = cx.timer.every(10000, cx => this.refresh(cx));
   }
 
   watch(root, cx) {
     if (this.on || this.watched === root) return;
-    this.watched = root;
+    this.watchTask?.cancel?.(); this.watched = root;
     const context = this.context;
-    cx.spawn(async cx => {
-      try { while (this.context === context) { await watchFolder(root); if (this.current(context)) this.refresh(cx); } }
+    this.watchTask = cx.spawn(async cx => {
+      try { while (this.context === context && !this.paused) { await watchFolder(root); if (this.current(context)) this.refresh(cx); } }
       catch { if (this.context === context) this.watched = null; }
     });
   }
 
   current(context) {
-    return !this.disposed && this.context === context && key(this.source) === context.key;
+    return !this.disposed && !this.paused && this.context === context && key(this.source) === context.key;
   }
 
   async loadFolder(path, context) {
@@ -78,9 +78,10 @@ export default class Browser {
   }
 
   refresh(cx) {
-    if (this.disposed) return;
+    if (this.disposed || this.paused) return;
     const { cwd, on } = this.source || location(), next = key(this.source), showHidden = shared(SHOW_HIDDEN_KEY) === true;
     if (next !== this.context?.key || showHidden !== this.context?.showHidden) {
+      this.watchTask?.cancel?.();
       if (this.context) this.saved.set(this.context.key, { folders: this.folders, file: this.file });
       const saved = this.saved.get(next);
       this.context = { key: next, cwd, on, showHidden }; this.root = cwd; this.on = on; this.entries = new Map(); this.folders = new Set(saved?.folders);
@@ -154,6 +155,7 @@ export default class Browser {
   }
 
   search(cx) {
+    if (this.onWorkspaceSearch) return this.onWorkspaceSearch(cx);
     const viewport = globalThis.window.viewport_size(), zoom = settings().zoom || 1;
     openOverlay({ mod: "files-plus", kind: "dialog", frame: "none", width: Math.min(1050, viewport.width / zoom * 0.92), height: Math.min(800, viewport.height / zoom * 0.88), props: { role: "search", root: this.root, on: this.on } });
   }
@@ -173,7 +175,7 @@ export default class Browser {
     this.browseFolder = applyPathChange(this.browseFolder, change) || "";
     const file = applyPathChange(this.file, change);
     // A new context invalidates reads still running against the old tree.
-    this.context = { ...this.context };
+    this.watchTask?.cancel?.(); this.context = { ...this.context };
     this.entries = new Map(); this.pending = new Set(); this.folderRequests = new Map();
     this.loading = false; this.watched = null; this.reloadAgain = false;
     this.show(file, cx, false);
@@ -213,7 +215,8 @@ export default class Browser {
 
   // The header's fold button: in the tree, collapse every open folder below the current one,
   // or open a few levels; in grouped Recent / Pinned, fold or unfold every group.
-  foldState() {
+  foldState(local = false) {
+    if (!local && this.onWorkspaceFoldState) return this.onWorkspaceFoldState();
     if (this.mode === "tree") return { usable: Boolean(this.root), open: openBelow(this.folders, this.browseFolder).length > 0 };
     if (libraryView(shared(LIBRARY_VIEW_KEY)) !== "tree") return { usable: false, open: false };
     const paths = libraryFor(shared(LIBRARY_KEY), this.root, this.on)[this.mode];
@@ -221,27 +224,28 @@ export default class Browser {
     return { usable: groups.length > 0, open: groups.some(path => !this.libraryFolded.has(path)), groups };
   }
 
-  foldAll(cx) {
-    const state = this.foldState();
+  foldAll(cx, local = false, budget = EXPAND_LIMIT) {
+    if (!local && this.onWorkspaceFold) return this.onWorkspaceFold(cx);
+    const state = this.foldState(true);
     if (!state.usable || this.expanding) return;
     if (this.mode !== "tree") {
       if (state.open) for (const path of state.groups) this.libraryFolded.add(path);
       else this.libraryFolded.clear();
     } else if (state.open) {
       for (const path of openBelow(this.folders, this.browseFolder)) { this.folders.delete(path); this.entries.delete(path); }
-    } else this.expandAll(cx);
+    } else this.expandAll(cx, budget);
     cx.notify();
   }
 
-  expandAll(cx) {
+  expandAll(cx, budget = EXPAND_LIMIT) {
     const context = this.context;
     if (!context) return;
     this.expanding = true;
     cx.spawn(async cx => {
       try {
         let level = [this.browseFolder], opened = 0;
-        for (let depth = 0; depth < EXPAND_DEPTH && level.length && opened < EXPAND_LIMIT; depth++) {
-          const next = childFolders(this.entries, level, context.showHidden).filter(path => !this.folders.has(path)).slice(0, EXPAND_LIMIT - opened);
+        for (let depth = 0; depth < EXPAND_DEPTH && level.length && opened < budget; depth++) {
+          const next = childFolders(this.entries, level, context.showHidden).filter(path => !this.folders.has(path)).slice(0, budget - opened);
           for (const path of next) this.folders.add(path);
           opened += next.length;
           for (let i = 0; i < next.length; i += 8) {
@@ -275,13 +279,13 @@ export default class Browser {
     cx.notify();
   }
 
-  libraryHeader(t, count) {
+  libraryHeader(t, count, prefix = "") {
     const view = libraryView(shared(LIBRARY_VIEW_KEY)), set = next => (_e, cx) => { setShared(LIBRARY_VIEW_KEY, next); cx.notify(); };
-    return h_flex().id("library-header").h(30).flex_none().pl(14).pr(8).pt(4).gap(2).items_center()
+    return h_flex().id(prefix + "library-header").h(30).flex_none().pl(14).pr(8).pt(4).gap(2).items_center()
       .child(div().flex_1().min_w(0).truncate().text_size(10.5).font_medium().text_color(t.dim).child(this.mode === "recent" ? "RECENT · THIS PROJECT" : "PINNED · THIS PROJECT"))
-      .child(this.segment("library-flat", "list", "Flat list", view === "flat", set("flat"), t))
-      .child(this.segment("library-tree", "nest", "Group by folder", view === "tree", set("tree"), t))
-      .when(this.mode === "recent" && count > 0, el => el.child(div().id("recent-clear").ml(4).px(7).h(22).flex_none().flex().items_center().rounded(5).cursor_pointer().text_size(11)
+      .child(this.segment(prefix + "library-flat", "list", "Flat list", view === "flat", set("flat"), t))
+      .child(this.segment(prefix + "library-tree", "nest", "Group by folder", view === "tree", set("tree"), t))
+      .when(this.mode === "recent" && count > 0, el => el.child(div().id(prefix + "recent-clear").ml(4).px(7).h(22).flex_none().flex().items_center().rounded(5).cursor_pointer().text_size(11)
         .text_color(this.clearArmed ? t.blocked : t.dim).when(Boolean(this.clearArmed), el => el.bg(t.hover))
         .hover(s => s.bg(t.hover).text_color(this.clearArmed ? t.blocked : t.foreground))
         .tooltip(this.clearArmed ? "Click again to clear the recent list. Files are not deleted." : "Clear the recent list")
@@ -298,7 +302,15 @@ export default class Browser {
     }
   }
 
-  close() { this.disposed = true; this.context = null; }
+  pause(paused, cx) {
+    if (Boolean(this.paused) === paused) return;
+    this.watchTask?.cancel?.();
+    this.paused = paused; this.context = this.context ? { ...this.context } : this.context;
+    this.folderRequests = new Map(); this.pending = new Set(); this.loading = false; this.watched = null; this.reloadAgain = false;
+    if (!paused) this.refresh(cx);
+  }
+
+  close() { this.disposed = true; this.context = null; this.refreshTimer?.cancel?.(); this.watchTask?.cancel?.(); }
 
   dirtyFolders() {
     if (this.dirtyMarks !== this.marks) { this.dirtyMarks = this.marks; this.dirty = dirtyFolders(this.marks, this.root); }
@@ -307,24 +319,25 @@ export default class Browser {
 
   row(entry, t, idPrefix = "file") {
     const { path, name, dir, depth, group, hint } = entry, open = group ? !this.libraryFolded.has(path) : this.folders.has(path), mark = this.marks[this.root + "/" + path];
+    const localId = kind => `${idPrefix === "file" ? "" : idPrefix + "-"}${kind}-${path}`;
     const inner = dir && !mark ? this.dirtyFolders().get(path) : null, active = this.file === path, tone = markColor(mark ?? inner, t);
     // One 14px lane per level, each with a hairline, so nested rows read as a tree.
     const guides = Array.from({ length: depth }, (_, i) => div().w(14).h_full().flex_none().flex().justify_center()
-      .child(div().w(1).h_full().bg(t.border)).id(`guide-${path}-${i}`));
+      .child(div().w(1).h_full().bg(t.border)).id(`${localId("guide")}-${i}`));
     return h_flex().id(idPrefix + "-" + path).h(26).flex_none().min_w(0).pl(4).pr(8).items_center().rounded(6).cursor_pointer()
       .when(active, el => el.bg(t.selected)).when(!active, el => el.hover(s => s.bg(t.hover)))
       .on_click((e, cx) => this.pick(entry, e, cx)).on_mouse_down("right", (_e, cx) => this.menu(path, dir, cx))
       .children(guides)
-      .child(dir ? div().id("expand-" + path).w(16).h(24).flex_none().flex().items_center().justify_center().on_click((_e, cx) => { cx.stop_propagation(); if (group) this.foldLibrary(path, cx); else this.toggle(path, cx); }).child(svg("mods/files-plus/chevron-" + (open ? "down" : "right") + ".svg").size(10).text_color(open ? t.muted : t.dim)) : div().w(16).flex_none())
+      .child(dir ? div().id(localId("expand")).w(16).h(24).flex_none().flex().items_center().justify_center().on_click((_e, cx) => { cx.stop_propagation(); if (group) this.foldLibrary(path, cx); else this.toggle(path, cx); }).child(svg("mods/files-plus/chevron-" + (open ? "down" : "right") + ".svg").size(10).text_color(open ? t.muted : t.dim)) : div().w(16).flex_none())
       .child(div().w(16).mr(7).flex_none().flex().items_center().child(fileIcon(path, dir, open)))
       .child(div().when(!hint, el => el.flex_1()).min_w(0).truncate().text_size(12.5).text_color(tone ?? t.foreground).when(active, el => el.font_medium()).tooltip(path).child(name))
       .when(Boolean(hint), el => el.child(div().flex_1().min_w(0).ml(8).truncate().text_size(11.5).text_color(t.dim).child(hint)))
       .when(Boolean(group), el => el.child(div().flex_none().mr(4).text_size(11).text_color(t.dim).child(String(entry.count))))
       .when(Boolean(inner), el => el.child(div().size(5).mr(4).rounded(3).flex_none().bg(tone).tooltip("Contains changes")))
       .when(Boolean(mark), el => el.child(div().w(14).flex_none().text_right().text_size(10.5).font_medium().text_color(tone).child(mark)))
-      .when(this.mode === "recent" && !group, el => el.child(iconButton("forget-" + path, "close", "Remove from recent files", (_e, cx) => { this.updateLibrary("forget", path); cx.notify(); }, t)))
-      .when(this.mode === "recent" && Boolean(group), el => el.child(iconButton("forget-" + path, "close", `Remove these ${entry.count} from recent files`, (_e, cx) => this.forget(path, cx), t)))
-      .when(this.mode === "pinned" && !group, el => el.child(iconButton("unpin-" + path, "pin", "Unpin file", (_e, cx) => { this.updateLibrary("pin", path); cx.notify(); }, t, true)));
+      .when(this.mode === "recent" && !group, el => el.child(iconButton(localId("forget"), "close", "Remove from recent files", (_e, cx) => { this.updateLibrary("forget", path); cx.notify(); }, t)))
+      .when(this.mode === "recent" && Boolean(group), el => el.child(iconButton(localId("forget"), "close", `Remove these ${entry.count} from recent files`, (_e, cx) => this.forget(path, cx), t)))
+      .when(this.mode === "pinned" && !group, el => el.child(iconButton(localId("unpin"), "pin", "Unpin file", (_e, cx) => { this.updateLibrary("pin", path); cx.notify(); }, t, true)));
   }
 
   /** One button of the view switch: the active one is raised, the rest stay quiet. */
@@ -340,20 +353,20 @@ export default class Browser {
   rows(prefix, depth, out, t) { return [...out, ...this.listEntries(prefix, depth).map(entry => this.row(entry, t))]; }
 
   scheduleSync(cx) {
-    const changed = key(this.source) !== this.context?.key || (shared(SHOW_HIDDEN_KEY) === true) !== this.context?.showHidden || shared(CHANGE_KEY)?.revision !== this.lastChange;
+    const changed = (!this.paused && (key(this.source) !== this.context?.key || (shared(SHOW_HIDDEN_KEY) === true) !== this.context?.showHidden)) || shared(CHANGE_KEY)?.revision !== this.lastChange;
     if (!changed || this.syncScheduled) return;
     this.syncScheduled = true;
     cx.timer.after(0, cx => { this.syncScheduled = false; if (this.disposed) return; this.refresh(cx); this.consumeChange(cx); cx.notify(); });
   }
 
-  render(cx) {
+  render(cx, navigation = null) {
     this.scheduleSync(cx);
     const t = theme(), library = libraryFor(shared(LIBRARY_KEY), this.root, this.on);
     const crumbPath = this.file || this.browseFolder, crumbs = breadcrumbs(this.root, crumbPath);
     if (!this.file && crumbs.length) crumbs[crumbs.length - 1].dir = true;
     const visibleCrumbs = this.width < 420 && crumbs.length > 3 ? [crumbs[0], { label: "…", path: crumbs[crumbs.length - 3].path, dir: true }, ...crumbs.slice(-2)] : crumbs;
     const crumbMax = Math.min(180, Math.max(24, (this.width - 24 - (this.file ? 28 : 0)) / visibleCrumbs.length - 4));
-    const tree = v_flex().id("files-navigation").flex_1().min_w(0).min_h(0)
+    const tree = navigation ? navigation(t, cx) : v_flex().id("files-navigation").flex_1().min_w(0).min_h(0)
       .when(this.mode !== "tree", el => el.child(this.libraryHeader(t, library[this.mode].length)))
       .child(v_flex().id("files-tree-" + this.mode + "-" + this.browseFolder).flex_1().min_h(0).overflow_y_scrollbar().px(6).py(4).on_mouse_down("right", (_e, cx) => this.menu(this.browseFolder, true, cx)).children(this.visibleEntries().map(entry => this.row(entry, t)))
         .when(!this.visibleEntries().length || Boolean(this.error && this.mode === "tree"), el => el.child(div().p(8).text_size(12).text_color(t.dim).child(this.mode === "tree" ? this.error || (this.loading ? "Loading files…" : this.root ? "No files" : "No folder") : this.mode === "recent" ? "Files you open will appear here." : "Use the pin beside a preview path to keep a file here.")))
@@ -369,6 +382,7 @@ export default class Browser {
             .child(this.segment("files-recent", "history", "Recent files", this.mode === "recent", (_e, cx) => { this.mode = "recent"; this.show(null); cx.notify(); }, t))
             .child(this.segment("files-pinned", "pin", "Pinned files", this.mode === "pinned", (_e, cx) => { this.mode = "pinned"; this.show(null); cx.notify(); }, t)))
           .child((fold => iconButton("files-fold-all", fold.open ? "collapse-all" : "expand-all", this.expanding ? "Expanding folders…" : fold.open ? "Collapse all folders" : this.mode === "tree" ? "Expand folders (4 levels; skips node_modules, .git and build folders)" : "Expand all groups", (_e, cx) => this.foldAll(cx), t, false, !fold.usable || this.expanding))(this.foldState()))
+          .when(Boolean(this.onWorkspaceManage), el => el.child(iconButton("files-workspace-folders", "folder-plus", "Workspace folders", (_e, cx) => this.onWorkspaceManage(cx), t, false, !this.root)))
           .child(iconButton("files-search", "search", "Search project", (_e, cx) => this.search(cx), t, false, !this.root))
           .child(iconButton("files-plus-root-menu", "more", "File actions", (_e, cx) => this.menu(this.file ?? this.browseFolder, !this.file, cx, true), t)))
         .child(h_flex().id("files-breadcrumbs").h(22).flex_none().gap(4).min_w(0).overflow_hidden().items_center()

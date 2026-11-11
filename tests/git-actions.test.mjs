@@ -1,3 +1,4 @@
+import * as reviewModel from "../mods/files-plus/review-model.js";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, rmdir, symlink, readlink, writeFile } from "node:fs/promises";
@@ -162,6 +163,7 @@ async function changesClass(overrides = {}) {
   let source = await readFile(new URL("../mods/files-plus/changes.js", import.meta.url), "utf8");
   source = source.replace(/^import .+;$/gm, "").replace("export default class Changes {", "return class Changes {");
   const values = {
+    ...reviewModel,
     projectContext: () => ({ cwd: "/fixture", on: null }), fileKey, fileTree, diffRows, splitRows, splitDisplay, inlineDisplay, diffCounts, treeFolders, splitHeader: () => null, createGitReader, READ, VirtualListScrollHandle: { new: () => ({ scroll_to_item() {}, release() {} }) },
     spaces: () => [{ active: true, folder: "/fixture", machine: null }], panes: () => [], focused: () => ({}),
     exec: async () => ({ code: 0, stdout: "", stderr: "" }), readTextFile: async () => "", watchFolder: () => new Promise(() => {}),
@@ -181,10 +183,12 @@ function context() {
 
 test("same-path diff requests cannot overwrite a newer response", async () => {
   const responses = [];
-  const Changes = await changesClass({ readTextFile: () => new Promise(resolve => responses.push(resolve)) });
+  const Changes = await changesClass({ readTextFile: () => new Promise(resolve => responses.push(resolve)), createGitReader: (...args) => ({ ...createGitReader(...args), reviewVersion: async () => null }) });
   const changes = new Changes();
-  Object.assign(changes, { context: JSON.stringify({ cwd: "/fixture", on: null }), root: "/fixture", on: null, open: "file", files: [{ path: "file", fresh: true }], diffRequest: 0 });
+  Object.assign(changes, { context: JSON.stringify({ cwd: "/fixture", on: null }), root: "/fixture", on: null, open: "file", files: [{ path: "file", fresh: true }], diffRequest: 0, reviewVersions: {} });
   const first = changes.load("file", changes.context), second = changes.load("file", changes.context);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(responses.length, 2);
   responses[1]("new response\n"); await second;
   responses[0]("old response\n"); await first;
   assert.ok(changes.rows.some(row => row.text === "new response"));

@@ -1,0 +1,2 @@
+// Compact Docker inspect output excludes environment, mounts and other unneeded private data.
+export const INSPECT_FORMAT = '{"id":{{json .Id}},"created":{{json .Created}},"name":{{json .Name}},"image":{{json .Config.Image}},"project":{{json (index .Config.Labels "com.docker.compose.project")}},"service":{{json (index .Config.Labels "com.docker.compose.service")}},"state":{{json .State.Status}},"health":{{if .State.Health}}{{json .State.Health.Status}}{{else}}null{{end}},"ports":{{json .NetworkSettings.Ports}}}';

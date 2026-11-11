@@ -37,6 +37,7 @@ export function menuItems(target, { preferences = false, showHidden = false } = 
       { id: "copyPath", label: "Copy Path", separator: local },
       { id: "copyRelative", label: "Copy Relative Path" },
       { id: "copyName", label: "Copy Name" },
+      { id: "queueReference", label: "Add reference to pending prompts…", separator: true },
       ...(local && (xy === "??" || xy[1] !== " " || conflict) ? [{ id: "stage", label: conflict ? "Stage Resolution" : "Stage File", separator: true }] : []),
       ...(local && xy !== "??" && xy[0] !== " " ? [{ id: "unstage", label: "Unstage File", separator: true }] : []),
       { id: "refresh", label: "Refresh", separator: true },
@@ -50,6 +51,7 @@ export function menuItems(target, { preferences = false, showHidden = false } = 
     { id: "copyPath", label: "Copy Path", separator: localActions(target) },
     { id: "copyRelative", label: "Copy Relative Path" },
     { id: "copyName", label: "Copy Name" },
+    { id: "queueReference", label: "Add reference to pending prompts…", separator: true },
     ...(localActions(target) ? [
       { id: "createFile", label: "New File…", separator: true },
       { id: "createFolder", label: "New Folder…" },

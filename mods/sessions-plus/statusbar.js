@@ -1,3 +1,4 @@
+import { privacyToggle } from "./privacy.js";
 import { div, svg } from "gpui-kit";
 import { h_flex, Popover } from "gpui-base";
 import { theme, shared, setShared } from "herdr";
@@ -64,7 +65,7 @@ export default class StatusBar {
       return [`${PROVIDERS[provider]}: updated ${clock}`];
     });
     const stop = (_event, cx) => cx.stop_propagation();
-    const quotaWidth = Math.max(0, (this.width ?? 1000) - (this.modeWidth ?? 68) - 46);
+    const quotaWidth = Math.max(0, (this.width ?? 1000) - (this.modeWidth ?? 68) - 46 - (this.privacyWidth ?? 60) - 4);
     const size = field => (value, cx) => {
       if (Number.isFinite(value.width) && Math.abs(value.width - (this[field] ?? -1)) > 0.5) {
         this[field] = value.width; cx.notify();
@@ -109,6 +110,7 @@ export default class StatusBar {
         .on_mouse_down("left", stop).on_click(() => setShared("sessions-plus.quota-mode", mode === "remaining" ? "used" : "remaining"))
         .child(mode === "used" ? "Used" : "Remaining"))
       .child(div().flex_initial().min_w(0).overflow_hidden().child(details))
-      .child(refresh);
+      .child(refresh)
+      .child(div().id("screenshot-mode-toggle").on_size_change(size("privacyWidth")).h(24).px(6).flex_none().rounded(4).cursor_pointer().text_color(t.muted).hover(el => el.bg(t.hover)).tooltip("Hide Agent Workspace panels for screenshots; terminal text remains visible").on_click(() => privacyToggle()).child("Privacy"));
   }
 }

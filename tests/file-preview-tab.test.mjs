@@ -32,7 +32,7 @@ function harness({ props = {}, storedPath, tabName = "old.py", registered = true
     timer: { after(ms, callback) { after.push({ ms, callback }); }, every(ms, callback) { every.push({ ms, callback }); } } };
   const deps = { ...library, ...model, FILE_TABS_KEY, DIRTY_KEY: "files-plus.dirty.v1", headerShown: () => header, div: element, h_flex: element, v_flex: element, fileIcon: element,
     iconButton: (id, _icon, label, callback) => element().id(id).tooltip(label).on_click(callback),
-    Preview: class { open(root, path, on) { opens.push({ root, path, on }); } refresh() { refreshes.push(true); } close() { closures.push(true); } render() { return element().id("preview-body"); } },
+    Preview: class { constructor(options) { this.options = options; } open(root, path, on) { opens.push({ root, path, on }); } refresh() { refreshes.push(true); } close() { closures.push(true); } render() { return element().id("preview-body"); } },
     theme: () => ({}), settings: () => ({ zoom: 1 }), window: () => ({ platform: "macos" }),
     spaces: () => allSpaces, panes: () => allPanes, shared: key => state[key],
     setShared(key, value) { assert(!rendering, "render must never write shared state"); state[key] = value; writes.push(key); },
@@ -135,4 +135,32 @@ test("invalid file targets show an error before any preview read or file action 
 test("with the workspace pane header, the preview drops its own toolbar", () => {
   const f = harness({ header: true }), tree = f.render();
   assert(!find(tree, "file-tab-actions")); assert(!find(tree, "file-tab-pin")); assert(find(tree, "preview-body"));
+});
+
+test("Markdown navigation keeps the preview header, actions, registry and recent files on the displayed file", () => {
+  const f = harness({ props: { path: "README.md" }, tabName: "README.md" });
+  f.view.preview.options.onNavigate({ root: "/captured", path: "docs/design.md", on: null });
+  assert.equal(f.view.path, "docs/design.md");
+  assert.equal(f.state[FILE_TABS_KEY].tabs["file-tab"].path, "docs/design.md");
+  assert.deepEqual(f.commands, [["tab.rename", { id: "file-tab", name: "design.md" }]]);
+  assert.equal(library.libraryFor(f.state[library.LIBRARY_KEY], "/captured", null).recent[0], "docs/design.md");
+  f.view.menu(f.cx);
+  assert.equal(f.overlays[0].props.target.relative, "docs/design.md");
+  assert.equal(f.overlays[0].props.target.root, "/captured");
+});
+
+test("Markdown navigation preserves custom tab names and rejects a foreign or closed preview target", () => {
+  const f = harness({ props: { path: "README.md" }, tabName: "My notes" });
+  for (const target of [
+    { root: "/other", path: "wrong.md", on: null },
+    { root: "/captured", path: "wrong.md", on: "remote" },
+    { root: "/captured", path: "../wrong.md", on: null },
+  ]) f.view.preview.options.onNavigate(target);
+  assert.equal(f.view.path, "README.md");
+  f.view.preview.options.onNavigate({ root: "/captured", path: "docs/design.md", on: null });
+  assert.equal(f.view.path, "docs/design.md");
+  assert.deepEqual(f.commands, []);
+  f.view.close();
+  f.view.preview.options.onNavigate({ root: "/captured", path: "ignored.md", on: null });
+  assert.equal(f.view.path, "docs/design.md");
 });

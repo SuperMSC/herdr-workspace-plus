@@ -4,7 +4,7 @@
 import { div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { run, closeOverlay, openOverlay, theme, shared, setShared } from "herdr";
-import { STATE_KEY, MODES, SORTS, PALETTE, MARK, normalizeState, assignSpace, setGroupColor, stepGroup, ungroup, foldAll } from "./model.js";
+import { STATE_KEY, DENSITY_KEY, DENSITIES, projectDensity, MODES, SORTS, PALETTE, MARK, normalizeState, assignSpace, setGroupColor, stepGroup, ungroup, foldAll } from "./model.js";
 
 export const MOD = "project-spaces";
 // Projects listed under "Move to project"; the rest are reached by dragging.
@@ -27,6 +27,11 @@ function spaceItems(p) {
   const s = p.space ?? {};
   const st = state();
   const items = [{ label: "Rename", icon: "square-pen", act: () => run("space.rename", { id: s.id }) }];
+  const folder = p.auto?.folder || s.folder;
+  if (folder) {
+    items.push({ label: "Project notes", icon: "file-text", act: () => openOverlay({ mod: "sessions-plus", kind: "dialog", frame: "none", width: 800, height: 680, props: { role: "notes", project: { root: folder, on: s.machine ?? null }, initial: "project" } }) });
+    items.push({ label: "Project commands", icon: "terminal", act: () => openOverlay({ mod: "sessions-plus", kind: "dialog", frame: "none", width: 820, height: 680, props: { role: "commands", context: { root: folder, on: s.machine ?? null } } }) });
+  }
   if (p.git) {
     items.push({ label: "New worktree", icon: "git-branch", act: () => openOverlay({ mod: "worktree", kind: "dialog", width: 440, height: 260, props: { space: s.id, action: "new" } }) });
     items.push({ label: "Open worktree", icon: "git-branch", act: () => openOverlay({ mod: "worktree", kind: "dialog", width: 560, height: 480, props: { space: s.id, action: "open" } }) });
@@ -51,6 +56,10 @@ function groupItems(p) {
   const at = shown.indexOf(g.key);
   const items = [];
   if (g.folder) items.push({ label: "New space here", icon: "plus", act: () => run("space.new", { folder: g.folder, machine: g.machine ?? "" }) });
+  if (g.folder) {
+    items.push({ label: "Project notes", icon: "file-text", act: () => openOverlay({ mod: "sessions-plus", kind: "dialog", frame: "none", width: 800, height: 680, props: { role: "notes", project: { root: g.folder, on: g.machine ?? null }, initial: "project" } }) });
+    items.push({ label: "Project commands", icon: "terminal", act: () => openOverlay({ mod: "sessions-plus", kind: "dialog", frame: "none", width: 820, height: 680, props: { role: "commands", context: { root: g.folder, on: g.machine ?? null } } }) });
+  }
   items.push({ label: "Rename project…", icon: "square-pen", act: () => openPrompt({ action: "rename-group", key: g.key, value: g.name, title: "Rename project" }) });
   items.push({ swatches: true, key: g.key });
   if (p.sort === "manual") {
@@ -68,7 +77,9 @@ function groupItems(p) {
 function viewItems(p) {
   const st = state();
   const keys = p.keys ?? [];
-  const items = [{ section: "Group by" }];
+  const items = [{ section: "Display" }];
+  for (const density of DENSITIES) items.push({ label: density.label, checked: projectDensity(shared(DENSITY_KEY)) === density.id, keep: true, act: () => setShared(DENSITY_KEY, density.id) });
+  items.push({ section: "Group by" });
   for (const m of MODES) items.push({ label: m.label, checked: st.mode === m.id, keep: true, act: () => save({ ...state(), mode: m.id }) });
   items.push({ section: "Sort" });
   for (const s of SORTS) items.push({ label: s.label, hint: s.about, checked: st.sort === s.id, keep: true, act: () => save({ ...state(), sort: s.id }) });

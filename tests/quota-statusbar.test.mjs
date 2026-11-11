@@ -34,6 +34,7 @@ function fixture(state = {}) {
   const calls = [], tasks = [], timers = [], timeouts = [];
   const cx = { notify() { notifications++; }, spawn(task) { tasks.push(task(cx)); }, timer: { every(ms, task) { timers.push({ ms, task }); }, after(ms, task) { timeouts.push({ at: now + ms, task }); } } };
   const dependencies = {
+    privacyToggle: () => { state["agent-workspace.screenshot-mode.v1"] = state["agent-workspace.screenshot-mode.v1"] !== true; },
     div: element, svg: element, h_flex: element, v_flex: element,
     Popover: { new: id => element().id(id) },
     theme: () => ({ chrome: "chrome", surface: "surface", selected: "selected", ansi1: "red", ansi3: "yellow", foreground: "white" }),
@@ -167,7 +168,8 @@ test("compact strip shows window percentages with countdowns, plus mode, refresh
 
 test("narrow widths retain countdowns and expanding restores percentages without new reads", async () => {
   const f = fixture(); await f.finish();
-  const resize = width => find(f.render(), "quota-statusbar").events.on_size_change({ width, height: 28 }, f.cx);
+  // Preserve the tested quota-area widths while reserving the new 60px control and 4px gap.
+  const resize = baselineWidth => find(f.render(), "quota-statusbar").events.on_size_change({ width: baselineWidth + 64, height: 28 }, f.cx);
   resize(425);
   for (const provider of Object.keys(PROVIDERS)) {
     assert.equal(text(find(f.render(), `quota-status-${provider}`)).trim(), "5h 1h 0m");
@@ -202,7 +204,8 @@ test("weekly countdown remains labeled when the five-hour reset is unavailable",
 test("narrowing hides bars then percentages while retaining both countdowns", async () => {
   const f = fixture({ "sessions-plus.quota-hidden": ["codex", "agy"] });
   await f.finish({ claude: { windows: [row("5h", 7, 1800012120000), row("7d", 35, 1800093600000)] } });
-  const resize = width => find(f.render(), "quota-statusbar").events.on_size_change({ width, height: 28 }, f.cx);
+  // Preserve the tested quota-area widths while reserving the new 60px control and 4px gap.
+  const resize = baselineWidth => find(f.render(), "quota-statusbar").events.on_size_change({ width: baselineWidth + 64, height: 28 }, f.cx);
   const hasBar = () => nodes(find(f.render(), "quota-status-claude")).some(node => node.attributes.w === 32);
   assert(hasBar());
   resize(350);
@@ -301,7 +304,8 @@ test("initial query failure remains visible without inventing quota or a success
 test("warning icons have reserved width through full, brief, icon-only, and collapsed layouts", async () => {
   const f = fixture({ "sessions-plus.quota-hidden": ["agy"] });
   await f.finish({ claude: { state: "stale", message: "Claude connection failed", windows: [row("5h", 10), row("7d", 35, 1800093600000)] }, codex: { state: "stale", message: "Codex connection failed", windows: [row("7d", 35, 1800093600000)] } });
-  const resize = width => find(f.render(), "quota-statusbar").events.on_size_change({ width, height: 28 }, f.cx);
+  // Preserve the tested quota-area widths while reserving the new 60px control and 4px gap.
+  const resize = baselineWidth => find(f.render(), "quota-statusbar").events.on_size_change({ width: baselineWidth + 64, height: 28 }, f.cx);
   resize(1000); assert.match(text(find(f.render(), "quota-status-claude")), /90%/);
   resize(450); assert.doesNotMatch(text(find(f.render(), "quota-status-claude")), /%/); assert.match(text(find(f.render(), "quota-status-claude")), /7d 1d 2h/);
   for (const width of [450, 250]) {
@@ -338,4 +342,14 @@ test("single Codex tooltip shows its window only once and keeps named quota pool
   assert.match(tooltip, /^Codex · Remaining\n7d: 58% · Resets in /);
   assert.equal((tooltip.match(/7d/g) || []).length, 1);
   assert.equal(codexWindows({ rateLimits: { limitName: "Review", primary: { usedPercent: 20, windowDurationMins: 300 } } })[0].label, "Review · 5h");
+});
+
+
+test("status bar reserves the measured Privacy control width and its toggle does not refresh quota", () => {
+  const f=fixture();f.bar.width=500;f.bar.modeWidth=68;f.bar.privacyWidth=60;
+  const before=f.calls.length;
+  assert.equal(find(f.render(),"quota-status-trigger").attributes.max_w,322);
+  find(f.render(),"screenshot-mode-toggle").events.on_size_change({width:90},f.cx);
+  assert.equal(find(f.render(),"quota-status-trigger").attributes.max_w,292);
+  f.click("screenshot-mode-toggle");assert.equal(f.state["agent-workspace.screenshot-mode.v1"],true);assert.equal(f.calls.length,before);
 });

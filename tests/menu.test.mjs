@@ -74,9 +74,9 @@ test("targets preserve punctuation, backslashes and platform roots", () => {
   assert.equal(copyValue("copyRelative", targetFor(root)), ".");
 });
 
-test("remote and non-Mac menus expose only copy and refresh", () => {
+test("remote and non-Mac menus expose read-only copy, references and refresh", () => {
   for (const target of [targetFor(root, "x", false, "server", "macos"), targetFor(root, "x", false, null, "linux"), targetFor(root, "x", false, null, "windows")]) {
-    assert.deepEqual(menuItems(target).map(item => item.id), ["copyPath", "copyRelative", "copyName", "refresh"]);
+    assert.deepEqual(menuItems(target).map(item => item.id), ["copyPath", "copyRelative", "copyName", "queueReference", "refresh"]);
   }
   assert(!menuItems(targetFor(root, "", true, null, "macos")).some(item => ["rename", "trash"].includes(item.id)));
   assert(menuHeight(file()) <= 450);

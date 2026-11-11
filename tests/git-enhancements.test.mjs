@@ -1,3 +1,4 @@
+import * as reviewModel from "../mods/files-plus/review-model.js";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile, mkdir } from "node:fs/promises";
@@ -139,6 +140,7 @@ async function changesHarness() {
   const pending = [], timers = [], overlays = [], calls = [];
   const cx = { notify() { notifications++; }, stop_propagation() {}, focus_handle: () => ({ focus() {} }), spawn(task) { pending.push(task(cx)); }, timer: { every() {}, after(_ms, task) { timers.push(task); } } };
   const dependencies = {
+    ...reviewModel,
     projectContext: () => ({ cwd: active, on: null }), closeButton: element, v_resizable: element, resizable_panel: element, fileIcon: element, div: element, svg: element, h_flex: element, v_flex: element, fileKey, fileTree, diffRows, splitRows, splitDisplay, inlineDisplay, diffCounts, treeFolders, splitHeader: () => null, createGitReader, READ,
     diffView: () => element().id("diff-preview"), theme: () => ({}), settings: () => ({}), window: () => ({ platform: "macos" }),
     Input: { new: element }, InputState: { new: () => ({ on() {}, set_value() {}, release() {} }) }, VirtualListScrollHandle: { new: () => ({ scroll_to_item() {}, release() {} }) },

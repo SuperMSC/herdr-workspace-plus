@@ -1,0 +1,10 @@
+{
+  "version": "0.11.0",
+  "tests": 645,
+  "matched": 202,
+  "protectedConfigurationsUnchanged": true,
+  "sharedUnchangedAtSync": true,
+  "installedNativeChecks": 4,
+  "installedRuntimeErrors": [],
+  "temporaryFixturesRemoved": true
+}

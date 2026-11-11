@@ -45,8 +45,8 @@ for (const kind of ["browser", "changes"]) {
     const natural = model.menuHeight(f.spec.props.target, { preferences: f.spec.props.preferences });
     assert.equal(f.spec.height, natural);
     assert.equal(f.tree.attrs.h, f.spec.height);
-    assert(f.spec.height < f.maximum / 2);
-    assert(f.spec.height <= f.menu.items.length * 30 + 90);
+    assert(f.spec.height < f.maximum);
+    assert.equal(f.spec.height, 52 + f.menu.items.length * 30 + f.menu.items.filter(item => item.separator).length * 7);
     assert.equal(f.tree.attrs.p, 4);
     assert.equal(f.tree.childNodes[0].attrs.h, 22);
     assert.equal(f.tree.childNodes.at(-1).attrs.h, 22);

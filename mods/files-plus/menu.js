@@ -1,6 +1,6 @@
 import { div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { closeOverlay, openOverlay, theme, exec, shared, setShared, settings } from "herdr";
+import { closeOverlay, openOverlay, theme, exec, shared, setShared, settings, appHome, readTextFile } from "herdr";
 import { createFilesystem } from "./filesystem.js";
 import { CHANGE_KEY, SHOW_HIDDEN_KEY, menuItems, copyValue, localActions, parentPath, menuHeight } from "./model.js";
 
@@ -35,6 +35,16 @@ export default class Menu {
     if (action.startsWith("copy")) {
       cx.write_to_clipboard(copyValue(action, target));
       closeOverlay(this.p.overlay);
+    } else if (action === "queueReference") {
+      this.busy = true; this.error = ""; cx.notify();
+      cx.spawn(async cx => {
+        try {
+          if (await readTextFile(`${appHome()}/mods/sessions-plus/mod.json`) === null) throw new Error("Pending prompts requires the Sessions Plus companion. Run the full workspace updater first.");
+          closeOverlay(this.p.overlay);
+          openOverlay({ mod: "sessions-plus", kind: "dialog", frame: "none", width: 660, height: 540, props: { role: "reference", reference: { root: target.root, relative: target.relative, dir: target.dir, on: target.on ?? null } } });
+        } catch (error) { this.error = String(error.message || error); }
+        finally { this.busy = false; cx.notify(); }
+      });
     } else if (action === "toggleHidden") {
       setShared(SHOW_HIDDEN_KEY, shared(SHOW_HIDDEN_KEY) !== true);
       closeOverlay(this.p.overlay);

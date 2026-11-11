@@ -193,6 +193,29 @@ export function validate(key, options = {}) {
   return { row, command };
 }
 
+// Resolve one exact captured identity without accepting a source path or scanning other providers.
+export function resolveSession(key, options = {}) {
+  let identity;
+  try { identity = JSON.parse(key); } catch { throw new Error("Invalid recorded session identity."); }
+  if (!Array.isArray(identity) || identity.length !== 3 || !Object.hasOwn(PROVIDERS, identity[0]) || typeof identity[1] !== "string" || !isAbsolute(identity[1]) || !UUID.test(identity[2] || "")) throw new Error("An exact provider, store and session ID are required.");
+  const [provider, store, id] = identity, home = options.home || homedir();
+  const defaults = { claude: process.env.CLAUDE_CONFIG_DIR || join(home, ".claude"), codex: process.env.CODEX_HOME || join(home, ".codex"), agy: join(home, ".gemini", "antigravity-cli") };
+  const configured = resolve(options.stores?.[provider] || defaults[provider]);
+  if (resolve(store) !== store || store !== configured) throw new Error("The selected session store does not match its captured configuration.");
+  if (provider === "agy") return { provider, store, id, key, title: "Antigravity", source: null };
+  const state = { warnings: new Set(), visited: 0, limited: false };
+  const files = collect(join(store, provider === "claude" ? "projects" : "sessions"), name => provider === "claude" ? name === id + ".jsonl" : name.startsWith("rollout-") && name.endsWith(id + ".jsonl"), provider === "claude" ? 1 : 3, state);
+  if (state.limited || state.warnings.size) throw new Error("The session search reached its bounded limit or an unreadable folder. Its identity could not be verified.");
+  if (files.length !== 1) throw new Error(files.length ? "This recorded session identity is ambiguous." : "This exact session is no longer available.");
+  const source = files[0].path, sourceStamp = stamp(source), values = records(source);
+  if (sourceStamp !== stamp(source)) throw new Error("The selected session changed while verifying its identity. Refresh before reading it.");
+  const meta = provider === "codex" ? values.find(record => record.type === "session_meta")?.payload : null;
+  if (provider === "codex" && meta?.id !== id || provider === "claude" && values.some(record => typeof record.sessionId === "string" && record.sessionId !== id)) throw new Error("The session file no longer matches its recorded identity.");
+  const cwd = meta?.cwd || values.find(record => typeof record.cwd === "string")?.cwd;
+  if (typeof cwd !== "string" || !isAbsolute(cwd)) throw new Error("The session has no verified original working folder.");
+  return { provider, store, id, key, source, sourceStamp, cwd, title: provider + " " + id.slice(0, 8), updated: files[0].updated };
+}
+
 // Only an explicit preview action reads message excerpts; nothing is indexed or written.
 export function preview(key, options = {}) {
   const row = scan(options).rows.find(item => item.key === key);

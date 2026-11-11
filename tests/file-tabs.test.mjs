@@ -24,6 +24,11 @@ function fixture({ deferred = false, remote = false } = {}) {
     } };
   const source = readFileSync(new URL("../mods/files-plus/file-tabs.js", import.meta.url), "utf8").replace(/^import .*;\n/gm, "").replaceAll("export ", "");
   const api = new Function(...Object.keys(deps), source + "\nreturn {openFileTab,projectContext,FILE_TABS_KEY};")(...Object.values(deps));
+  const companionSource = readFileSync(new URL("../mods/sessions-plus/project-context.js", import.meta.url), "utf8").replace(/^import .*;\n/gm, "").replaceAll("export ", "");
+  const { validRelative: _unused, ...companionDeps } = deps;
+  const companion = new Function(...Object.keys(companionDeps), companionSource + "\nreturn projectContext;")(...Object.values(companionDeps));
+  const originalContext = api.projectContext;
+  api.projectContext = () => { const expected = originalContext(); assert.deepEqual(companion(), expected, "Sessions and Files must agree without cross-mod imports"); return expected; };
   const cx = { timer: { after(ms, fn) { timers.push({ ms, fn }); } } };
   return { ...api, state, values, commands, timers, pending, cx, spaceId, create, activate,
     data: () => values[api.FILE_TABS_KEY], writes: () => writes, tick() { const next = timers.shift(); if (next) { now += next.ms; next.fn(cx); } }, advance(ms) { now += ms; }, fail(error) { failure = error; },

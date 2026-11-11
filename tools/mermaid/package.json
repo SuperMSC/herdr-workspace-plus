@@ -1,0 +1,12 @@
+{
+  "name": "agent-workspace-mermaid-build",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "devDependencies": {
+    "beautiful-mermaid": "1.1.3",
+    "esbuild": "0.28.2"
+  }
+}

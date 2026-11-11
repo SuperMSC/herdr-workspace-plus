@@ -23,8 +23,26 @@ export function fileMatcher(options) {
 }
 export function groupedMatches(matches) {
   const files = new Map();
-  for (const match of matches) { if (!files.has(match.path)) files.set(match.path, []); files.get(match.path).push(match); }
-  return [...files].map(([path, matches]) => ({ path, matches }));
+  for (const match of matches) {
+    const key = match.root ? JSON.stringify([match.on || null, match.root, match.path]) : match.path;
+    if (!files.has(key)) files.set(key, { path: match.path, matches: [], ...(match.root ? { key, root: match.root, on: match.on ?? null, rootName: match.rootName } : {}) });
+    files.get(key).matches.push(match);
+  }
+  return [...files.values()];
+}
+export function combineWorkspaceResults(results) {
+  const matches = [], warnings = [], multiple = results.length > 1;
+  for (const result of results) {
+    if (!result) continue;
+    const prefix = result.source.name || result.source.root;
+    if (result.error) { warnings.push(`${prefix}: ${result.error}`); continue; }
+    if (result.warning) warnings.push(`${prefix}: ${result.warning}`);
+    for (const match of result.matches || []) {
+      if (matches.length >= SEARCH_LIMIT) { warnings.push('Workspace search limited to 500 matches. Refine the query.'); break; }
+      matches.push(multiple ? { ...match, root: result.source.root, on: result.source.on ?? null, rootName: prefix } : match);
+    }
+  }
+  return { matches, warning: [...new Set(warnings)].join(' · ').slice(0, 1600) || null };
 }
 export function parseSearchOutput(stdout, mode, options) {
   if (mode === 'files') {

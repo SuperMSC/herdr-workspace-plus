@@ -1,3 +1,4 @@
+import { privacyGuard } from "./privacy.js";
 // Project Spaces: Herdr's Spaces sidebar, grouped by project.
 //
 // A project is a Git repository (its main checkout and linked worktrees together), else the
@@ -7,10 +8,10 @@
 // Git tracking, avatars and drag reordering derive from Herdr's shipped Spaces mod.
 
 import { View, div, svg } from "gpui-kit";
-import { v_flex, h_flex } from "gpui-base";
+import { v_flex, h_flex, Input, InputState } from "gpui-base";
 import { spaces, machines, panes, run, exec, theme, shared, setShared, watchFolder, window, layout, props, home } from "herdr";
 import {
-  STATE_KEY, PALETTE, MARK, normalizeState, buildGroups, targetOrder, moves, assignSpace, moveGroup, toggleFold, prune, sameState,
+  STATE_KEY, DENSITY_KEY, projectDensity, groupPath, spacePath, filterProjectGroups, PALETTE, MARK, normalizeState, buildGroups, targetOrder, moves, assignSpace, moveGroup, toggleFold, prune, sameState,
 } from "./model.js";
 import { Menu, openMenu, menuRows } from "./menus.js";
 import Prompt from "./prompt.js";
@@ -51,6 +52,9 @@ export default class ProjectSpaces extends View {
       this.role.init(this.p, cx);
       return;
     }
+    this.queryText = ""; this.projectFilter = "all";
+    this.queryInput = InputState.new({ placeholder: "Search projects, folders or branches…" });
+    this.queryInput.on("change", (_event, cx) => { this.queryText = this.queryInput.value(); cx.notify(); });
     this.git = {}; // where() -> { name, branch, ahead, behind, repo, linked }, null: not a repo
     this.checked = {};
     this.unsure = new Set();
@@ -73,6 +77,7 @@ export default class ProjectSpaces extends View {
 
   close(cx) {
     this.role?.close?.(cx);
+    this.queryInput?.release();
   }
 
   state() {
@@ -294,6 +299,7 @@ export default class ProjectSpaces extends View {
 
   // A drop on a project header: a space joins it; a project takes that place.
   dropOnGroup(group, cx) {
+    group = this.lastGroups?.find(row => row.key === group.key) || group;
     const drag = this.drag;
     this.drag = this.over = null;
     if (!drag) return;
@@ -320,9 +326,9 @@ export default class ProjectSpaces extends View {
 
   spaceMenu(row) {
     const props = {
-      space: { id: row.w.id, name: row.w.name },
+      space: { id: row.w.id, name: row.w.name, machine: row.w.machine ?? null, folder: row.place || row.w.folder },
       git: row.g ? (row.g.linked ? "linked" : "main") : null,
-      auto: { key: row.auto.key, name: row.auto.name },
+      auto: { key: row.auto.key, name: row.auto.name, folder: row.auto.folder },
       key: this.state().assign[row.w.id] ?? row.auto.key,
       groups: (this.lastProjects ?? []).map(g => ({ key: g.key, name: g.name })),
     };
@@ -370,8 +376,8 @@ export default class ProjectSpaces extends View {
     return sp.findIndex(s => s.id === this.drag?.id) > sp.findIndex(s => s.id === id);
   }
 
-  groupHead(group, st, t, n) {
-    const project = st.mode === "project";
+  groupHead(group, st, t, n, density = "detailed") {
+    const project = st.mode === "project", location = project ? group.displayLocation === undefined ? groupPath(group, this.home) : group.displayLocation : null, details = density === "detailed" && location;
     const target = this.drag && this.over?.kind === "group" && this.over.id === group.key && !(this.drag.kind === "group" && this.drag.id === group.key);
     const joining = target && this.drag.kind === "space" && project;
     const reordering = target && this.drag.kind === "group" && project && st.sort === "manual";
@@ -379,7 +385,7 @@ export default class ProjectSpaces extends View {
     const above = shown.indexOf(this.drag?.id) > shown.indexOf(group.key);
     const hovered = this.hover === group.key;
     const loud = group.status === "blocked" || group.status === "done";
-    return h_flex().relative().id(`group-${n}`).h(30).flex_none().mt(n ? 6 : 0).pl(6).pr(4).gap(7).items_center().rounded(7)
+    return h_flex().relative().id(`group-${n}`).h(details ? 46 : 30).tooltip(location?.tooltip || group.name).flex_none().mt(n ? 6 : 0).pl(6).pr(4).gap(7).items_center().rounded(7)
       .when(joining, el => el.bg(t.selected).border_1().border_color(t.accent))
       .when(!joining, el => el.hover(s => s.bg(t.hover)))
       .when(group.active && group.folded, el => el.bg(t.raised))
@@ -397,8 +403,9 @@ export default class ProjectSpaces extends View {
       .when(project, el => el.child(h_flex().size(18).flex_none().rounded(5).bg(fill(t, group.color)).items_center().justify_center()
         .text_size(10.5).font_bold().text_color("#ffffff").child([...group.name][0]?.toUpperCase() ?? "?")))
       .when(!project, el => el.child(div().size(8).flex_none().rounded(4).bg(tone(t, group.statusGroup))))
-      .child(div().flex_shrink(1).min_w(0).truncate().font_medium().text_color(t.foreground).child(group.name))
-      .when(Boolean(project && group.machine), el => el.child(div().flex_none().text_size(11).text_color(t.dim).child(`@${group.machine}`)))
+      .child(v_flex().flex_shrink(1).min_w(0).gap(2).child(div().truncate().font_medium().text_color(t.foreground).child(group.name))
+        .when(Boolean(details), el => el.child(div().truncate().text_size(10.5).text_color(t.dim).child(location.short))))
+      .when(Boolean(project && (group.machine || location?.mixedMachines)), el => el.child(div().flex_none().text_size(10).text_color(t.dim).child(location?.mixedMachines ? "Mixed machines" : `@${group.machine}`)))
       .child(div().flex_1())
       .when(group.folded && loud && project, el => el.child(div().flex_none().text_color(tone(t, group.status)).child("●")))
       .when(project && hovered && Boolean(group.folder), el => el.child(div().id(`group-new-${n}`).size(22).flex_none().flex().items_center().justify_center().rounded(5)
@@ -407,19 +414,22 @@ export default class ProjectSpaces extends View {
         .on_mouse_up("left", (_e, cx) => { cx.stop_propagation(); this.drag = this.over = null; })
         .on_click((_e, cx) => { cx.stop_propagation(); run("space.new", { folder: group.folder, machine: group.machine ?? "" }); })
         .child(svg(chrome("plus")).size(12))))
-      .when(!(project && hovered && group.folder), el => el.child(div().flex_none().min_w(22).text_size(11).text_color(t.dim).text_right().pr(4).child(String(group.rows.length))));
+      .when(!(project && hovered && group.folder), el => el.child(div().flex_none().min_w(22).text_size(11).text_color(t.dim).text_right().pr(4).child(group.fullCount && group.fullCount !== group.rows.length ? `${group.rows.length}/${group.fullCount}` : String(group.rows.length))));
   }
 
   // A project of one space it found on its own is drawn as that space's row, under the
   // project's color: a header over a single row would only repeat the name.
   solo(group, st) {
-    return st.mode === "project" && group.rows.length === 1 && !group.custom && !group.manual;
+    return st.mode === "project" && (group.fullCount ?? group.rows.length) === 1 && !group.custom && !group.manual;
   }
 
-  row(r, group, st, t) {
+  row(r, group, st, t, density = "detailed") {
     const w = r.w;
     const solo = this.solo(group, st);
     const nested = st.mode === "project" && group.header && !solo;
+    const parentLocation = nested ? group.displayLocation === undefined ? groupPath(group, this.home) : group.displayLocation : null;
+    const location = spacePath(r, group, this.home, nested, parentLocation), details = density === "detailed" && location && !location.repeat;
+    const machineBadge = w.machine ? !nested || parentLocation?.mixed || (group.machine ?? null) !== w.machine ? `@${w.machine}` : "" : nested && (group.machine || parentLocation?.mixedMachines) ? "local" : "";
     const colors = shared("space.colors") ?? {};
     const target = this.drag?.kind === "space" && this.over?.kind === "space" && this.over.id === w.id && this.drag.id !== w.id;
     const loud = w.status === "blocked" || w.status === "done";
@@ -429,7 +439,7 @@ export default class ProjectSpaces extends View {
         : div().size(13).flex_none().flex().items_center().justify_center().child(div().size(6).rounded(3).bg(w.status ? tone(t, w.status) : t.border))
       : h_flex().size(18).flex_none().rounded(5).bg(fill(t, solo ? group.color : colors[w.id] ?? "ansi6")).items_center().justify_center()
         .text_size(10.5).font_bold().text_color("#ffffff").child([...w.name][0]?.toUpperCase() ?? "?");
-    return h_flex().relative().id(`space-${w.id}`).h(nested ? 28 : 30).flex_none().pl(nested ? 26 : 8).pr(8).gap(9).items_center().rounded(8)
+    return h_flex().relative().id(`space-${w.id}`).h(details ? 46 : nested ? 28 : 30).tooltip(location?.tooltip || w.name).flex_none().pl(nested ? 26 : 8).pr(8).gap(9).items_center().rounded(8)
       .when(w.active, el => el.bg(t.selected))
       .when(!w.active, el => el.hover(s => s.bg(t.hover)))
       .when(this.drag?.kind === "space" && this.drag.id === w.id && this.over?.id !== w.id, el => el.opacity(0.5))
@@ -439,16 +449,19 @@ export default class ProjectSpaces extends View {
       .on_mouse_up("left", (_e, cx) => this.dropOnSpace(r, cx))
       .on_mouse_down("right", () => this.spaceMenu(r))
       .child(marker)
-      .child(div().flex_shrink(0).max_w(nested ? 140 : 150).truncate().text_color(t.foreground).child(w.name))
-      .child(r.g ? this.gitTail(r.g, r, nested ? group.name : "", t)
-        : solo && group.name !== w.name ? h_flex().flex_1().min_w(0).justify_end().text_size(11.5).text_color(t.dim).child(div().min_w(0).truncate().child(group.name))
-        : div().flex_1())
+      .child(v_flex().flex_1().min_w(0).gap(2)
+        .child(h_flex().min_w(0).gap(6).items_center().child(div().flex_shrink(0).max_w(nested ? 140 : 150).truncate().text_color(t.foreground).child(w.name))
+          .when(Boolean(machineBadge), el => el.child(div().flex_none().text_size(10).text_color(t.dim).child(machineBadge)))
+          .child(r.g ? this.gitTail(r.g, r, nested ? group.name : "", t)
+            : solo && group.name !== w.name ? h_flex().flex_1().min_w(0).justify_end().text_size(11.5).text_color(t.dim).child(div().min_w(0).truncate().child(group.name))
+            : div().flex_1()))
+        .when(Boolean(details), el => el.child(div().truncate().text_size(10.5).text_color(t.dim).child(location.short))))
       .when(!nested && loud, el => el.child(div().flex_none().text_color(tone(t, w.status)).child("●")));
   }
 
   compact(r, t) {
     const w = r.w;
-    return h_flex().id(`space-${w.id}`).h(26).flex_none().justify_center().gap(4)
+    return h_flex().id(`space-${w.id}`).tooltip(spacePath(r, {}, this.home)?.tooltip || w.name).h(26).flex_none().justify_center().gap(4)
       .when(w.active, el => el.bg(t.raised))
       .hover(s => s.bg(t.hover))
       .on_click(() => run("space.select", { id: w.id }))
@@ -457,11 +470,13 @@ export default class ProjectSpaces extends View {
   }
 
   render(cx) {
+    const mask = privacyGuard("Projects", this.p); if (mask) return mask;
     if (this.role) return this.role.render(cx);
     const t = theme();
     const collapsed = narrow();
     const st = this.state();
     const groups = buildGroups(this.rows(), st, { home: this.home });
+    for (const group of groups) group.displayLocation = st.mode === "project" ? groupPath(group, this.home) : null;
     // Unless the project was given a color, it wears its first space's, which Herdr keeps varied.
     const colors = shared("space.colors") ?? {};
     for (const g of groups) if (!st.groups[g.key]?.color && colors[g.rows[0]?.w.id]) g.color = colors[g.rows[0].w.id];
@@ -469,25 +484,30 @@ export default class ProjectSpaces extends View {
     this.lastRows = groups.flatMap(g => g.rows);
     // Projects a space can move to, whatever is shown now.
     this.lastProjects = st.mode === "project" ? groups : buildGroups(this.lastRows, { ...st, mode: "project" }, { home: this.home });
-    const title = st.mode === "project" ? "Projects" : "Spaces";
+    const title = st.mode === "project" ? "Projects" : "Spaces", density = projectDensity(shared(DENSITY_KEY));
+    const filteredGroups = filterProjectGroups(groups, { query: this.queryText, filter: this.projectFilter });
     const button = (id, icon, tip, action) => div().id(id).size(26).flex_none().flex().items_center().justify_center().rounded(6)
       .hover(s => s.bg(t.hover).text_color(t.foreground)).tooltip(tip).on_click(action).child(svg(chrome(icon)).size(14));
     const body = collapsed
-      ? this.lastRows.map(r => this.compact(r, t))
-      : groups.flatMap((g, n) => this.solo(g, st) ? [this.row(g.rows[0], g, st, t)] : [
-        ...(g.header ? [this.groupHead(g, st, t, n)] : []),
-        ...(g.folded ? [] : g.rows.map(r => this.row(r, g, st, t))),
+      ? filteredGroups.flatMap(g => g.rows).map(r => this.compact(r, t))
+      : filteredGroups.flatMap((g, n) => this.solo(g, st) ? [this.row(g.rows[0], g, st, t, density)] : [
+        ...(g.header ? [this.groupHead(g, st, t, n, density)] : []),
+        ...(g.folded ? [] : g.rows.map(r => this.row(r, g, st, t, density))),
       ]);
-    if (!collapsed && !body.length) {
+    if (!collapsed && !body.length && !this.queryText && this.projectFilter === "all") {
       body.push(h_flex().id("space-empty").h(28).flex_none().px(8).gap(7).items_center().rounded(7).text_size(12).text_color(t.dim)
         .hover(s => s.bg(t.hover).text_color(t.foreground)).on_click(() => run("space.new"))
         .child(svg(chrome("plus")).size(12)).child(machines().some(m => m.layout === "loading") ? "Loading…" : "New space"));
     }
     return v_flex().size_full().min_h(0).bg(t.chrome).text_size(13).text_color(t.dim)
       .child(h_flex().h(31).pl(16).pr(10).gap(2).items_center().text_size(11.5)
-        .when(!collapsed, el => el.child(div().flex_1().child(title)).child(button("space-view", "layers", "Group and sort", () => this.viewMenu())))
+        .when(!collapsed, el => el.child(div().flex_1().child(title)).child(button("space-view", "layers", "Group, sort and display", () => this.viewMenu())))
         .when(collapsed, el => el.justify_center())
         .child(button("space-new", "plus", "New space", () => run("space.new"))))
+      .when(!collapsed, el => el.child(v_flex().flex_none().px(8).pb(6).gap(5)
+        .child(Input.new(this.queryInput).h(28).px(7).bg(t.surface).border_1().border_color(t.input).rounded(5))
+        .child(h_flex().gap(3).children([["all", "All"], ["active", "Active"], ["attention", "Needs attention"]].map(([key, label]) => div().id(`project-filter-${key}`).px(6).py(4).rounded(4).text_size(10.5).bg(this.projectFilter === key ? t.selected : t.raised).text_color(this.projectFilter === key ? t.foreground : t.dim).cursor_pointer().on_click((_event, cx) => { this.projectFilter = key; cx.notify(); }).child(label))))))
+      .when(!collapsed && !body.length, el => el.child(div().px(14).py(8).text_size(11).text_color(t.dim).child("No matching spaces")))
       .child(v_flex().flex_1().min_h(0).px(8).pb(14).overflow_y_scrollbar().mode("always")
         .on_mouse_up("left", (_e, cx) => {
           if (this.drag) { this.drag = this.over = null; cx.notify(); }

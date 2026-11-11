@@ -43,7 +43,7 @@ function harness({ state = {}, target = session(), role, action = "trash", platf
   const cx = { notify() { notifications++; }, stop_propagation() { stopped++; }, focus_handle: () => ({ focus() {} }),
     spawn(task) { if (defer) queued.push(task); else tasks.push(task(cx)); },
     timer: { every(ms, callback) { timers.push({ ms, callback }); }, after(ms, callback) { timers.push({ ms, callback }); } } };
-  const dependencies = { ...model, ...inboxModel, agents: () => running, createTrashClient, View: class {}, div: element, svg: element, h_flex: element, v_flex: element,
+  const dependencies = { privacyGuard: () => null, settings: () => ({zoom:1}), ...model, ...inboxModel, agents: () => running, createTrashClient, View: class {}, div: element, svg: element, h_flex: element, v_flex: element,
     InputState: { new: () => ({ on() {}, value: () => "", focus() {} }) }, Input: { new: element }, providerIcon: (provider, size) => element().id(`provider-icon-${provider}`).size(size),
     Popover: { new: id => element().id(id) },
     theme: () => ({}), window: () => ({ platform }), appHome: () => "/fixture/herdr", props: () => p,
@@ -65,6 +65,9 @@ function harness({ state = {}, target = session(), role, action = "trash", platf
     StatusBar: class { init() {} render() { return element().id("statusbar-role"); } },
     Quota: class { init() { this.initialized = true; } render() { return element().id("quota-preserved"); } refresh() {} },
   };
+  const contextSource = readFileSync(new URL("../mods/sessions-plus/project-context.js", import.meta.url), "utf8").replace(/^import .*;\n/gm, "").replaceAll("export ", "");
+  const contextDeps = { focused: dependencies.focused, spaces: dependencies.spaces, panes: dependencies.panes, machines: () => [], shared: dependencies.shared };
+  dependencies.projectContext = new Function(...Object.keys(contextDeps), contextSource + "\nreturn projectContext;")(...Object.values(contextDeps));
   dependencies.Preview = viewClass("preview", dependencies);
   dependencies.Inbox = viewClass("inbox", dependencies);
   dependencies.Rename = viewClass("rename", dependencies);
@@ -478,11 +481,23 @@ test("Inbox groups real statuses, dismisses only the current update, and new wor
 
 
 test("This folder stays on a center file preview's project and ignores a replaced pane", async () => {
-  const context = { focus: { tab: "preview-tab", pane: "preview-pane", cwd: null }, spaces: [{ id: "space", active: true, folder: "/different" }], panes: [{ tab: "preview-tab", pane: "preview-pane", mod: "files-plus", terminal: null }] };
-  const state = { "files-plus.file-tabs.v1": { tabs: { "preview-tab": { tab: "preview-tab", pane: "preview-pane", space: "space", root: "/fixture/project", path: "readme.md", on: null } } } };
+  const context = { focus: { tab: "preview-tab", pane: "preview-pane", cwd: null }, spaces: [{ id: "space", active: true, folder: "/different", tabs: [{ id: "preview-tab" }] }], panes: [{ tab: "preview-tab", pane: "preview-pane", mod: "files-plus", terminal: null }] };
+  const state = { "files-plus.file-tabs.v1": { tabs: { "preview-tab": { tab: "preview-tab", pane: "preview-pane", space: "space", root: "/fixture/project", path: "readme.md", previewId: "fixture-preview", on: null } } } };
   const f = harness({ role: "sessions", state, context }), panel = f.panel(); await f.finish();
   const count = () => nodes(find(panel.render(f.cx), "sessions-list")).filter(node => node.attributes.id?.startsWith("session-[")).length;
   assert.equal(count(), 1);
   context.panes[0].mod = "unrelated";
   assert.equal(count(), 0);
+});
+
+
+test("Screen picker action refuses a recycled terminal address and captures the original creation identity", () => {
+  const target = { ...session(), live: true, address: "server/t8", remote: true, updated: 12 };
+  const f = harness({target});
+  f.running.push({address:"server/t8",created_ms:99,state:"live",cwd:"/other",argv:["zsh"]});
+  assert.equal(f.menu().items.find(item=>item.id==="screen-picker").disabled,true);
+  f.running[0] = {address:"server/t8",created_ms:12,state:"live",cwd:"/original",argv:["zsh"]};
+  const menu=f.menu(); assert.equal(menu.items.find(item=>item.id==="screen-picker").disabled,false);
+  f.running[0] = {...f.running[0],cwd:"/new"};
+  assert.equal(menu.pickerTarget.cwd,"/original"); assert.equal(menu.pickerTarget.on,"server");
 });

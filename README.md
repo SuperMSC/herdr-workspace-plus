@@ -25,6 +25,56 @@ Inside an open text preview, click **Find** or press **Cmd+F** (**Ctrl+F** on ot
 
 Text previews default to **12px**. Use **A− / A+** in the preview toolbar to choose **10–24px**, or click the displayed size to reset to 12px. The choice is remembered across files and restarts and applies to source, search results, Markdown, JSON and tables.
 
+## Services, project presets and lineage
+
+Sessions adds **Services**, **Projects** and **Lineage** below its header. These open bounded native dialogs and keep the existing layout.
+
+- **Services:** read containers on the captured machine, grouped by Compose project (`database`, `gts`, `ai`, other), with unhealthy/stopped containers first, published ports and on-demand logs. **Restart…** requires a second confirmation and rechecks the Docker engine, complete container ID and creation time. TCP listeners show bind address, process and PID where permissions allow; selected local loopback URLs can be copied or opened after rechecking the listener. Containers follow that machine's Docker CLI context; listeners describe the machine itself. Missing Docker or port tools produce partial results. Refresh is explicit, with no polling, daemon startup, process killing or tunnel creation. Limits: 120 containers (40 per page), 2,000 listeners (100 per page), 300 log lines / 120,000 characters. Search covers the whole snapshot.
+- **Projects:** manually save, duplicate, edit, favorite and remove workspace presets. A preset captures a machine, existing checkout, up to eight file roots, an agent argv and one to three terminal argv entries. Review the full launch plan, then explicitly **Launch** to create a new space and tabs. Setup uses the exact IDs returned by Herdr, with machine, folder, terminal identity and app labels checked before later steps. A partial or uncertain launch remains visible for inspection; it never retries automatically or deletes what was opened. Created terminals are interactive shell sessions; their existence does not prove the child command succeeded. Presets do not create worktrees, install packages or send prompts.
+- **Lineage:** live core parent links form a searchable, foldable tree of agents and commands, across connected machines. Working/blocked filtering retains parent context. Missing parents and cycles are explicit; folders and titles never imply a relationship. Click a row to peek at its freshly verified terminal. Up to 200 live terminals are considered, with 50 rows per page and search over the full bounded snapshot; no provider transcript is read.
+
+## Pull requests and Git graph
+
+Changes adds **PR / CI** and **Graph** beside History.
+
+**PR / CI** uses an existing authenticated `gh` on the captured machine. It shows at most 40 PRs, branch-name matches first, check states, review status, unresolved threads and on-demand failed Actions logs. Copy or explicitly add a PR summary to the existing pending-prompt preview. Reads happen on opening and Refresh; failed reads retain the previous snapshot as stale. There is no approve, comment, rerun or merge action. This installation has no `gh`; it was intentionally left uninstalled, and the panel reports it as unavailable. Real GitHub connectivity has not been validated. Details are bounded to 150 checks and the first 50 review threads, with a notice when more may exist. Logs display at most 64,000 characters (local processes are additionally capped at 64,000 bytes); remote transport is subject to Herdr's 8 MiB output bound and can reject a larger read. Remote PR reads require POSIX `env -u`; remote preset and service probes require POSIX tools.
+
+**Graph** draws native branch lanes and merge connections for up to 200 topological commits, with HEAD, branch and tag labels. Filter by current HEAD or a captured branch, copy a SHA, or open the commit in the existing full diff view. The graph is read-only and does not fetch. The picker holds up to 500 refs; histories wider than 32 lanes ask for a narrower branch view.
+
+## Review drafts and viewed files
+
+Changes keeps review comments alongside the existing diff. Select a line (Shift-click for a range), use Comment selection or Comment file, then open Review to inspect the combined feedback, edit its message and explicitly choose a live agent. Nothing is sent merely by writing a comment. Comments retain the original comparison and code excerpt; changed or unverified sources are marked outdated. Viewed is tied to the file's content version, so a later change clears its effective viewed state.
+
+Review drafts stay in local Herdr state, scoped to their machine and checkout. A delivery failure or uncertain result retains the draft and requires an explicit decision before another send. Review never stages, commits, fetches, or changes working files.
+
+## Prompt queue
+
+The Pending prompts icon in the Sessions header and live-agent rows opens a queue that holds instructions you want to give a live agent next. Add or edit items while it works, then explicitly send one item or combine pending items into one numbered message. The queue shows its captured recipient and retains sent items as a record. A changed or exited agent cannot silently inherit an open sender. Queue identity uses an exact recorded session where available, with an isolated terminal incarnation otherwise; matching folders never merge queues.
+
+Prompts are stored locally in bounded Herdr shared state. Closing the queue does not send anything. A failed or uncertain delivery keeps its items for inspection instead of automatically retrying.
+
+## References, notes and project commands
+
+File and folder menus in Files and Changes offer **Add reference to pending prompts…**. In Search, select a result and use **Add reference** to include its file and line. Choose a supported live agent on the same machine, edit the text and click **Add to pending prompts**. This adds a pending queue item and opens its queue; sending remains a separate action. Existing queue items and its unfinished composer are preserved. Notes also offers **Add to pending prompts…**.
+
+Open **Notes** from the Sessions header, a session row, or **Project notes** in an optional Project Spaces context menu. Switch between Project, Session and Global; **All notes** searches saved notes and recovery drafts, including closed contexts. Notes save after typing pauses, with **Save / Cmd+S** also available. They live locally in `data/workspace-notes/notes.json` under the Herdr app home, outside installed mod directories. Unsaved text is retained per view as a recovery draft; reopening offers **Restore draft**. A concurrent edit retains your text and asks you to copy or reload instead of overwriting the saved note. **Versions** retains three previous saved versions. Archive/unarchive is reversible; confirmed clearing of old versions or removal of an archived note frees space, with the removed note's latest text kept as a recovery draft. Copy needed text before removing recovery data or uninstalling.
+
+The Sessions header's **Project commands** icon, or **Project commands** in a Project Spaces context menu, opens manually saved templates for the captured project and machine. Give each template a title, an absolute working folder and a JSON array of literal executable arguments. Save, favorite, reorder and edit templates without running them; unfinished forms remain as drafts. Only **Run** starts a detached task. **Console** opens its live terminal or retained finished output. **Cancel run** asks for confirmation and checks the exact task identity before stopping it. Closing the panel leaves tasks running. Commands are never discovered from project files or started automatically; shell syntax requires an explicit shell executable.
+
+## Multiple workspace folders
+
+Use **Workspace folders** in the Files header to add, remove or reorder up to eight folders on the workspace's machine, then choose **Save folders**. Root headers fold independently; Files, Recent and Pinned keep each root's path and machine identity. The header Search searches every configured root, while the search icon on a root searches only that folder. Same-name results remain separate and show their root. Removing a root or **Reset to current folder** changes the mapping only and never deletes files.
+
+## Stage or unstage a hunk
+
+In Changes, select an **Unstaged** or **Staged** modified text file, click a `@@` header or use the hunk arrows, then choose **Stage hunk** or **Unstage hunk**. These actions require local macOS and a regular tracked text file with status **M**, without conflicts or mode changes. Binary, added, deleted, renamed, oversized or incomplete diffs do not offer hunk actions. The selected hunk updates only the Git index; working files and other staged changes stay intact. A changed source version or another Git index lock rejects the operation and asks you to refresh. The file context menu retains **Stage File / Unstage File** for whole-file actions.
+
+## Markdown navigation and diagrams
+
+Markdown previews add Contents for the first 200 top-level headings, links to headings in the current or another Markdown file, Back and Whole document. Selecting a heading shows the document from that section; it does not promise arbitrary scroll positioning. Navigation preserves unsaved source drafts and does not save them implicitly. Find continues to search the loaded source.
+
+Supported Mermaid fences render as native diagrams with a bundled renderer. Invalid, unsupported or oversized diagrams keep an explicit error and their source available. An existing local Node executable performs one batch per document, keeping graph layout off the UI thread. Supported families are flowchart, sequence, state, class and ER. A document renders up to 24 diagrams, with a 15-second batch limit; individual diagrams are limited to 24,000 characters, 300 lines, 1 MiB SVG and 32,768 pixels per dimension. Generated SVGs are retained for at most 24 hours/48 files. Rendering uses no browser, network request, model call or background service. PDF preview is still outside this release. See [renderer notices](mods/files-plus/MERMAID-NOTICES.md) and rebuild with `npm run build:mermaid` after installing the pinned build-only dependencies in `tools/mermaid`.
+
 ## Sessions
 
 In the standard Herdr layout, **Sessions** appears immediately after **Changes** in the top bar. Click it to use the full right panel for sessions; click it again to close the panel. Files, Changes, and Sessions share that panel. Use the **Scope** and **Agent** dropdown menus to choose **This folder / All folders** and **All agents / Claude Code / Codex / agy**, or search by title, directory, provider, or session ID.
@@ -138,7 +188,7 @@ The Changes footer uses **Commit Staged**. It commits all currently staged chang
 
 - Herdr with the mod APIs available in version **0.1.12**.
 - Local file actions require macOS and its built-in `/usr/bin/open` and `/usr/bin/osascript`.
-- The installer requires **Node.js 22 or newer**; the SQLite WAL test requires **Node.js 22.13+**. Sessions history also uses Node.js at runtime; agy history uses macOS's `/usr/bin/sqlite3`. No npm packages are required. Typed local previews and project search also use Node.js; project search additionally uses `rg`. Basic browsing and Git views retain Herdr’s built-in APIs.
+- The installer requires **Node.js 22 or newer**; the SQLite WAL test requires **Node.js 22.13+**. Sessions history also uses Node.js at runtime; agy history uses macOS's `/usr/bin/sqlite3`. No npm packages are required. Typed local previews, project search, notes storage and hunk actions also use Node.js; project search additionally uses `rg`. Project commands use the existing `hc` executable. Basic browsing and Git views retain Herdr’s built-in APIs.
 - Folder listing uses `sh`, or PowerShell on Windows. Git status, diffs, staging, unstaging, and commits use `git`.
 
 Herdr mods are trusted code. Review `mods/files-plus/` and `mods/sessions-plus/` before installing. This mod reads the current folder and file previews outside its own directory. It runs the programs listed above through Herdr's `exec` API. Its macOS helper uses Foundation filesystem APIs and an exclusive native rename; it does not script Finder or System Events. **Reveal in Finder** and **Open with Default App** invoke `open`.
@@ -214,12 +264,12 @@ Run the `herdr-app check` commands above after updating. The script does not sta
 - Renaming or trashing a symbolic link acts on the link itself. Creating inside an expanded directory link follows that directory, as ordinary folder navigation does.
 - The tree retains the shipped limits: 500 entries per folder, 5,000 entries total, a depth limit, and a bounded read-only text preview. `.git` is hidden by default and included when Show Hidden Files is enabled.
 - Local filesystem watching and a 10-second refresh supplement explicit refresh. Remote file actions remain read-only.
-- Changes preserves the bounded diff preview: up to 1,000 changed files and 2,500 displayed tracked diff lines (1,500 for untracked files). Stage and Unstage operate on a whole file, not individual hunks.
+- Changes preserves the bounded diff preview: up to 1,000 changed files and 2,500 displayed tracked diff lines (1,500 for untracked files). The file menu stages or unstages whole files; the hunk toolbar handles one verified modified-text hunk.
 - This is the first macOS-focused version. Linux/Windows OS file actions and remote mutations are not implemented.
 
 ## Validate and share
 
-Validated on macOS with Herdr 0.1.12; the automated test suite passed. Automated coverage includes separate staged/unstaged changes and Git history, project search and typed file previews, and session source filters, recent-message previews and the agent inbox. Existing coverage includes history parsing, WAL snapshots, exact session identities, rename persistence, duplicate-launch guards, quota visibility and refresh guards, and installer/update integration. Session Trash and Restore use isolated fixtures for all three providers, including WAL/SHM preservation, native macOS Trash, rollback, conflicts, damaged records and lock recovery.
+Validated on macOS with Herdr 0.1.15 and herdr-core 0.1.20; the automated test suite passed. Automated coverage includes separate staged/unstaged changes and Git history, project search and typed file previews, and session source filters, recent-message previews and the agent inbox. Existing coverage includes history parsing, WAL snapshots, exact session identities, rename persistence, duplicate-launch guards, quota visibility and refresh guards, and installer/update integration. Session Trash and Restore use isolated fixtures for all three providers, including WAL/SHM preservation, native macOS Trash, rollback, conflicts, damaged records and lock recovery.
 
 Native mod checks cover the browser, Changes, menus and dialogs, with additional component checks for session menus, Trash/Restore, quota states and fictional Preview/Inbox data. Selected sample renders were inspected; the hidden-file toggle, session filters and quota footer were also checked interactively in Herdr. These checks do not constitute complete interactive coverage of every feature. Actual agent conversations were not resumed or deleted during testing. Read-only quota queries were verified against existing Claude, Codex and agy logins; only success states and window counts were recorded.
 
@@ -246,3 +296,13 @@ For publication, use the contents of this directory as a separate public GitHub 
 ## License
 
 Apache-2.0. The browser, Changes panel, Spaces base and SVG assets derive from [Herdr's shipped mods](https://github.com/herdrdev/herdr-app/tree/816d2057d83f0cbd3705926c0231fb12963ae0fb/defaults/mods). Agent icons are loaded at runtime from Herdr's managed `icons/claude.svg`, `icons/codex.svg`, and `icons/antigravity.svg` assets. The legacy `sessions-preview.png` and `status-preview.png` images reproduce Herdr/LobeHub icons; their MIT notice is retained in `mods/sessions-plus/icons/LICENSE`. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+
+### Activity, deliverables and screenshot mode (0.11)
+
+Session menus open Work timeline and Session images for an exact local Claude/Codex history identity. Evidence is bounded and paginated, read only on request, with timestamps and explicit duration fields rather than generated summaries. Local structured images can be enlarged, copied or referenced through the pending-prompt confirmation. Antigravity bodies and remote history remain unavailable.
+
+Sessions → Tools opens the project-and-machine scoped Deliverables list and a Screen picker for the captured live terminal. Delivery records use atomic local storage with stale-write checks, unread/archive filters and explicit file/URL opening; dropping files records metadata only. Screen picker uses bounded screen/history reads, letter selection and explicit copy/preview/reference actions, revalidating terminal creation identity and cwd. No discovered command is executed.
+
+Privacy in the bottom strip, also under Tools, hides the contents of all four owned mods and their dialogs until Reveal. It does not redact terminal output, Herdr's own tabs/notifications or unrelated mods. Stored targets and names are not changed. Screenshot previews contain sample data.
+
+Project Spaces now offers Detailed (default) and Compact display in its view menu. Detailed shows the verified project/working folder with a full-path tooltip; local home is shortened and remote machines remain explicit. Search and All / Active / Needs attention affect display only. Active means working/blocked/done; attention means blocked/done. Search temporarily expands matches without changing saved folds, assignments or ordering.

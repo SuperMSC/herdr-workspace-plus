@@ -13,7 +13,7 @@ import { CHANGE_KEY, applyPathChange, targetFor, menuHeight } from "./model.js";
 export default class FilePreview {
   init(p, cx) {
     this.p = p; this.root = p.root; this.on = p.on ?? null;
-    this.preview = new Preview({ editable: true, id: p.previewId ?? null }); this.lastChange = shared(CHANGE_KEY)?.revision;
+    this.preview = new Preview({ editable: true, id: p.previewId ?? null, onNavigate: target => this.navigated(target) }); this.lastChange = shared(CHANGE_KEY)?.revision;
     this.path = this.record()?.path || p.path;
     if (typeof this.root !== "string" || !this.root || !validRelative(this.path)) { this.error = "No valid file selected."; return; }
     this.preview.open(this.root, this.path, this.on, cx);
@@ -26,6 +26,18 @@ export default class FilePreview {
     if (!this.p.previewId) return null;
     const row = Object.values(shared(FILE_TABS_KEY)?.tabs || {}).find(row => row.previewId === this.p.previewId && row.root === this.root && (row.on ?? null) === this.on);
     return row && panes().some(pane => pane.pane === row.pane && pane.tab === row.tab && pane.mod === "files-plus" && !pane.terminal) ? row : null;
+  }
+  navigated(target) {
+    if (this.disposed || target?.root !== this.root || (target.on ?? null) !== this.on || !validRelative(target.path) || target.path === this.path) return;
+    const oldName = this.path?.split("/").pop(), row = this.record();
+    this.path = target.path;
+    if (row) {
+      const state = shared(FILE_TABS_KEY);
+      setShared(FILE_TABS_KEY, { ...state, tabs: { ...state.tabs, [row.tab]: { ...row, path: this.path } } });
+      const tab = spaces().flatMap(space => space.tabs).find(tab => tab.id === row.tab);
+      if (tab?.name === oldName) run("tab.rename", { id: row.tab, name: this.path.split("/").pop() });
+    }
+    setShared(LIBRARY_KEY, updateLibrary(shared(LIBRARY_KEY), this.root, this.on, "open", this.path));
   }
   sync(cx) {
     const change = shared(CHANGE_KEY);

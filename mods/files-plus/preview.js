@@ -8,18 +8,24 @@ import { editBlocker, textToSave, isDirty, draftAge, DIRTY_KEY } from './editor-
 import { loadDraft, keepDraft, dropDraft } from './drafts.js';
 import { fileKind, parseDelimited, jsonRows, lineExcerpt, markdownForPreview, TEXT_LIMIT, PREVIEW_FONT_KEY, previewFontSize } from './preview-model.js';
 import FileFind from './file-find.js';
+import { markdownStructure, markdownBlocks, resolveMarkdownLink, HISTORY_LIMIT } from './markdown-model.js';
+import { diagramLook } from './mermaid-model.js';
+import { renderDiagrams } from './mermaid.js';
 const LANG = { ts: 'js', tsx: 'js', mts: 'js', cts: 'js', jsx: 'js', mjs: 'js', toml: 'yaml', jsonc: 'json', svelte: 'html', vue: 'html', md: 'markdown' };
 export default class Preview {
-  constructor({ editable = false, id = null } = {}) { this.expanded = new Set(['$']); this.width = 320; this.mode = 'preview'; this.fontSize = 12; this.editable = editable; this.id = id; }
+  constructor({ editable = false, id = null, onNavigate = null } = {}) { this.onNavigate = onNavigate; this.history = []; this.expanded = new Set(['$']); this.width = 320; this.mode = 'preview'; this.fontSize = 12; this.editable = editable; this.id = id; }
   clear() {
     this.request = {}; this.code?.release(); this.code = null; this.path = null; this.data = null; this.error = null; this.loading = false; this.find?.clear();
     this.editing = false; this.base = null; this.conflict = null; this.external = false; this.draft = null; this.draftChecked = false; this.armed = null; this.saving = false; this.status = '';
+    this.markdownRequest = {}; this.markdownBlocks = null; this.headings = []; this.anchor = null; this.contents = false; this.markdownBusy = false; this.markdownLook = null; this.linkError = null;
     this.markDirty(false);
   }
-  open(root, path, on, cx, line = null) {
+  open(root, path, on, cx, line = null, navigating = false) {
     if (this.dirty()) keepDraft(this.root, this.path, this.code.value(), this.base).catch(() => {});
     this.clear(); this.root = root; this.path = path; this.on = on; this.line = line; this.mode = line ? 'source' : 'preview'; this.expanded = new Set(['$']); this.zoom = 1;
     this.disposed = false; this.fontSize = previewFontSize(shared(PREVIEW_FONT_KEY));
+    if (!navigating) this.history = [];
+    this.onNavigate?.({ root, path, on });
     if (!this.find) this.find = new FileFind(cx);
     if (!line) cx.timer.after(0, () => this.find?.handle.focus());
     if (path) this.refresh(cx);
@@ -51,6 +57,7 @@ export default class Preview {
             if (this.code) this.code.set_value(next.text);
             else this.createEditor();
           }
+          if (next.kind === 'markdown') this.prepareMarkdown(cx);
         }
       } catch (error) { if (this.request === request) this.error = `Cannot preview this file: ${String(error)}`; }
       finally { if (this.request === request) { this.loading = false; if (!this.draftChecked) this.checkDraft(cx); } cx.notify(); }
@@ -182,6 +189,87 @@ export default class Preview {
     if (this.dirty()) keepDraft(this.root, this.path, this.code.value(), this.base).catch(() => {});
     this.disposed = true; this.clear(); this.find?.close(); this.find = null;
   }
+  prepareMarkdown(cx) {
+    if (this.data?.kind !== 'markdown' || typeof this.data.text !== 'string') return;
+    const request = this.markdownRequest = {}, text = this.data.text, path = this.path;
+    const look = diagramLook(theme(), settings().font_family);
+    this.markdownLook = JSON.stringify(look); this.linkError = null;
+    const structure = markdownStructure(text);
+    this.headings = structure.headings; this.headingsLimited = structure.headingsLimited;
+    this.diagramsLimited = structure.diagrams.length > 24;
+    const blocks = markdownBlocks(text, structure); this.markdownBlocks = blocks;
+    if (this.anchor && !this.headings.some(heading => heading.slug === this.anchor)) {
+      this.linkError = 'This heading was not found in the available document.'; this.anchor = null;
+    }
+    const diagrams = blocks.filter(block => block.diagram); this.markdownBusy = diagrams.length > 0;
+    if (!diagrams.length) return;
+    cx.spawn(async cx => {
+      try {
+        const results = await renderDiagrams(diagrams, look);
+        if (this.disposed || this.markdownRequest !== request || this.path !== path || this.data?.text !== text) return;
+        diagrams.forEach((block, index) => Object.assign(block, results[index]));
+      } catch (error) {
+        if (this.markdownRequest !== request) return;
+        for (const block of diagrams) block.error = String(error.message || error);
+      }
+      if (this.markdownRequest === request) { this.markdownBusy = false; cx.notify(); }
+    });
+  }
+  rememberLocation() {
+    this.history = [...this.history, { path: this.path, anchor: this.anchor, mode: this.mode, line: this.line }].slice(-HISTORY_LIMIT);
+  }
+  followMarkdown(href, cx) {
+    let target;
+    try { target = resolveMarkdownLink(this.root, this.path, href); }
+    catch (error) { this.linkError = String(error.message || error); cx.notify(); return; }
+    if (target.external) { cx.open_url(target.external); return; }
+    if (target.path === this.path) {
+      if (target.anchor && !this.headings.some(heading => heading.slug === target.anchor)) { this.linkError = 'This heading was not found in the available document.'; cx.notify(); return; }
+      if (this.anchor !== target.anchor || this.mode !== 'preview') this.rememberLocation();
+      this.anchor = target.anchor; this.mode = 'preview'; this.line = null; this.contents = false; this.linkError = null; cx.notify(); return;
+    }
+    this.navigateMarkdown(target, cx);
+  }
+  navigateMarkdown(target, cx, back = false) {
+    const path = this.path, root = this.root, on = this.on, request = this.request;
+    if (this.saving) { this.linkError = 'Wait for the current save to finish before navigating.'; cx.notify(); return; }
+    this.linkError = null;
+    cx.spawn(async cx => {
+      try {
+        if (this.dirty()) await keepDraft(root, path, this.code.value(), this.base);
+        if (this.disposed || this.path !== path || this.request !== request) return;
+        if (!back) this.rememberLocation();
+        else this.history = this.history.slice(0, -1);
+        this.open(root, target.path, on, cx, target.line || null, true);
+        this.anchor = target.anchor || null; this.mode = target.mode || 'preview'; cx.notify();
+      } catch (error) { if (this.path === path) { this.linkError = 'Cannot keep the current draft: ' + String(error.message || error); cx.notify(); } }
+    });
+  }
+  backMarkdown(cx) {
+    const target = this.history.at(-1); if (!target) return;
+    if (target.path !== this.path) { this.navigateMarkdown(target, cx, true); return; }
+    this.history = this.history.slice(0, -1); this.anchor = target.anchor; this.mode = target.mode; this.line = target.line; this.linkError = null; this.contents = false; cx.notify();
+  }
+  renderMarkdown(t) {
+    const blocks = this.markdownBlocks || [{ text: this.data.text }];
+    const found = this.anchor ? blocks.findIndex(block => block.heading?.slug === this.anchor) : 0, start = Math.max(0, found);
+    const body = v_flex().id('markdown-navigation').flex_1().min_h(0).min_w(0);
+    if (this.contents) body.child(v_flex().id('markdown-contents').h(Math.min(180, this.headings.length * 28)).flex_none().overflow_y_scrollbar().border_b(1).border_color(t.border)
+      .children(this.headings.map(heading => div().id('markdown-heading-' + heading.slug).h(28).flex_none().pl(10 + (heading.level - 1) * 12).pr(8).text_size(11).truncate().tooltip(heading.title).cursor_pointer().hover(s => s.bg(t.hover))
+        .on_click((_e, cx) => this.followMarkdown('#' + encodeURIComponent(heading.slug), cx)).child(heading.title))));
+    if (this.anchor) body.child(this.button('whole-document', '↑ Whole document', false, (_e, cx) => this.followMarkdown('#', cx), t).flex_none());
+    if (this.headingsLimited || this.diagramsLimited) body.child(div().px(10).py(4).flex_none().text_size(10.5).text_color(t.dim).child(this.headingsLimited ? 'Contents limited to 200 headings.' : 'Only the first 24 Mermaid diagrams are rendered; later diagrams remain source.'));
+    if (this.markdownBusy) body.child(div().px(10).py(4).flex_none().text_size(10.5).text_color(t.dim).child('Rendering diagrams…'));
+    return body.child(v_flex().id('markdown-document-' + this.path + '-' + (this.anchor || 'top')).flex_1().min_h(0).min_w(0).overflow_y_scrollbar().p(12).gap(10)
+      .children(blocks.slice(start).map((block, offset) => {
+        const index = start + offset;
+        if (block.diagram && block.media) return div().id('markdown-diagram-' + index).w_full().h(block.media.height).flex_none().overflow_x_scrollbar()
+          .child(image(block.media.path).w(block.media.width).h(block.media.height).flex_none());
+        const text = TextView.markdown('markdown-file-preview-' + index, markdownForPreview(block.text)).selectable(true).scrollable(false).w_full().flex_none().text_size(this.fontSize)
+          .on_link_click((url, cx) => this.followMarkdown(url, cx));
+        return block.error ? v_flex().flex_none().gap(4).child(div().text_size(11).text_color(t.blocked).child('Mermaid: ' + block.error)).child(text) : text;
+      })));
+  }
   button(id, label, active, action, t) { return div().id(`preview-${id}`).px(7).py(4).rounded(5).cursor_pointer().bg(active ? t.selected : t.surface).hover(s => s.bg(t.hover)).text_size(11).on_click(action).child(label); }
   render(cx) {
     if (!this.disposed && !this.fontSyncScheduled && previewFontSize(shared(PREVIEW_FONT_KEY)) !== this.fontSize) {
@@ -194,9 +282,15 @@ export default class Preview {
       if (this.editing && e.key === 's' && (e.modifiers?.platform || e.modifiers?.control)) { cx.stop_propagation(); this.save(cx); return; }
       this.find.key(e, cx, !this.editing && !this.error && typeof this.data?.text === 'string');
     });
-    if (this.error || !data) return body.child(div().p(12).text_size(12).text_color(t.dim).child(this.error || 'Loading file…'));
+    if (this.error || !data) return body.when(Boolean(this.history.length), el => el.child(this.button('back-document', '← Back', false, (_e, cx) => this.backMarkdown(cx), t).flex_none())).child(div().p(12).text_size(12).text_color(t.dim).child(this.error || 'Loading file…'));
+    if (kind === 'markdown' && !this.editing && this.markdownLook !== JSON.stringify(diagramLook(t, settings().font_family)) && !this.markdownScheduled) {
+      this.markdownScheduled = true;
+      cx.timer.after(0, cx => { this.markdownScheduled = false; if (!this.disposed && this.data?.kind === 'markdown') { this.prepareMarkdown(cx); cx.notify(); } });
+    }
     const switchable = !this.editing && ['markdown', 'json', 'csv', 'tsv'].includes(kind), dirty = this.dirty(), blocker = this.blocker();
     body.child(h_flex().flex_none().flex_wrap().min_h(30).px(8).gap(5).items_center()
+      .when(Boolean(this.history.length), row => row.child(this.button('back-document', '← Back', false, (_e, cx) => this.backMarkdown(cx), t).tooltip('Return to the previous file or heading')))
+      .when(kind === 'markdown' && !this.editing && Boolean(this.headings.length), row => row.child(this.button('contents', 'Contents', this.contents, (_e, cx) => { this.contents = !this.contents; cx.notify(); }, t).tooltip('Document headings')))
       .when(switchable, row => row.child(this.button('rendered', 'Preview', this.mode === 'preview', (_e, cx) => { this.mode = 'preview'; this.line = null; cx.notify(); }, t)).child(this.button('source', 'Source', this.mode === 'source', (_e, cx) => { this.mode = 'source'; cx.notify(); }, t)))
       .when(kind === 'image', row => row.child(this.button('zoom-out', '−', false, (_e, cx) => { this.zoom = Math.max(0.25, this.zoom / 1.5); cx.notify(); }, t)).child(this.button('fit', this.zoom === 1 ? 'Fit' : `${Math.round(this.zoom * 100)}%`, false, (_e, cx) => { this.zoom = 1; cx.notify(); }, t)).child(this.button('zoom-in', '+', false, (_e, cx) => { this.zoom = Math.min(4, this.zoom * 1.5); cx.notify(); }, t)))
       .child(div().flex_1())
@@ -228,6 +322,7 @@ export default class Preview {
     else if (this.external && this.editing) body.child(this.banner(t, t.working, 'This file changed on disk while you were editing.', [
       this.button('external-reload', this.armed === 'reload' ? 'Discard my edits?' : 'Reload from disk', false, (_e, cx) => this.confirm('reload', cx, () => this.reload(cx)), t),
       this.button('external-keep', 'Keep my version', false, (_e, cx) => { this.external = false; cx.notify(); }, t)]));
+    if (this.linkError) body.child(div().px(10).py(4).text_size(11).text_color(t.blocked).child(this.linkError));
     if (this.parseError && !this.editing) body.child(div().px(10).py(4).text_size(11).text_color(t.blocked).child(this.parseError));
     if (this.find?.visible && typeof data.text === 'string' && !this.editing) {
       body.child(this.find.bar(t));
@@ -244,7 +339,7 @@ export default class Preview {
         .child(v_flex().id('matched-line-preview').flex_1().min_h(0).overflow_scroll().children(excerpt.rows.map(row => h_flex().min_h(Math.ceil(this.fontSize * 1.8)).flex_none().px(8).gap(10).bg(row.line === excerpt.selected ? t.selected : t.background).child(div().w(44).flex_none().text_right().text_size(11).text_color(t.dim).child(String(row.line))).child(div().min_w(0).text_size(this.fontSize).child(row.text || ' ')))));
     }
     if (this.editing || this.mode === 'source' || kind === 'source' || this.parseError) return body.child(this.code ? Editor.new(this.code).flex_1().min_h(0) : div().p(10).child('No text preview'));
-    if (kind === 'markdown') return body.child(TextView.markdown('markdown-file-preview', markdownForPreview(data.text)).selectable(true).scrollable(true).flex_1().min_h(0).p(12).text_size(this.fontSize));
+    if (kind === 'markdown') return body.child(this.renderMarkdown(t));
     if (kind === 'json') {
       const result = jsonRows(this.json, this.expanded);
       return body.child(v_flex().id('json-file-preview').flex_1().min_h(0).overflow_scroll().p(6).text_size(this.fontSize).children(result.rows.map(row => h_flex().id(`json-${row.path}`).flex_none().min_h(Math.max(25, Math.ceil(this.fontSize * 1.8))).pl(6 + row.depth * 14).pr(8).gap(6).cursor_pointer().hover(s => s.bg(t.hover)).on_click((_e, cx) => { if (row.branch) { this.expanded.has(row.path) ? this.expanded.delete(row.path) : this.expanded.add(row.path); cx.notify(); } }).child(div().w(10).flex_none().text_color(t.dim).child(row.branch ? row.open ? '▾' : '▸' : '')).child(div().text_color(t.accent).child(`${row.key}:`)).child(div().text_size(this.fontSize).text_color(t.muted).child(String(row.value).slice(0, 2000))))).when(result.limited, el => el.child(div().p(8).text_size(11).text_color(t.dim).child('JSON tree limited to 1,000 visible nodes and 40 levels'))));

@@ -1,3 +1,5 @@
+import { hunkFileAllowed } from "./hunk-model.js";
+import { readHunkSource } from "./hunk-reader.js";
 import { PAGE_SIZE, numstat, statusFiles, branchInfo, parseHistory, commitFiles } from "./git-model.js";
 
 // Read commands never refresh the index or invoke external diff/fsmonitor tools.
@@ -14,6 +16,26 @@ export function createGitReader(execute, readFile, { root, on = null }) {
     return commit.parents?.length ? ["diff", ...DIFF, commit.parents[0], commit.hash] : ["show", "--format=", "--root", ...DIFF, commit.hash];
   };
   return {
+    async reviewVersion(file) {
+      if (!literalPath(file?.path)) throw new Error("Invalid repository path");
+      if (file.section === "history") {
+        comparison({ hash: file.commit, parents: file.parents });
+        return JSON.stringify(["history", file.commit, file.parents || [], file.path]);
+      }
+      const index = checked(await git(["ls-files", "--stage", "-z", "--", file.path]));
+      if (file.section === "staged") {
+        const head = await git(["rev-parse", "--verify", "--quiet", "HEAD"]);
+        if (head.code !== 0 && head.code !== 1) checked(head);
+        return JSON.stringify(["staged", head.code === 0 ? head.stdout.trim() : "unborn", index]);
+      }
+      const work = await git(["hash-object", "--no-filters", "--", file.path]);
+      if (work.code === 0 && /^[a-f0-9]{40,64}$/.test(work.stdout.trim())) return JSON.stringify(["unstaged", index, work.stdout.trim()]);
+      // Absence is distinct from an unreadable file. Never call the latter viewed.
+      let absent = false;
+      try { absent = await readFile(`${root}/${file.path}`, { on }) === null; } catch { /* Report the original Git read failure. */ }
+      if (absent && !file.fresh) return JSON.stringify(["unstaged", index, "deleted"]);
+      throw new Error("Cannot verify this file's complete content version.");
+    },
     async snapshot() {
       const results = await Promise.all([
         git(["status", "--porcelain=v1", "-z", "--no-renames", "--untracked-files=all"]),
@@ -70,13 +92,20 @@ export function createGitReader(execute, readFile, { root, on = null }) {
         if (content.length > 1500 || text.length > 400000) lines.push("Preview truncated · file exceeds the text preview limit");
         return { lines, additions };
       }
-      const args = file.section === "history" ? comparison({ hash: file.commit, parents: file.parents }) : ["diff", ...(file.section === "staged" ? ["--cached"] : []), ...DIFF];
-      text = checked(await git([...args, "--", file.path]));
+      let hunk = null, hunkError = null;
+      if (!on && hunkFileAllowed(file)) {
+        try { const source = await readHunkSource(execute, { root, on }, file); hunk = { file: source.file, version: source.version, hunks: source.hunks }; text = source.patch; }
+        catch (error) { hunkError = String(error.message || error); }
+      }
+      if (text === undefined) {
+        const args = file.section === "history" ? comparison({ hash: file.commit, parents: file.parents }) : ["diff", ...(file.section === "staged" ? ["--cached"] : []), ...DIFF];
+        text = checked(await git([...args, "--", file.path]));
+      }
       const all = text.replace(/\n$/, "").split("\n"), first = all.findIndex(line => line.startsWith("@@"));
       if (first < 0) return { lines: [/Binary files|GIT binary patch/.test(text) || file.binary ? "Binary file changed" : /[+-]{3}|mode|Subproject/.test(text) ? text.trim() : "No text diff available"] };
       const lines = all.slice(first, first + 2500).map(line => line.length > 4000 ? `${line.slice(0, 4000)}… (line truncated)` : line);
       if (all.length - first > 2500) lines.push("Preview truncated · showing the first 2,500 diff lines");
-      return { lines };
+      return { lines, hunk, hunkError };
     },
   };
 }

@@ -8,6 +8,7 @@ import { CHANGE_KEY, targetFor, menuHeight } from "./model.js";
 import { fileKey, fileTree, diffRows, splitRows, splitDisplay, inlineDisplay, diffCounts, treeFolders } from "./git-model.js";
 import { createGitReader, READ } from "./git-reader.js";
 import { diffView, splitHeader } from "./git-diff.js";
+import { REVIEW_KEY, reviewState, saveReview, reviewFileKey, anchorFor, viewedVersion, setViewed } from "./review-model.js";
 
 function location() { const { cwd, on } = projectContext(); return { cwd, on }; }
 const button = (id, label, selected, action, t) => div().id(id).px(7).py(4).rounded(5).text_size(11).flex_none().cursor_pointer().bg(selected ? t.selected : t.background).text_color(selected ? t.foreground : t.muted).hover(e => e.bg(t.hover)).tooltip(id === "git-expand" ? "Open larger diff preview" : id === "git-refresh" ? "Refresh Git data" : label).accessibility_label(id === "git-expand" ? "Open larger diff preview" : id === "git-refresh" ? "Refresh Git data" : label).on_click((_e, cx) => action(cx)).child(label);
@@ -20,6 +21,7 @@ export default class Changes {
     this.lastChange = shared(CHANGE_KEY)?.revision;
     this.refreshRequest = 0; this.diffRequest = 0; this.historyRequest = 0; this.commitRequest = 0;
     this.reloadAgain = false; this.hasStaged = false; this.files = []; this.historyFiles = []; this.commits = [];
+    this.reviewVersions = {}; this.reviewSelection = null; this.reviewVersion = null;
     this.rows = []; this.split = []; this.diffWidth = 0; this.message = ""; this.branch = {};
     this.handle = cx.focus_handle(); this.diffScroll = VirtualListScrollHandle.new(); this.showFiles = Boolean(this.props.showFiles);
     this.input = InputState.new({ placeholder: "Commit message" });
@@ -58,6 +60,7 @@ export default class Changes {
     if (context !== this.context) {
       this.refreshRequest++; this.diffRequest++; this.historyRequest++; this.commitRequest++;
       this.loading = false; this.historyLoading = false; this.commitLoading = false; this.reloadAgain = false;
+      this.reviewVersions = {};
       this.context = context; this.root = null; this.on = on; this.files = []; this.open = null; this.section = null; this.hasStaged = false;
       this.commits = []; this.historyFiles = []; this.selectedCommit = null; this.historyLoaded = false; this.branch = {};
       this.setLines([]); this.message = ""; this.input.set_value(""); this.error = null; this.note = null; this.watched = null; this.closed = false; this.limited = false;
@@ -76,6 +79,7 @@ export default class Changes {
         const snapshot = await reader.snapshot();
         if (!this.current(context, request)) return;
         const headChanged = this.branch.oid !== snapshot.branch.oid;
+        this.reviewVersions = {};
         this.root = root; this.on = on; this.files = snapshot.files; this.limited = snapshot.limited; this.fileCount = snapshot.count; this.branch = snapshot.branch; this.error = null;
         this.hasStaged = this.files.some(file => file.section === "staged"); this.watch(root, cx);
         const initial = this.props?.selection;
@@ -116,15 +120,118 @@ export default class Changes {
     if (!file) return;
     this.diffLoading = true;
     try {
-      const result = await this.reader().diff(file);
-      if (current()) { if (result.additions !== undefined) file.add = result.additions; this.note = null; this.setLines(result.lines); }
+      const reader = this.reader();
+      // Compare complete content identities around the bounded preview read.
+      const before = reader.reviewVersion ? await reader.reviewVersion(file).catch(() => null) : null;
+      const result = await reader.diff(file);
+      const after = reader.reviewVersion ? await reader.reviewVersion(file).catch(() => null) : null;
+      if (current()) {
+        if (result.additions !== undefined) file.add = result.additions;
+        this.note = null; this.setLines(result.lines);
+        this.reviewVersion = before && before === after ? after : null;
+        this.reviewComplete = Boolean(this.reviewVersion && !file.binary && !result.lines.some(line => /^Preview truncated ·|… \(line truncated\)$|^(?:Binary file changed|Binary file · no text diff|GIT binary patch)/.test(line)));
+        this.reviewVersions[reviewFileKey(file)] = this.reviewVersion;
+        if (this.reviewComplete && result.hunk) { this.hunkData = result.hunk; this.activeHunk = 0; }
+        this.hunkError = result.hunkError || null;
+      }
     } catch (error) { if (current()) { this.setLines([]); this.note = `Cannot preview this diff: ${error.message ?? error}`; } }
     finally { if (current()) this.diffLoading = false; }
   }
 
   setLines(lines) {
-    const rows = diffRows(lines); this.rows = inlineDisplay(rows); this.split = splitDisplay(splitRows(rows)); this.counts = diffCounts(rows);
+    this.reviewSelection = null; this.reviewVersion = null; this.reviewComplete = false;
+    this.hunkData = null; this.hunkError = null; this.activeHunk = null;
+    const rows = diffRows(lines); this.rawRows = rows; this.rows = inlineDisplay(rows); this.split = splitDisplay(splitRows(rows)); this.counts = diffCounts(rows);
     this.diffWidth = Math.max(300, ...this.rows.map(row => Math.min(row.text.length, 4000) * 7 + 130));
+  }
+
+  reviewContext() { return { root: this.root, on: this.on ?? null }; }
+  reviewDraft() { return reviewState(shared(REVIEW_KEY), this.reviewContext()); }
+  saveReviewDraft(value) { setShared(REVIEW_KEY, saveReview(shared(REVIEW_KEY), this.reviewContext(), value)); }
+  selectReviewLine(row, side, event, cx) {
+    const number = side === "before" ? row?.old : row?.next;
+    if (!this.selectedFile() || !this.reviewVersion || !Number.isSafeInteger(number)) return;
+    const previous = this.reviewSelection;
+    this.reviewSelection = event?.modifiers?.shift && previous?.side === side
+      ? { side, anchor: previous.anchor, start: Math.min(previous.anchor, number), end: Math.max(previous.anchor, number) }
+      : { side, anchor: number, start: number, end: number };
+    cx.notify();
+  }
+  reviewLineState(row, side) {
+    const file = this.selectedFile(), number = side === "before" ? row?.old : row?.next;
+    if (!file || !this.reviewVersion || !Number.isSafeInteger(number)) return null;
+    const selection = this.reviewSelection;
+    const commented = this.reviewDraft().comments?.some(comment => reviewFileKey(comment.file) === reviewFileKey(file) && comment.version === this.reviewVersion && comment.side === side && number >= comment.start && number <= comment.end);
+    return { selected: selection?.side === side && number >= selection.start && number <= selection.end, commented, enabled: !this.diffLoading && !this.reviewDraft().delivery };
+  }
+  addComment(cx, row = null, side = null) {
+    if (!this.root || !this.selectedFile() || this.diffLoading) return;
+    if (row) this.selectReviewLine(row, side, null, cx);
+    try {
+      const anchor = anchorFor(this.selectedFile(), this.reviewVersion, this.rawRows || [], this.reviewSelection);
+      openOverlay({ mod: "files-plus", kind: "dialog", frame: "none", width: 620, height: 420, props: { role: "review-comment", context: this.reviewContext(), anchor } });
+    } catch (error) { this.note = String(error.message || error); cx.notify(); }
+  }
+  openReview() {
+    if (!this.root) return;
+    openOverlay({ mod: "files-plus", kind: "dialog", frame: "none", width: 900, height: 720, props: { role: "review", context: this.reviewContext(), versions: { ...this.reviewVersions } } });
+  }
+  markViewed(cx) {
+    const file = this.selectedFile();
+    if (!file || !this.reviewComplete || this.diffLoading) return;
+    const current = this.reviewDraft();
+    this.saveReviewDraft(setViewed(current, file, this.reviewVersion, !viewedVersion(current, file, this.reviewVersion))); cx.notify();
+  }
+  reviewToolbar(t) {
+    if (!this.root) return div();
+    const file = this.selectedFile(), current = this.reviewDraft(), count = current.comments?.length || 0, selection = this.reviewSelection;
+    const viewed = file && viewedVersion(current, file, this.reviewVersion);
+    const action = (id, label, callback, disabled = false) => div().id(id).px(7).py(4).rounded(5).text_size(10).flex_none().text_color(disabled ? t.dim : t.muted).when(!disabled, el => el.cursor_pointer().hover(row => row.bg(t.hover))).on_click((_event, cx) => { if (!disabled) callback(cx); }).child(label);
+    return h_flex().flex_none().min_h(28).px(5).gap(4).items_center().border_b(1).border_color(t.border)
+      .child(action("git-comment", selection ? `Comment ${selection.side} ${selection.start}${selection.end === selection.start ? "" : `–${selection.end}`}` : "Comment file", cx => this.addComment(cx), !file || !this.reviewVersion || this.diffLoading || Boolean(current.delivery)))
+      .when(Boolean(selection), el => el.child(action("git-clear-selection", "×", cx => { this.reviewSelection = null; cx.notify(); })))
+      .child(action("git-viewed", viewed ? "☑ Viewed" : "☐ Viewed", cx => this.markViewed(cx), !file || !this.reviewComplete || this.diffLoading))
+      .child(div().flex_1()).child(action("git-review", `Review (${count})`, () => this.openReview()))
+      .tooltip(!file ? "Select a file in the larger preview to comment or mark it viewed" : !this.reviewComplete ? "Viewed requires a complete, verified text diff. Click a line, Shift-click for a range, then Comment. Right-click adds a comment; Alt-click selects Before in inline context lines." : "Click a line, Shift-click for a range, then Comment. Right-click adds a comment; Alt-click selects Before in inline context lines. Viewed expires when content changes.");
+  }
+
+  selectHunkHeader(header, cx) {
+    const index = this.hunkData?.hunks?.findIndex(hunk => hunk.header === header) ?? -1;
+    if (index < 0 || this.diffLoading) return false;
+    this.activeHunk = index; cx.notify(); return true;
+  }
+  moveHunk(step, cx) {
+    const hunks = this.hunkData?.hunks || [];
+    if (!hunks.length || this.diffLoading) return;
+    this.activeHunk = ((this.activeHunk ?? 0) + step + hunks.length) % hunks.length;
+    const header = hunks[this.activeHunk].header;
+    const rows = this.diffMode === "split" ? this.split : this.rows;
+    const index = rows.findIndex(row => (row.header?.text || row.text) === header);
+    if (index >= 0) this.diffScroll?.scroll_to_item(index);
+    cx.notify();
+  }
+  openHunk(cx, captured = null) {
+    const file = this.selectedFile(), data = this.hunkData, selected = data?.hunks?.[this.activeHunk];
+    if (!file || !selected?.enabled || this.diffLoading || this.loading || this.busy || this.on || window()?.platform !== "macos" || this.context !== this.contextKey()) return;
+    if (file.path !== data.file.path || file.section !== data.file.section) return;
+    if (captured && (captured.context !== this.context || captured.root !== this.root || captured.path !== file.path || captured.section !== file.section || captured.version !== data.version || captured.index !== selected.index || captured.patch !== selected.patch)) {
+      this.note = "The displayed hunk changed. Refresh and select it again."; cx.notify(); return;
+    }
+    openOverlay({ mod: "files-plus", kind: "dialog", frame: "none", width: 600, height: 330,
+      props: { role: "hunk", request: { root: this.root, on: null, action: file.section === "staged" ? "unstage" : "stage", file: { ...data.file }, version: data.version, hunk: { ...selected } } } });
+  }
+  hunkToolbar(t) {
+    const data = this.hunkData, hunks = data?.hunks || [], hunk = hunks[this.activeHunk], file = this.selectedFile();
+    if (!hunk && !this.hunkError) return div();
+    const captured = hunk && file ? { context: this.context, root: this.root, path: file.path, section: file.section, version: data.version, index: hunk.index, patch: hunk.patch } : null;
+    const action = (id, text, callback, disabled = false) => div().id(id).px(7).py(4).rounded(5).flex_none().text_size(10).text_color(disabled ? t.dim : t.muted)
+      .when(!disabled, el => el.cursor_pointer().hover(row => row.bg(t.hover))).on_click((_event, cx) => { if (!disabled) callback(cx); }).child(text);
+    const disabled = !hunk?.enabled || this.diffLoading || this.loading || this.busy || Boolean(this.on) || window()?.platform !== "macos";
+    return h_flex().flex_none().min_h(27).px(5).gap(4).items_center().border_b(1).border_color(t.border)
+      .when(Boolean(hunk), el => el.child(action("git-hunk-prev", "↑", cx => this.moveHunk(-1, cx))).child(action("git-hunk-next", "↓", cx => this.moveHunk(1, cx)))
+        .child(div().text_size(10).text_color(t.dim).child(`Hunk ${this.activeHunk + 1}/${hunks.length}`))
+        .child(action("git-hunk-apply", file?.section === "staged" ? "Unstage hunk" : "Stage hunk", cx => this.openHunk(cx, captured), disabled)))
+      .child(div().flex_1().min_w(0).truncate().text_size(10).text_color(t.dim).tooltip(hunk?.reason || this.hunkError || hunk?.header || "").child(hunk?.reason || this.hunkError || "Click a @@ header to choose a hunk. Working files are kept."));
   }
 
   pick(file, cx) {
@@ -252,6 +359,14 @@ export default class Changes {
 
   close() { this.disposed = true; this.input?.release(); this.diffScroll?.release(); }
 
+  openRepositoryTool(role) {
+    if (!["graph", "github"].includes(role)) return;
+    const source = this.sourceLocation(), root = this.root || source.cwd;
+    if (!root) return;
+    const viewport = globalThis.window.viewport_size(), zoom = Number(settings().zoom) || 1;
+    openOverlay({ mod: "files-plus", kind: "dialog", frame: "none", width: Math.min(1120, viewport.width / zoom * .94), height: Math.min(820, viewport.height / zoom * .9), props: { role, root, on: source.on ?? null } });
+  }
+
   fileRow(file, t) {
     if (file.directory) return h_flex().id(`git-dir-${file.key}`).h(26).flex_none().pl(8 + file.depth * 12).gap(6).items_center().cursor_pointer().hover(e => e.bg(t.hover))
       .on_click((_e, cx) => { if (this.collapsed.has(file.key)) this.collapsed.delete(file.key); else this.collapsed.add(file.key); cx.notify(); })
@@ -260,6 +375,7 @@ export default class Changes {
     return h_flex().id(`change-${fileKey(file)}`).h(28).flex_none().pl(8 + (file.depth || 0) * 12).pr(8).gap(6).items_center().rounded(5).cursor_pointer()
       .when(selected && fileKey(selected) === fileKey(file), e => e.bg(t.selected)).hover(e => e.bg(t.hover)).on_click((_e, cx) => this.pick(file, cx)).on_mouse_down("right", (_e, cx) => this.menu(file, cx))
       .child(div().w(14).flex_none().text_size(11).text_color(file.status === "A" ? t.ansi2 : ["D", "U"].includes(file.status) ? t.ansi1 : t.blocked).child(file.status))
+      .when(Boolean(this.reviewVersions[reviewFileKey(file)] && viewedVersion(this.reviewDraft(), file, this.reviewVersions[reviewFileKey(file)])), el => el.child(div().text_size(10).text_color(t.ansi2).tooltip("Viewed this content version").child("✓")))
       .child(fileIcon(file.path)).child(div().flex_1().min_w(0).truncate().tooltip(file.path).child(name))
       .when(file.binary, e => e.child(div().text_size(10).text_color(t.dim).child("binary")))
       .when(file.add > 0, e => e.child(div().flex_none().text_size(10).text_color(t.ansi2).child(`+${file.add}`)))
@@ -330,6 +446,8 @@ export default class Changes {
         .child(div().flex_1()).when((Boolean(selected) || Boolean(commit)) && !this.props.expanded, e => e.child(button("git-expand", "↗", false, () => this.expand(), t))))
       .when(Boolean(selected), e => e.child(div().h(23).flex_none().px(10).py(3).truncate().text_size(10).text_color(t.dim).child(`${selected.section === "staged" ? "HEAD → Index" : selected.section === "history" ? `${selected.commit.slice(0, 8)} · ${selected.parents?.length > 1 ? "first parent" : "parent"}` : "Index → Working tree"} · ${selected.path}`)))
       .when(Boolean(commit), e => e.child(div().h(23).flex_none().px(10).py(3).truncate().text_size(10).text_color(t.dim).child(`${commit.hash.slice(0, 8)} · ${commit.parents?.length > 1 ? "first parent" : "parent"} · ${commit.subject || "(no subject)"}`)))
+      .child(this.reviewToolbar(t))
+      .child(this.hunkToolbar(t))
       .when(this.diffMode === "split", e => e.child(splitHeader(this.counts ?? { removed: 0, added: 0 }, t)))
       .child(diffView(this, t, settings().font_family ?? "JetBrains Mono"))
       .child(this.footer(t));
@@ -372,6 +490,8 @@ export default class Changes {
       .child(h_flex().h(38).flex_none().px(8).gap(4).items_center().border_b(1).border_color(t.border)
         .child(button("git-changes-tab", "Changes", this.page === "changes", cx => this.setPage("changes", cx), t))
         .child(button("git-history-tab", "History", this.page === "history", cx => this.setPage("history", cx), t))
+        .child(button("git-graph-open", "Graph", false, () => this.openRepositoryTool("graph"), t))
+        .child(button("git-github-open", "PR / CI", false, () => this.openRepositoryTool("github"), t))
         .child(div().flex_1()).when(this.props.expanded, e => e.child(button("git-preview-files", "Files", Boolean(this.showFiles), cx => { this.showFiles = !this.showFiles; cx.notify(); }, t))).child(div().id("git-refresh").w(24).h(24).p(0).flex_none().flex().items_center().justify_center().rounded(4)
           .text_color(loading ? t.accent : t.muted).disabled(loading).tooltip(loading ? "Refreshing Git data…" : "Refresh Git data").accessibility_label("Refresh Git data")
           .when(loading, el => el.cursor_default()).when(!loading, el => el.cursor_pointer().hover(s => s.bg(t.hover)))

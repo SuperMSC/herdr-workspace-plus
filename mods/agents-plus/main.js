@@ -1,3 +1,4 @@
+import { privacyGuard } from "./privacy.js";
 // Agents Plus: Herdr's Agents sidebar (Apache-2.0) with a choice of where pinned agents go:
 // together at the top (Herdr's way), split by space at the top, or at the top of their own
 // group. Parents take their most urgent sub-agent's place. A viewed done agent stays in Done
@@ -199,6 +200,7 @@ export default class Agents extends View {
   }
 
   render(cx) {
+    const mask = privacyGuard("Agents", props() ?? {}); if (mask) return mask;
     const t = theme();
     if (props()?.sortMenu) return this.sortMenu(t);
     const collapsed = narrow();

@@ -284,3 +284,37 @@ function cleanup(state) {
 export function sameState(a, b) {
   return JSON.stringify(normalizeState(a)) === JSON.stringify(normalizeState(b));
 }
+
+// Display preferences remain independent from grouping, manual assignments and order.
+export const DENSITY_KEY = "project-spaces.density.v1";
+export const DENSITIES = [{ id: "detailed", label: "Detailed" }, { id: "compact", label: "Compact" }];
+export const projectDensity = value => value === "compact" ? "compact" : "detailed";
+export function projectPath(folder, home = "", on = null) {
+  if (typeof folder !== "string" || !folder || /[\x00-\x1f\x7f]/.test(folder)) return null;
+  const localHome = !on && typeof home === "string" && home ? home.replace(/\/+$/, "") : "";
+  const short = localHome && folder === localHome ? "~" : localHome && folder.startsWith(localHome + "/") ? "~" + folder.slice(localHome.length) : folder;
+  return { path: folder, short, on: on || null, tooltip: on ? `@${on}\n${folder}` : folder };
+}
+export function groupPath(group, home = "") {
+  if (!group.custom) return projectPath(group.folder, home, group.machine ?? null);
+  const rows = group.sourceRows || group.rows || [], origins = new Set(rows.map(row => JSON.stringify([row.auto?.machine ?? row.w.machine ?? null, row.auto?.folder || row.place || row.w.folder || ""])));
+  if (group.custom && origins.size > 1) return { mixed: true, short: "Multiple folders", tooltip: "Each space shows its own folder.", on: null, mixedMachines: new Set(rows.map(row => row.w.machine || null)).size > 1 };
+  return projectPath(group.folder, home, group.machine ?? null);
+}
+export function spacePath(row, group, home = "", nested = false, capturedParent = undefined) {
+  const own = projectPath(row.place || row.w.folder, home, row.w.machine ?? null); if (!own) return null;
+  const parent = nested ? capturedParent === undefined ? groupPath(group, home) : capturedParent : null;
+  return { ...own, repeat: Boolean(parent && !parent.mixed && parent.path === own.path && parent.on === own.on) };
+}
+export function filterProjectGroups(groups, { query = "", filter = "all" } = {}) {
+  const terms = String(query).slice(0, 200).toLocaleLowerCase().trim().split(/\s+/).filter(Boolean), searching = terms.length > 0;
+  return groups.map(group => {
+    const rows = group.rows.filter(row => {
+      const status = row.w.status;
+      if (filter === "active" && !["working", "blocked", "done"].includes(status) || filter === "attention" && !["blocked", "done"].includes(status)) return false;
+      if (!searching) return true;
+      const text = [group.name, row.w.name, row.place, row.g?.branch].filter(Boolean).join(" ").toLocaleLowerCase(); return terms.every(term => text.includes(term));
+    });
+    return { ...group, rows, sourceRows: group.rows, fullCount: group.rows.length, folded: searching ? false : group.folded };
+  }).filter(group => group.rows.length);
+}
