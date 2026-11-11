@@ -5,7 +5,7 @@ import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { cloneLayout } from "./install.mjs";
-import { integrateWorkspace, restoreNativeSpaces, useProjectSpaces, useAgentsPlus, usePaneHeader } from "./workspace-layout.mjs";
+import { integrateWorkspace, restoreNativeSpaces, useProjectSpaces, useAgentsPlus, usePaneHeader, useUnifiedSidebar, hasUnifiedSidebar } from "./workspace-layout.mjs";
 import { DISPLAY_NAME, installedLayoutName } from "./layout-name.mjs";
 
 const packageRoot = dirname(fileURLToPath(import.meta.url));
@@ -52,7 +52,11 @@ export function update({
   projectsSource = join(packageRoot, "mods", "project-spaces"),
   agents,
   agentsSource = join(packageRoot, "mods", "agents-plus"),
+  unifiedSidebar,
 } = {}) {
+  if (unifiedSidebar !== undefined && typeof unifiedSidebar !== "boolean") throw new Error("unifiedSidebar must be a boolean.");
+  if (unifiedSidebar === true && (projects === false || agents === false)) throw new Error("--unified-sidebar cannot be combined with --native-spaces or --native-agents.");
+  if (unifiedSidebar === true) { projects = true; agents = true; }
   if (typeof home !== "string" || !home) throw new Error("--home must be a directory path.");
   if (typeof layout !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(layout) || layout.endsWith(".json")) {
     throw new Error("--layout must be a name without a path or .json suffix.");
@@ -64,11 +68,11 @@ export function update({
   const plans = [{ name: "files-plus", source, required: ["main.js", "mod.json"] }];
   if (sessions) plans.push({ name: "sessions-plus", source: sessionsSource, required: ["main.js", "mod.json", "history.mjs", "trash.mjs"] });
   // Project Spaces is opt-in: updated when asked for, or when it is already installed.
-  if (projects === true || (projects === undefined && entry(join(mods, "project-spaces")))) {
+  if (unifiedSidebar !== undefined || projects === true || (projects === undefined && entry(join(mods, "project-spaces")))) {
     plans.push({ name: "project-spaces", source: projectsSource, required: ["main.js", "mod.json", "model.js"] });
   }
   // Agents Plus is opt-in the same way.
-  if (agents === true || (agents === undefined && entry(join(mods, "agents-plus")))) {
+  if (unifiedSidebar !== undefined || agents === true || (agents === undefined && entry(join(mods, "agents-plus")))) {
     plans.push({ name: "agents-plus", source: agentsSource, required: ["main.js", "mod.json", "model.js"] });
   }
   for (const plan of plans) {
@@ -103,16 +107,18 @@ export function update({
   // Ordinary updates preserve existing layouts without reading their original source.
   let serialized = null, originalLayout = null, layoutUpdated = false;
   if (!existingLayout) {
-    serialized = JSON.stringify(cloneLayout(JSON.parse(readFileSync(join(layouts, `${layout}.json`), "utf8")), { sessions, projects: projects === true, agents: agents === true }), null, 2) + "\n";
-  } else if (integrateLayout || projects !== undefined || agents !== undefined) {
+    serialized = JSON.stringify(cloneLayout(JSON.parse(readFileSync(join(layouts, `${layout}.json`), "utf8")), { sessions, projects: projects === true, agents: agents === true, unifiedSidebar }), null, 2) + "\n";
+  } else if (integrateLayout || projects !== undefined || agents !== undefined || unifiedSidebar !== undefined) {
     originalLayout = readFileSync(layoutTarget, "utf8");
     let next = JSON.parse(originalLayout), changed = false;
+    if (hasUnifiedSidebar(next) && unifiedSidebar !== false && (projects === false || agents === false)) throw new Error("Use --separate-sidebar with --native-spaces or --native-agents to restore both blocks first.");
+    if (unifiedSidebar === false) { const separate = useUnifiedSidebar(next, false); next = separate.layout; changed = separate.changed; }
     if (integrateLayout) {
       const integration = integrateWorkspace(next);
       if (!integration.integrated) throw new Error("This custom layout cannot be integrated automatically. Update without --integrate-layout to keep its existing interface.");
       const nativeSpaces = restoreNativeSpaces(integration.layout), header = usePaneHeader(nativeSpaces.layout);
       next = header.layout;
-      changed = integration.changed || nativeSpaces.changed || header.changed;
+      changed = changed || integration.changed || nativeSpaces.changed || header.changed;
     }
     if (projects !== undefined) {
       const switched = useProjectSpaces(next, projects);
@@ -122,10 +128,11 @@ export function update({
     }
     if (agents !== undefined) {
       const switched = useAgentsPlus(next, agents);
-      if (!switched.found) throw new Error('This layout has no Agents block (content.mod = "agents" or "agents-plus"); it was left unchanged.');
+      if (!switched.found && !(agents === true && hasUnifiedSidebar(next) && useUnifiedSidebar(next, true).unified)) throw new Error('This layout has no Agents block (content.mod = "agents" or "agents-plus"); it was left unchanged.');
       next = switched.layout;
       changed = changed || switched.changed;
     }
+    if (unifiedSidebar === true) { const unified = useUnifiedSidebar(next, true); next = unified.layout; changed = changed || unified.changed; }
     if (changed) { serialized = JSON.stringify(next, null, 2) + "\n"; layoutUpdated = true; }
   }
 
@@ -173,7 +180,7 @@ function usage() {
   return [
     displayName,
     "",
-    "Usage: node update.mjs [--home PATH] [--layout NAME] [--files-only] [--integrate-layout] [--project-spaces | --native-spaces] [--agents-plus | --native-agents]",
+    "Usage: node update.mjs [--home PATH] [--layout NAME] [--files-only] [--integrate-layout] [--project-spaces | --native-spaces] [--agents-plus | --native-agents] [--unified-sidebar | --separate-sidebar]",
     "",
     "Updates installed mods from this package and removes obsolete mod files. No backups.",
     "Preserves existing layouts, shared state, and session-trash recovery records.",
@@ -184,6 +191,9 @@ function usage() {
     "--native-spaces switches the layout back to Herdr's Spaces; the Project Spaces mod and its state stay.",
     "--agents-plus installs or updates Agents Plus and uses it for the layout's Agents list.",
     "--native-agents switches the layout back to Herdr's Agents; the Agents Plus mod and its setting stay.",
+    "--unified-sidebar installs both sidebar mods and merges only a supported Project Spaces / Agents Plus pair.",
+    "--separate-sidebar restores its exact original blocks; both mods and shared state stay installed.",
+    "Without these flags an existing unified or separate layout is preserved.",
     "Installed Project Spaces and Agents Plus mods are updated on every run.",
     "Default home: HERDR_APP_HOME, otherwise ~/.config/herdr-app.",
     "Does not run git pull, start Herdr, or switch its active layout.",
@@ -195,6 +205,10 @@ function main(argv) {
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--help" || arg === "-h") { console.log(usage()); return; }
+    if (arg === "--unified-sidebar" || arg === "--separate-sidebar") {
+      if (Object.hasOwn(options, "unifiedSidebar")) throw new Error("Use one of --unified-sidebar and --separate-sidebar.");
+      options.unifiedSidebar = arg === "--unified-sidebar"; continue;
+    }
     if (arg === "--integrate-layout") { options.integrateLayout = true; continue; }
     if (arg === "--files-only") { options.sessions = false; continue; }
     if (arg === "--project-spaces" || arg === "--native-spaces") {

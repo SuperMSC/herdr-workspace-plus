@@ -82,28 +82,92 @@ async function boundary(paths, create = false) {
   }
   return true;
 }
-async function readOwned(file, limit, missing = false) {
-  let handle; try { const info = await lstat(file); if (!owned(info, false)) fail("Delivery storage must be a regular owned file without symbolic or hard links.", "boundary"); handle = await open(file, constants.O_RDONLY | (constants.O_NOFOLLOW || 0)); const opened = await handle.stat(); if (!owned(opened, false) || info.ino !== opened.ino || info.dev !== opened.dev) fail("Delivery storage changed during the read. Retry.", "boundary"); if (opened.size > limit) fail("The saved list exceeds its storage limit.", "capacity");
-    const chunks = []; let total = 0;
-    while (true) { const buffer = Buffer.alloc(Math.min(65536, limit + 1 - total)), result = await handle.read(buffer, 0, buffer.length, null); if (!result.bytesRead) break; total += result.bytesRead; if (total > limit) fail("The saved list exceeds its storage limit.", "capacity"); chunks.push(buffer.subarray(0, result.bytesRead)); }
-    return new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks, total));
-  } catch (error) { if (missing && error.code === "ENOENT") return null; if (error.code === "ELOOP") fail("Symbolic links are not read as delivery storage.", "boundary"); throw error; } finally { await handle?.close(); }
+const sameFile = (left, right) => left.dev === right.dev && left.ino === right.ino;
+const ownedSnapshot = info => !info.isSymbolicLink() && info.isFile() && (info.nlink === 0 || info.nlink === 1) && (typeof process.getuid !== "function" || info.uid === process.getuid());
+async function readOwned(file, limit, missing = false, consume = null) {
+  for (let attempt = 0; attempt < 8; attempt++) {
+    let handle;
+    try {
+      const info = await lstat(file);
+      if (ownedSnapshot(info) && info.nlink === 0) fail("Delivery storage changed while its path was being inspected. Retry.", "storage_changed");
+      if (!owned(info, false)) fail("Delivery storage must be a regular owned file without symbolic or hard links.", "boundary");
+      handle = await open(file, constants.O_RDONLY | (constants.O_NOFOLLOW || 0));
+      const opened = await handle.stat();
+      // A renamed-away, already-open file is still a complete snapshot; extra links remain forbidden.
+      if (!ownedSnapshot(opened)) fail("Delivery storage must be a regular owned file without symbolic or hard links.", "boundary");
+      if (!sameFile(info, opened)) fail("Delivery storage changed while it was being opened. Retry.", "storage_changed");
+      if (opened.size > limit) fail("The saved list exceeds its storage limit.", "capacity");
+      const chunks = []; let total = 0;
+      while (true) {
+        const buffer = Buffer.alloc(Math.min(65536, limit + 1 - total)), result = await handle.read(buffer, 0, buffer.length, null);
+        if (!result.bytesRead) break;
+        total += result.bytesRead;
+        if (total > limit) fail("The saved list exceeds its storage limit.", "capacity");
+        chunks.push(buffer.subarray(0, result.bytesRead));
+      }
+      const raw = new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks, total));
+      return consume ? await consume(raw, handle) : raw;
+    } catch (error) {
+      if (missing && error.code === "ENOENT") return null;
+      if (error.code === "ELOOP") fail("Symbolic links are not read as delivery storage.", "boundary");
+      if (error.code === "storage_changed" && attempt < 7) continue;
+      throw error;
+    } finally { await handle?.close(); }
+  }
 }
-async function load(paths) { if (!await boundary(paths)) return decodeDeliverables(null); return decodeDeliverables(await readOwned(paths.file, LIMIT.bytes, true)); }
+async function load(paths) {
+  if (!await boundary(paths)) return decodeDeliverables(null);
+  try { return decodeDeliverables(await readOwned(paths.file, LIMIT.bytes, true)); }
+  catch (error) { if (error.code === "storage_changed") fail("The delivery list is changing. Retry after the other save completes.", "busy"); throw error; }
+}
+async function unlinkHeld(file, handle) {
+  const held = await handle.stat();
+  let current;
+  try { current = await lstat(file); } catch (error) { if (error.code === "ENOENT") return false; throw error; }
+  if (ownedSnapshot(current) && current.nlink === 0) return false;
+  if (!owned(current, false)) fail("Delivery storage must be a regular owned file without symbolic or hard links.", "boundary");
+  if (!sameFile(held, current)) return false;
+  try { await unlink(file); } catch (error) { if (error.code === "ENOENT") return false; throw error; }
+  return true;
+}
+function lockOwner(raw) {
+  if (raw.startsWith("{")) {
+    if (!raw.endsWith("\n")) return null;
+    let record; try { record = JSON.parse(raw); } catch { return null; }
+    if (!record || typeof record.token !== "string" || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(record.token)) return null;
+    return Number.isSafeInteger(record.pid) && record.pid > 0 ? record.pid : null;
+  }
+  if (!/^[1-9][0-9]*$/.test(raw)) return null;
+  const pid = Number(raw); return Number.isSafeInteger(pid) ? pid : null;
+}
+async function releaseHeld(file, handle) {
+  // Keep the inode alive through unlink, so a replacement cannot recycle its identity.
+  try { await unlinkHeld(file, handle); } finally { await handle.close(); }
+}
 async function clearDeadLock(paths) {
-  // Recovery is serialized too, so two recoveries cannot unlink a new writer's lock.
+  // Recovery is serialized; a dead owner cannot release the verified inode after the final check.
   let guard; try { guard = await open(paths.lock + ".recovery", "wx", 0o600); } catch (error) { if (error.code === "EEXIST") return; throw error; }
-  try { let pid; try { pid = Number(await readOwned(paths.lock, 64)); } catch (error) { if (error.code !== "ENOENT") throw error; } if (Number.isSafeInteger(pid) && pid > 0) { try { process.kill(pid, 0); } catch (error) { if (error.code === "ESRCH") await unlink(paths.lock).catch(() => {}); } } }
-  finally { await guard.close(); await unlink(paths.lock + ".recovery").catch(() => {}); }
+  try {
+    await readOwned(paths.lock, 256, true, async (raw, handle) => {
+      const pid = lockOwner(raw); if (pid === null) return;
+      try { process.kill(pid, 0); return; } catch (error) { if (error.code !== "ESRCH") return; }
+      await unlinkHeld(paths.lock, handle);
+    });
+  } catch (error) { if (error.code !== "storage_changed") throw error; }
+  finally { await releaseHeld(paths.lock + ".recovery", guard); }
 }
 async function withLock(paths, callback) {
   await boundary(paths, true); let lock;
   for (let attempt = 0; attempt < 80; attempt++) {
-    try { lock = await open(paths.lock, "wx", 0o600); await lock.writeFile(String(process.pid)); break; }
-    catch (error) { if (lock) { await lock.close(); await unlink(paths.lock).catch(() => {}); throw error; } if (error.code !== "EEXIST") throw error; await clearDeadLock(paths); await new Promise(resolve => setTimeout(resolve, 10)); }
+    try { lock = await open(paths.lock, "wx", 0o600); await lock.writeFile(JSON.stringify({ pid: process.pid, token: randomUUID() }) + "\n"); break; }
+    catch (error) {
+      if (lock) { await releaseHeld(paths.lock, lock); throw error; }
+      if (error.code !== "EEXIST") throw error;
+      await clearDeadLock(paths); await new Promise(resolve => setTimeout(resolve, 10));
+    }
   }
   if (!lock) fail("The delivery list is busy. Retry after the other save completes.", "busy");
-  try { return await callback(); } finally { await lock.close(); await unlink(paths.lock).catch(() => {}); }
+  try { return await callback(); } finally { await releaseHeld(paths.lock, lock); }
 }
 export async function deliverableRequest(home, request) {
   const paths = deliverablePaths(home);

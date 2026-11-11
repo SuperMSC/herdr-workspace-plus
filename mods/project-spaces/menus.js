@@ -3,8 +3,9 @@
 
 import { div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { run, closeOverlay, openOverlay, theme, shared, setShared } from "herdr";
+import { run, closeOverlay, openOverlay, theme, shared, setShared, spaces } from "herdr";
 import { STATE_KEY, DENSITY_KEY, DENSITIES, projectDensity, MODES, SORTS, PALETTE, MARK, normalizeState, assignSpace, setGroupColor, stepGroup, ungroup, foldAll } from "./model.js";
+import { DIRECTORY_PINS_KEY, normalizeDirectoryPins, setDirectoryPin } from "./directory-pins.js";
 
 export const MOD = "project-spaces";
 // Projects listed under "Move to project"; the rest are reached by dragging.
@@ -12,6 +13,18 @@ const MAX_TARGETS = 8;
 const icon = name => `mods/workspace-chrome/${name}.svg`;
 const state = () => normalizeState(shared(STATE_KEY));
 const save = next => setShared(STATE_KEY, next);
+const pins = () => normalizeDirectoryPins(shared(DIRECTORY_PINS_KEY));
+const liveSpace = (target, live) => live.filter(space => space.id === target?.id).length === 1 && live.some(space => space.id === target.id && (space.machine ?? null) === (target.machine ?? null));
+
+function pinItem(kind, id, title, current) {
+  const key = kind === "space" ? "spaces" : "groups", pinned = pins()[key].includes(id);
+  return { label: (pinned ? "Unpin " : "Pin ") + title, icon: pinned ? "pin-off" : "pin", act: () => {
+    if (!current()) return;
+    const latest = pins();
+    setShared(DIRECTORY_PINS_KEY, setDirectoryPin(latest, kind, id, !pinned));
+  } };
+}
+
 
 /** Open the rename / new-project dialog. */
 export function openPrompt(props) {
@@ -27,6 +40,7 @@ function spaceItems(p) {
   const s = p.space ?? {};
   const st = state();
   const items = [{ label: "Rename", icon: "square-pen", act: () => run("space.rename", { id: s.id }) }];
+  if (p.unified === true) items.push(pinItem("space", s.id, "directory", () => liveSpace(s, spaces())));
   const folder = p.auto?.folder || s.folder;
   if (folder) {
     items.push({ label: "Project notes", icon: "file-text", act: () => openOverlay({ mod: "sessions-plus", kind: "dialog", frame: "none", width: 800, height: 680, props: { role: "notes", project: { root: folder, on: s.machine ?? null }, initial: "project" } }) });
@@ -55,6 +69,10 @@ function groupItems(p) {
   const shown = p.shown ?? [];
   const at = shown.indexOf(g.key);
   const items = [];
+  if (p.unified === true) items.push(pinItem("group", g.key, "project", () => {
+    const live = spaces(), current = state();
+    return (p.members ?? []).some(member => liveSpace(member, live) && (current.assign[member.id] ?? member.autoKey) === g.key);
+  }));
   if (g.folder) items.push({ label: "New space here", icon: "plus", act: () => run("space.new", { folder: g.folder, machine: g.machine ?? "" }) });
   if (g.folder) {
     items.push({ label: "Project notes", icon: "file-text", act: () => openOverlay({ mod: "sessions-plus", kind: "dialog", frame: "none", width: 800, height: 680, props: { role: "notes", project: { root: g.folder, on: g.machine ?? null }, initial: "project" } }) });
@@ -80,7 +98,7 @@ function viewItems(p) {
   const items = [{ section: "Display" }];
   for (const density of DENSITIES) items.push({ label: density.label, checked: projectDensity(shared(DENSITY_KEY)) === density.id, keep: true, act: () => setShared(DENSITY_KEY, density.id) });
   items.push({ section: "Group by" });
-  for (const m of MODES) items.push({ label: m.label, checked: st.mode === m.id, keep: true, act: () => save({ ...state(), mode: m.id }) });
+  for (const m of MODES.filter(mode => !p.unified || mode.id !== "none")) items.push({ label: m.label, checked: st.mode === m.id, keep: true, act: () => save({ ...state(), mode: m.id }) });
   items.push({ section: "Sort" });
   for (const s of SORTS) items.push({ label: s.label, hint: s.about, checked: st.sort === s.id, keep: true, act: () => save({ ...state(), sort: s.id }) });
   if (st.mode !== "none" && keys.length) {
@@ -109,8 +127,7 @@ export class Menu {
     return this.p.role === "space-menu" ? spaceItems(this.p) : this.p.role === "group-menu" ? groupItems(this.p) : viewItems(this.p);
   }
 
-  choose(i, cx) {
-    const it = this.items()[i];
+  choose(i, cx, it = this.items()[i]) {
     if (!it?.act || it.disabled) return;
     if (!it.keep) closeOverlay(this.p.overlay);
     it.act();
@@ -143,7 +160,7 @@ export class Menu {
       .on_key_down((e, cx) => {
         if (e.key === "down") this.step(list, 1);
         else if (e.key === "up") this.step(list, -1);
-        else if (e.key === "enter") this.choose(this.at, cx);
+        else if (e.key === "enter") this.choose(this.at, cx, list[this.at]);
         else if (e.key === "escape") closeOverlay(this.p.overlay);
         else return;
         cx.stop_propagation();
@@ -158,7 +175,7 @@ export class Menu {
           .when(!it.disabled, el => el.cursor_pointer().hover(s => s.bg(t.hover)))
           .when(i === this.at && !it.disabled, el => el.bg(t.selected))
           .on_mouse_move((_e, cx) => { if (it.act && !it.disabled && this.at !== i) { this.at = i; cx.notify(); } })
-          .on_click((_e, cx) => this.choose(i, cx))
+          .on_click((_e, cx) => this.choose(i, cx, it))
           .child(it.checked !== undefined
             ? div().size(14).flex_none().child(it.checked ? svg(icon("check")).size(14).text_color(t.accent) : div())
             : svg(icon(it.icon ?? "terminal")).size(14).flex_none().text_color(it.danger ? t.ansi1 : t.muted))

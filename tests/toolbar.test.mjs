@@ -19,7 +19,7 @@ function fixture({ enabled, hidden = false, active = "files", missing = false } 
   const panel = { id: "panel", hidden, children: [{ id: "panel-body", active, children: [{ id: "files" }, { id: "changes" }, ...missing ? [] : [{ id: "files-plus-sessions" }]] }] };
   const source = readFileSync(new URL("../mods/sessions-plus/toolbar.js", import.meta.url), "utf8")
     .replace(/^import .*;\n/gm, "").replace("export default class", "return class");
-  const dependencies = { div: element, svg: element, h_flex: element, theme: () => ({ selected: "selected" }), layout: () => ({ children: [panel] }),
+  const dependencies = { div: element, svg: element, h_flex: element, theme: () => ({ selected: "selected", chrome: "chrome", foreground: "foreground", muted: "muted", hover: "hover", border: "border" }), layout: () => ({ children: [panel] }),
     shared: key => state[key], setShared: (key, value) => { writes.push([key, value]); state[key] = value; }, run: (...args) => calls.push(args) };
   const Toolbar = new Function(...Object.keys(dependencies), source)(...Object.values(dependencies));
   const toolbar = new Toolbar(); toolbar.init({});
@@ -65,4 +65,22 @@ test("the shipped tab bar can restore the registered Sessions choice after chang
   // This is the shipped tabs mod's documented restoration gate.
   const remembered = "files-plus-sessions";
   assert.equal(f.state["workspace.panels"].includes(remembered) ? remembered : null, remembered);
+});
+
+
+test("Sessions keeps its rounded frame inside its own native block in normal, selected and hovered states", () => {
+  for (const options of [{}, { active: "files-plus-sessions" }, { hidden: true }, { missing: true }]) {
+    const f = fixture(options), root = f.toolbar.render(), button = root.children[0];
+    assert((button.attrs.ml ?? 0) >= 0, "A negative left margin clips the left round corners at the separate mod block boundary");
+    assert.equal(button.attrs.h, 26); assert.equal(button.attrs.rounded, 6); assert.equal(button.attrs.px, 8); assert.equal(button.attrs.gap, 5);
+    assert(Object.hasOwn(root.attrs, "items_center")); assert(Object.hasOwn(button.attrs, "items_center"));
+    const on = !options.hidden && options.active === "files-plus-sessions";
+    assert.equal(button.attrs.bg, on ? "selected" : "chrome");
+    assert.equal(button.attrs.text_color, on ? "foreground" : "muted");
+    if (!options.missing) {
+      const hovered = element(); button.attrs.hover(hovered);
+      assert.equal(hovered.attrs.bg, "hover");
+      assert.equal(button.attrs.rounded, 6); assert((button.attrs.ml ?? 0) >= 0);
+    } else assert.equal(button.attrs.hover, undefined);
+  }
 });

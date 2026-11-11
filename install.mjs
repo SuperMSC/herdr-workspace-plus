@@ -4,7 +4,7 @@ import { constants, closeSync, copyFileSync, lstatSync, mkdirSync, openSync, rea
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { integrateWorkspace, restoreNativeSpaces, useProjectSpaces, useAgentsPlus, usePaneHeader } from "./workspace-layout.mjs";
+import { integrateWorkspace, restoreNativeSpaces, useProjectSpaces, useAgentsPlus, usePaneHeader, useUnifiedSidebar, hasUnifiedSidebar } from "./workspace-layout.mjs";
 import { DISPLAY_NAME, installedLayoutName } from "./layout-name.mjs";
 
 const packageRoot = dirname(fileURLToPath(import.meta.url));
@@ -38,8 +38,11 @@ function sourceFiles(root, relative = "") {
   return files;
 }
 
-export function cloneLayout(source, { sessions = false, projects = false, agents = false } = {}) {
+export function cloneLayout(source, { sessions = false, projects = false, agents = false, unifiedSidebar } = {}) {
+  if (unifiedSidebar !== undefined && typeof unifiedSidebar !== "boolean") throw new Error("unifiedSidebar must be a boolean.");
+  if (unifiedSidebar !== undefined) { projects = true; agents = true; }
   let layout = usePaneHeader(restoreNativeSpaces(source).layout).layout;
+  if (unifiedSidebar === false && hasUnifiedSidebar(layout)) layout = useUnifiedSidebar(layout, false).layout;
   if (projects) {
     const switched = useProjectSpaces(layout);
     if (!switched.found) throw new Error('The source layout has no Spaces block (content.mod = "spaces"). Choose another --layout or omit --project-spaces.');
@@ -47,9 +50,10 @@ export function cloneLayout(source, { sessions = false, projects = false, agents
   }
   if (agents) {
     const switched = useAgentsPlus(layout);
-    if (!switched.found) throw new Error('The source layout has no Agents block (content.mod = "agents"). Choose another --layout or omit --agents-plus.');
+    if (!switched.found && !(unifiedSidebar === true && hasUnifiedSidebar(layout))) throw new Error('The source layout has no Agents block (content.mod = "agents"). Choose another --layout or omit --agents-plus.');
     layout = switched.layout;
   }
+  if (unifiedSidebar !== undefined) layout = useUnifiedSidebar(layout, unifiedSidebar).layout;
   if (!layout || Array.isArray(layout) || typeof layout !== "object") {
     throw new Error("The source layout must be a JSON object.");
   }
@@ -133,7 +137,10 @@ export function install({
   projectsSource = join(packageRoot, "mods", "project-spaces"),
   agents = false,
   agentsSource = join(packageRoot, "mods", "agents-plus"),
+  unifiedSidebar,
 } = {}) {
+  if (unifiedSidebar !== undefined && typeof unifiedSidebar !== "boolean") throw new Error("unifiedSidebar must be a boolean.");
+  if (unifiedSidebar !== undefined) { projects = true; agents = true; }
   if (typeof layout !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(layout)) {
     throw new Error("--layout must be a layout name, without a path or .json suffix.");
   }
@@ -167,7 +174,7 @@ export function install({
   if (projects && ["main.js", "mod.json", "model.js"].some(file => !projectFiles.includes(file))) throw new Error("Project Spaces source is incomplete.");
   const agentFiles = agents ? sourceFiles(agentsSource) : [];
   if (agents && ["main.js", "mod.json", "model.js"].some(file => !agentFiles.includes(file))) throw new Error("Agents Plus source is incomplete.");
-  const cloned = cloneLayout(JSON.parse(readFileSync(sourceLayout, "utf8")), { sessions, projects, agents });
+  const cloned = cloneLayout(JSON.parse(readFileSync(sourceLayout, "utf8")), { sessions, projects, agents, unifiedSidebar });
   const serialized = JSON.stringify(cloned, null, 2) + "\n";
   let ownMod = false;
   let ownLayout = false;
@@ -223,11 +230,13 @@ function usage() {
   return [
     displayName,
     "",
-    "Usage: node install.mjs [--home PATH] [--layout NAME] [--files-only] [--project-spaces] [--agents-plus]",
+    "Usage: node install.mjs [--home PATH] [--layout NAME] [--files-only] [--project-spaces] [--agents-plus] [--unified-sidebar | --separate-sidebar]",
     "",
     "Copies mods/files-plus and mods/sessions-plus, and creates layouts/Agent-Workspace.json (legacy names are preserved).",
     "--files-only omits the Sessions panel. History requires Node.js at runtime.",
     "--project-spaces also copies mods/project-spaces and uses it for the layout's Spaces sidebar.",
+    "--unified-sidebar installs both sidebar mods and merges a supported two-block sidebar; --separate-sidebar restores its exact saved blocks.",
+    "These sidebar flags are opt-in; without them installation keeps the chosen layout structure.",
     "--agents-plus also copies mods/agents-plus and uses it for the layout's Agents list (pinned-agent grouping).",
     "Default home: HERDR_APP_HOME, otherwise ~/.config/herdr-app.",
     "Default source layout: main. Neither target may already exist.",
@@ -240,6 +249,10 @@ function main(argv) {
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--files-only") { options.sessions = false; continue; }
+    if (arg === "--unified-sidebar" || arg === "--separate-sidebar") {
+      if (Object.hasOwn(options, "unifiedSidebar")) throw new Error("Use one of --unified-sidebar and --separate-sidebar.");
+      options.unifiedSidebar = arg === "--unified-sidebar"; continue;
+    }
     if (arg === "--project-spaces") { options.projects = true; continue; }
     if (arg === "--agents-plus") { options.agents = true; continue; }
     if (arg === "--help" || arg === "-h") {

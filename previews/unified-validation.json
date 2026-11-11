@@ -1,0 +1,111 @@
+{
+  "version": "0.12.0",
+  "tests": 769,
+  "matched": 205,
+  "layoutUpdated": true,
+  "protectedConfigurationsUnchanged": true,
+  "sharedUnchangedAtSync": true,
+  "exactSidebarRestoration": true,
+  "shellTabMerged": true,
+  "layoutPreservedDuringFix": true,
+  "installedNativeChecks": 4,
+  "installedRuntimeErrors": [],
+  "nativeAsyncSampleShell": {
+    "merged": true,
+    "tabRows": 0,
+    "title": "Bash"
+  },
+  "knownExistingIssue": {
+    "component": "deliverables storage",
+    "issue": "Intermittent lock-file identity race during concurrent writer test",
+    "changedByThisRelease": true,
+    "defaultConcurrencyFullRegressionPassed": true,
+    "singleFileRerunPassed": true,
+    "finalFullRegressionPassed": true,
+    "finalFullRegressionMode": "default concurrency",
+    "resolved": true,
+    "deterministicRaceTests": 14
+  },
+  "temporaryFixturesRemoved": true,
+  "hierarchyTitleColumns": [
+    53,
+    73,
+    93
+  ],
+  "nativeHierarchyWidths": [
+    268
+  ],
+  "nestedContextCondensed": true,
+  "hierarchyIndent": 20,
+  "treeGuides": true,
+  "contentSizedTasks": true,
+  "iconTextGap": 8,
+  "iconsAlignedToFirstLine": true,
+  "nativePinnedDedup": {
+    "eachTaskOnce": true,
+    "projectDirectoryInPinned": true,
+    "workerDirectoryInAttention": true,
+    "originalDirectoryPlaceholdersRemoved": true
+  },
+  "wholeDirectoriesGrouped": true,
+  "sectionDirectoryOrder": [
+    "directory",
+    "task"
+  ],
+  "wholeDirectorySections": [
+    "Pinned",
+    "Needs attention",
+    "Status"
+  ],
+  "singleGlobalToggle": true,
+  "nativeGlobalToggle": {
+    "collapsedRows": 3,
+    "expandedRows": 16
+  },
+  "textButtonsMinimumWidth": 64,
+  "iconButtonsSize": 24,
+  "densityButtonCentered": true,
+  "fullWidthDirectoryCards": true,
+  "fullWidthGroupCards": true,
+  "uiStyleVerifiedInInstalledApp": true,
+  "testRunMode": "default concurrency",
+  "latestInstalledNativeChecks": 1,
+  "iconButtonsRadius": 4,
+  "textSegmentsHeight": 22,
+  "textSegmentsRadius": 5,
+  "toolbarReference": "Files Plus production icon and segment helpers",
+  "directoryPinsPersisted": true,
+  "directoryPinScopes": [
+    "space",
+    "project"
+  ],
+  "directoryPinsIndependentOfTerminalPins": true,
+  "auxiliaryTerminalsFollowTaskDirectory": true,
+  "nativeDirectoryPinFixture": {
+    "pinnedContents": [
+      "task",
+      "shell",
+      "preview",
+      "empty tab"
+    ],
+    "attentionDirectoryBeforeTasks": true,
+    "attentionCount": 1,
+    "liveTerminals": 0,
+    "ownedAppStopped": true,
+    "ownedCoreStopped": true
+  },
+  "installedHelperSmoke": true,
+  "lockStress": {
+    "rounds": 20,
+    "writes": 960,
+    "concurrentReads": 4800,
+    "casRaces": 20,
+    "failed": 0
+  },
+  "sessionsToolbarFrame": {
+    "height": 26,
+    "radius": 6,
+    "negativeMarginRemoved": true,
+    "nativeSelectedStateVerified": true
+  }
+}

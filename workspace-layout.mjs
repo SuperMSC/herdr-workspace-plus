@@ -1,4 +1,5 @@
 // Integrates Sessions and quota controls into a known Herdr workspace layout.
+import { createHash } from "node:crypto";
 
 function nodes(root) {
   const result = [];
@@ -194,4 +195,64 @@ export function usePaneHeader(source) {
     changed = true;
   }
   return { layout, changed };
+}
+
+// This owned layout metadata is outside `children`, so backup block IDs never become live UI nodes.
+export const UNIFIED_SIDEBAR_META = "agent_workspace_unified_sidebar";
+export function hasUnifiedSidebar(source) {
+  return object(source) && (Object.hasOwn(source, UNIFIED_SIDEBAR_META) || nodes(source).some(({ node, parent }) => parent?.id === "sidebar-lists" && node.type === "block" && node.content?.mod === "project-spaces" && node.content.props?.unified === true));
+}
+function sidebarBlock(node, mod) {
+  return object(node) && node.type === "block" && typeof node.id === "string" && node.id && object(node.content) && node.content.mod === mod &&
+    (node.content.props == null || object(node.content.props)) && !["tab", "terminal", "pane", "layout"].some(key => Object.hasOwn(node.content, key)) &&
+    (node.children === undefined || Array.isArray(node.children) && node.children.length === 0);
+}
+function sidebarPair(children) {
+  if (!Array.isArray(children) || children.length !== 2) return null;
+  const spaces = children.filter(node => sidebarBlock(node, "project-spaces")), agents = children.filter(node => sidebarBlock(node, "agents-plus"));
+  return spaces.length === 1 && agents.length === 1 && spaces[0].id !== agents[0].id ? { spaces: spaces[0], agents: agents[0] } : null;
+}
+function unifiedBlock(original) {
+  const result = structuredClone(original);
+  result.content.props = { ...(result.content.props ?? {}), unified: true };
+  result.size = { weight: 1 }; result.min = 0; delete result.max;
+  return result;
+}
+const sameJson = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+const sidebarDigest = value => createHash("sha256").update(JSON.stringify(value)).digest("hex");
+/**
+ * Merge only our recognized two-block sidebar, preserving the Spaces block's identity.
+ * Unknown/edited structures are refused before mutation. Off restores the exact saved blocks.
+ */
+export function useUnifiedSidebar(source, on = true) {
+  if (typeof on !== "boolean" || !object(source)) throw new Error("Unified sidebar requires a layout object and a boolean choice.");
+  const layout = structuredClone(source), all = nodes(layout), matches = id => all.filter(row => row.node.id === id);
+  const lists = matches("sidebar-lists"), sidebars = matches("sidebar");
+  if (lists.length !== 1 || sidebars.length !== 1 || lists[0].parent !== sidebars[0].node || lists[0].node.type !== "column" || sidebars[0].node.type !== "column") throw new Error("This layout has no unique recognized sidebar/sidebar-lists column. No sidebar was changed.");
+  const container = lists[0].node, backup = layout[UNIFIED_SIDEBAR_META];
+  const result = (changed, unified, restorable = false) => ({ layout, changed, found: true, unified, restorable });
+  if (Object.hasOwn(layout, UNIFIED_SIDEBAR_META)) {
+    const keys = ["version", "containerId", "originalChildren", "originalDigest", "unifiedBlock"];
+    const original = sidebarPair(backup?.originalChildren);
+    if (!object(backup) || Object.keys(backup).some(key => !keys.includes(key)) || keys.some(key => !Object.hasOwn(backup, key)) || backup.version !== 1 || backup.containerId !== container.id || !original || original.spaces.content.props?.unified === true || backup.originalDigest !== sidebarDigest(backup.originalChildren) || !sameJson(backup.unifiedBlock, unifiedBlock(original.spaces))) throw new Error("Unified sidebar metadata is unknown or damaged. It was not replaced.");
+    if (!Array.isArray(container.children) || container.children.length !== 1 || !sameJson(container.children[0], backup.unifiedBlock) || matches(original.spaces.id).length !== 1) throw new Error("The unified sidebar was edited or gained extra components. Preserve those edits before restoring; nothing was discarded.");
+    if (on) return result(false, true, true);
+    if (matches(original.agents.id).length) throw new Error("Restoring the original Agents block would collide with an existing block ID. No sidebar was changed.");
+    container.children = structuredClone(backup.originalChildren);
+    delete layout[UNIFIED_SIDEBAR_META];
+    return result(true, false);
+  }
+  const children = container.children;
+  if (Array.isArray(children) && children.length === 1 && sidebarBlock(children[0], "project-spaces") && children[0].content.props?.unified === true && matches(children[0].id).length === 1) {
+    if (!on) throw new Error("This unified sidebar has no original-block metadata, so a precise separate-sidebar restore is unavailable.");
+    return result(false, true);
+  }
+  const pair = sidebarPair(children);
+  if (!pair || matches(pair.spaces.id).length !== 1 || matches(pair.agents.id).length !== 1) throw new Error("Unified sidebar supports exactly one Project Spaces and one Agents Plus block in sidebar-lists, without extra components or duplicate IDs. No sidebar was changed.");
+  if (pair.spaces.content.props?.unified === true) throw new Error("The separate Agents block conflicts with an already unified Projects flag. No sidebar was changed.");
+  if (!on) return result(false, false);
+  const originalChildren = structuredClone(children), merged = unifiedBlock(pair.spaces);
+  layout[UNIFIED_SIDEBAR_META] = { version: 1, containerId: container.id, originalChildren, originalDigest: sidebarDigest(originalChildren), unifiedBlock: structuredClone(merged) };
+  container.children = [merged];
+  return result(true, true, true);
 }

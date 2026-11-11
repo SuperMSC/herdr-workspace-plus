@@ -32,7 +32,7 @@ export default class Toolbar {
     const available = Boolean(panel && body?.children?.some(child => child.id === this.child));
     const on = available && !panel.hidden && body.active === this.child;
     return h_flex().size_full().items_center().pr(10).bg(t.chrome).border_b(1).border_color(t.border)
-      .child(h_flex().id("panel-sessions").ml(-7).h(26).px(8).gap(5).flex_none().items_center().rounded(6)
+      .child(h_flex().id("panel-sessions").h(26).px(8).gap(5).flex_none().items_center().rounded(6)
         .text_size(12).bg(on ? t.selected : t.chrome).text_color(on ? t.foreground : t.muted)
         .when(available, el => el.cursor_pointer().hover(el => el.bg(t.hover)))
         .on_mouse_down("left", (_event, cx) => cx.stop_propagation())

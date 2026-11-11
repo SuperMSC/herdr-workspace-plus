@@ -184,7 +184,7 @@ Validation requires pure model and production-class race/identity tests, actual 
 
 Expose timeline/gallery as explicit session actions and deliverables/screen-picker in a responsive tools dialog. Resolve provider + store + session ID exactly and reject remote or ambiguous history. Keep transcript parsing and image validation/cache work in the bounded short-lived Node activity helper. Paginate native rich rows, clip summaries, show only explicit recorded durations and distinguish tool targets from proof of edits. Never fetch image URLs or infer attachments from ordinary prompt text.
 
-Deliverables live outside runtime mod folders in data/workspace-deliverables/store.json. Use the same lock, expected item revision and atomic rename for UI and explicit CLI additions. Keep forms recoverable, file references machine-qualified, and open only after an explicit click. Removing records never removes artifacts.
+Deliverables live outside runtime mod folders in data/workspace-deliverables/store.json. Use the same lock, expected item revision and atomic rename for UI and explicit CLI additions. Keep forms recoverable, file references machine-qualified, and open only after an explicit click. Removing records never removes artifacts. Treat normal file replacement as a bounded retry, while rejecting symbolic links, hard links and foreign owners. Keep an open descriptor through dead-owner verification and identity-checked unlink; publish complete lock-owner records and retain legacy PID recovery.
 
 Screen picker captures the exact live terminal creation identity, argv/pid/cwd and machine before any await, verifies before and after bounded reads, and treats output only as data. Copy literal selections; preview only within the captured filesystem root; only explicit HTTP(S) links open externally. References enter the existing confirmation flow rather than being sent automatically.
 
@@ -193,3 +193,15 @@ Use the same screenshot-mode shared key and identical private guard module in ea
 Sidebar study: Orca's project/worktree hierarchy, Better Sidebar's combined space/tab/agent tree and Over9k's inline facts informed the sample-data proposal in previews/sidebar-proposal.png. This proposal is not installed as a new sidebar.
 
 Project Spaces: keep density in its own shared key, with Detailed/Compact and truthful local/remote paths. Avoid duplicating the same project path on every nested space; mixed manual groups must not claim one folder. Keep complete groups/rows for ordering and drag assignments, and filter only a separate rendered projection. Search may temporarily unfold matching groups without changing stored folds.
+
+## Unified sidebar
+
+The unified option reuses Project Spaces grouping, Git metadata, path display, menus and drag assignment. Its local unified-model.js projects API snapshots into machine-qualified project/space/tab/agent/child rows. Identity and parent/ownership evidence must be explicit; folders never join agents. Promote pinned and attention branches without duplicates, merge single-terminal tabs, and preserve shell/mod/empty-space navigation. Status sections follow individual branches rather than hiding unrelated work under a whole-space status.
+
+Keep native rows paginated and snapshot processing cached. Detailed permits two title lines plus bounded metadata; Compact keeps a small row. Revalidate captured terminal creation identity and ownership before navigation or pinning. Preserve viewed-done behavior, keyboard agent order and screenshot masking. Do not start, close or stop sessions merely to populate the view.
+
+Layout migration is opt-in via --unified-sidebar / --separate-sidebar and records the exact original owned blocks for reversible restoration. Only the recognized standard sidebar pair may be replaced; preserve unrelated layout nodes, keys and settings. Refuse unknown/conflicting shapes instead of deleting user blocks. Default updates preserve the chosen mode.
+
+Unified toolbar sizing follows Files Plus: keep normal/icon and segmented controls in separate centralized helpers, verify their geometry against icons.js and browser.segment, and retain content-sized text widths. Do not import JavaScript from another mod folder or change application-wide semantic tokens to restyle these controls.
+
+Directory pins use their own shared record, keyed by exact workspace IDs and canonical project keys. Keep them independent of terminal pin labels and project assignments. Explicit pins move the whole directory, including previews and empty tabs; unpin restores automatic grouping. All pinned child directories carry their project heading. Cross-directory parent branches may split for display while captured parent identity remains unchanged for action validation.
