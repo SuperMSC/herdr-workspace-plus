@@ -41,7 +41,7 @@ export default class SessionsPlus extends View {
     if (Role) { this.role = new Role(); this.role.init(this.p, cx); return; }
     this.history = []; this.warnings = []; this.error = ""; this.query = ""; this.provider = "all"; this.source = "all";
     this.all = false; this.visible = 60; this.loading = false; this.busy = new Set();
-    this.page = "sessions"; this.filterMenu = null; this.filterIndex = 0;
+    this.page = "sessions"; this.filterMenu = null; this.filterIndex = 0; this.panelMenu = null; this.toolIndex = 0;
     this.showingTrash = false; this.trashEntries = []; this.trashError = ""; this.trashLoading = false;
     this.revision = shared(CHANGE_KEY) ?? 0;
     this.trashRead = createTrashClient(exec, this.p, appHome());
@@ -166,8 +166,10 @@ export default class SessionsPlus extends View {
   }
 
   actionsRow(row) {
-    openOverlay({ mod: "sessions-plus", kind: "popup", width: 230, height: 330,
-      props: { role: "actions", target: { ...row }, node: this.p.node, stores: this.p.stores } });
+    const on = row.remote && row.address?.includes("/") ? row.address.slice(0, row.address.lastIndexOf("/")) : null;
+    const promptTarget = row.live ? promptTargets(agents(), terminals(), panes()).find(target => target.address === row.address && target.created === row.updated) : null;
+    openOverlay({ mod: "sessions-plus", kind: "popup", width: 230, height: 390,
+      props: { role: "actions", target: { ...row }, project: { root: row.cwd, on }, promptTarget: promptTarget || null, node: this.p.node, stores: this.p.stores } });
   }
 
   restoreRow(row) {
@@ -194,7 +196,7 @@ export default class SessionsPlus extends View {
       .child(div().flex_1().min_h(0).child(this.page === "status" ? this.quota.render(cx) : this.renderSessions(cx)));
   }
 
-  filterDropdown(id, value, options, choose) {
+  filterDropdown(id, value, options, choose, plain = false) {
     const t = theme(), open = this.filterMenu === id;
     const current = options.find(option => option.value === value) ?? options[0];
     const select = (option, cx) => {
@@ -204,8 +206,8 @@ export default class SessionsPlus extends View {
       this.filterMenu = null;
       cx.notify();
     };
-    const trigger = h_flex().id(id).w_full().min_w(0).h(28).px(7).gap(4).items_center().rounded(6).border_1().border_color(t.border)
-      .bg(open ? t.selected : t.surface).text_color(t.foreground).cursor_pointer().hover(el => el.bg(t.hover))
+    const trigger = h_flex().id(id).w_full().min_w(0).h(plain ? 24 : 28).px(plain ? 4 : 7).gap(4).items_center().rounded(4)
+      .when(!plain, el => el.border_1().border_color(t.border).bg(t.surface)).when(open, el => el.bg(t.selected)).text_color(t.foreground).cursor_pointer().hover(el => el.bg(t.hover))
       .when(Boolean(current.provider), el => el.child(providerIcon(current.provider, 15)))
       .tooltip(current.label).accessibility_label(current.label)
       .child(div().flex_1().min_w(0).truncate().child(current.label)).child(div().flex_none().text_size(10).text_color(t.dim).child("▾"));
@@ -233,64 +235,130 @@ export default class SessionsPlus extends View {
       }).trigger(trigger).content(content));
   }
 
+  toolbarPopover(id, title, glyph, content, active = false) {
+    const t = theme(), open = this.panelMenu === id;
+    const trigger = div().id(id).size(24).p(0).rounded(4).flex_none().flex().items_center().justify_center()
+      .text_color(open || active ? t.accent : t.muted).cursor_pointer().hover(el => el.bg(t.hover).text_color(t.foreground))
+      .tooltip(title).accessibility_label(title).child(svg(glyph).size(14).flex_none());
+    return div().flex_none().child(Popover.new(id + "-popover").open(open).anchor("top_right")
+      .on_open_change((open, cx) => {
+        if (open) { this.panelMenu = id; if (id === "sessions-more-actions") this.toolContext = { ...location() }; }
+        else if (this.panelMenu === id) { this.panelMenu = null; if (id === "sessions-more-actions") this.toolContext = null; }
+        cx.notify();
+      }).trigger(trigger).content(content));
+  }
+
+  toolsMenu() {
+    const t = theme(), menuContext = { ...(this.toolContext || location()) }, items = [
+      { id: "sessions-notes", title: "Project and session notes", icon: "notes", action: () => this.openNotes() },
+      { id: "sessions-commands", title: "Project commands", icon: "commands", action: () => this.openCommands() },
+      { id: "sessions-prompts", title: "Pending prompts", icon: "prompt-queue", action: () => this.openPrompts() },
+      { id: "sessions-inbox", title: "Agent inbox", icon: "inbox", action: () => openOverlay({ mod: "sessions-plus", kind: "dialog", frame: "none", width: 560, height: 500, props: { role: "inbox" } }) },
+      ...(window()?.platform === "macos" ? [{ id: "sessions-trash", title: "Session Trash", icon: "trash", action: cx => { this.showingTrash = true; this.refreshTrash(cx); } }] : []),
+      { id: "sessions-services", title: "Services", icon: "services", action: () => this.openWorkspaceTool("services") },
+      { id: "sessions-presets", title: "Projects", icon: "presets", action: () => this.openWorkspaceTool("presets") },
+      { id: "sessions-lineage", title: "Lineage", icon: "lineage", action: () => this.openWorkspaceTool("lineage") },
+      { id: "sessions-tools", title: "Tools", icon: "terminal", action: () => this.openWorkspaceTool("tools") },
+    ];
+    const choose = (item, cx) => {
+      const current = location(); this.panelMenu = null; this.toolContext = null;
+      if (current.cwd !== menuContext.cwd || (current.on ?? null) !== (menuContext.on ?? null)) { this.error = "The project changed. Reopen Workspace tools for its current folder."; cx.notify(); return; }
+      item.action(cx); cx.notify();
+    };
+    return v_flex().id("sessions-tools-menu").w(220).max_h(340).min_h(0).overflow_y_scrollbar().p(5).gap(2).rounded(6).border_1().border_color(t.border).bg(t.popover || t.surface).text_color(t.foreground).text_size(12)
+      .on_key_down((event, cx) => {
+        const key = String(event.key || "").toLowerCase();
+        if (["down", "arrowdown", "up", "arrowup"].includes(key)) {
+          this.toolIndex = ((this.toolIndex || 0) + (key === "up" || key === "arrowup" ? -1 : 1) + items.length) % items.length;
+        } else if (key === "enter") choose(items[this.toolIndex || 0], cx);
+        else return;
+        cx.stop_propagation(); cx.notify();
+      })
+      .children(items.map((item, index) => h_flex().id(item.id).h(28).px(7).gap(8).items_center().rounded(4).cursor_pointer()
+        .when(this.panelMenu === "sessions-more-actions" && this.toolIndex === index, el => el.bg(t.selected))
+        .hover(el => el.bg(t.hover)).tooltip(item.title).accessibility_label(item.title)
+        .on_click((_event, cx) => { cx.stop_propagation(); choose(item, cx); })
+        .child(svg("mods/sessions-plus/" + item.icon + ".svg").size(14).flex_none()).child(item.title)));
+  }
+
   renderSessions(cx) {
     if (this.showingTrash) return this.renderTrash(cx);
-    const t = theme(), context = location(), rows = filterRows(this.rows(), { ...context, all: this.all, provider: this.provider, query: this.query, source: this.source });
-    const smallButton = (id, label, callback) => div().id(id).px(6).py(3).rounded(5).cursor_pointer().text_color(t.muted).hover(el => el.bg(t.hover)).on_click(callback).child(label);
+    const t = theme(), context = location(), detailed = shared("project-spaces.density.v1") !== "compact";
+    const rows = filterRows(this.rows(), { ...context, all: this.all, provider: this.provider, query: this.query, source: this.source });
+    const smallButton = (id, label, callback) => div().id(id).px(6).py(3).rounded(4).cursor_pointer().text_color(t.muted).hover(el => el.bg(t.hover)).on_click(callback).child(label);
+    const folder = context.cwd.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || context.cwd || "No folder";
+    const filters = v_flex().id("sessions-filter-content").w(220).p(8).gap(6).rounded(6).border_1().border_color(t.border).bg(t.popover || t.surface).text_color(t.foreground).text_size(12)
+      .child(div().px(1).text_size(11).text_color(t.muted).child("Agent"))
+      .child(this.filterDropdown("sessions-provider", this.provider, [
+        { value: "all", label: "All agents" }, ...Object.entries(PROVIDERS).map(([value, label]) => ({ value, label, provider: value })),
+      ], value => { this.provider = value; }))
+      .child(div().px(1).text_size(11).text_color(t.muted).child("Source"))
+      .child(this.filterDropdown("sessions-source", this.source, [
+        { value: "all", label: "All sources" }, ...Object.entries(ORIGINS).map(([value, label]) => ({ value, label })),
+      ], value => { this.source = value; }));
+    const chip = (id, title, action) => h_flex().id(id).gap(3).items_center().min_w(0).text_size(10.5).text_color(t.accent)
+      .child(div().min_w(0).truncate().child(title))
+      .child(div().id(id + "-clear").size(18).flex_none().flex().items_center().justify_center().rounded(4).cursor_pointer().hover(el => el.bg(t.hover))
+        .tooltip("Clear " + title).accessibility_label("Clear " + title)
+        .on_click((_event, cx) => { cx.stop_propagation(); action(); this.visible = 60; cx.notify(); })
+        .child(svg("mods/workspace-chrome/x.svg").size(10)));
     const rowView = row => {
       const pending = this.busy.has(row.key) || (!row.live && Date.now() - (shared(PENDING)?.[row.key] ?? 0) < 15000);
-      const subtitle = `${PROVIDERS[row.provider] ?? "Agent"} · ${row.live ? row.status : ORIGINS[row.origin || "unknown"]}${row.remote ? " · Remote" : ""}`;
-      return v_flex().id(`session-${row.key}`).px(9).py(7).gap(3).rounded(7).bg(row.focused ? t.selected : t.surface)
+      const history = historyTime(row), time = /^Updated /.test(history) ? history.split(" · ")[0].replace(/^Updated /, "").replace(/ ago$/, "") : "—";
+      const status = { working: "Working", blocked: "Needs you", done: "Done", idle: "Idle" }[row.status] || "Live";
+      const trailing = pending ? "Opening…" : row.live ? status : time;
+      const subtitle = (PROVIDERS[row.provider] ?? "Agent") + " · " + (row.live ? "Live session" : ORIGINS[row.origin || "unknown"]) + (row.remote ? " · Remote" : "");
+      const full = [row.title, subtitle, history, row.cwd, row.live ? "Switch to running session" : "Resume session"].filter(Boolean).join("\n");
+      return v_flex().id("session-" + row.key).px(7).py(detailed ? 5 : 3).gap(2).min_w(0).rounded(4)
+        .when(!detailed, el => el.h(30)).bg(row.focused ? t.selected : "#00000000").tooltip(full)
         .hover(el => el.bg(t.hover)).cursor_pointer().on_click((_e, cx) => this.open(row, cx))
         .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); this.actionsRow(row); })
-        .child(h_flex().gap(6).items_center()
-          .child(div().size(6).rounded(3).flex_none().bg(row.live ? t[row.status] || t.accent : t.dim))
-          .child(providerIcon(row.provider, 17))
-          .child(div().flex_1().min_w(0).truncate().child(row.title))
-          .when(row.live && Object.hasOwn(PROVIDERS, row.provider), el => el.child(smallButton(`session-prompts-${row.key}`, svg("mods/sessions-plus/prompt-queue.svg").size(14), (_e, cx) => { cx.stop_propagation(); this.openPrompts(row); }).tooltip("Pending prompts for this agent").accessibility_label("Pending prompts for this agent")))
-          .child(smallButton(`session-notes-${row.key}`, svg("mods/sessions-plus/notes.svg").size(14), (_e, cx) => { cx.stop_propagation(); this.openNotes(row); }).tooltip("Session notes").accessibility_label("Session notes"))
-          .child(smallButton(`session-name-${row.key}`, "⋯", (_e, cx) => { cx.stop_propagation(); this.actionsRow(row); })))
-        .child(h_flex().gap(6).justify_between().text_size(11).text_color(t.muted)
-          .child(div().truncate().child(subtitle)).child(div().flex_none().text_color(t.accent).child(pending ? "Opening…" : row.live ? "Switch →" : "Resume →")))
-        .child(div().text_size(10.5).text_color(t.dim).truncate().tooltip(row.live ? row.id || row.address || "" : `History file updated: ${row.updated ? new Date(row.updated).toLocaleString() : "unavailable"}\n${row.id || ""}`).child(historyTime(row)))
-        .when(this.all, el => el.child(div().text_size(10.5).text_color(t.dim).truncate().child(row.cwd)));
+        .child(h_flex().h(20).gap(6).items_center().min_w(0)
+          .child(providerIcon(row.provider, 15))
+          .child(div().id("session-title-" + row.key).flex_1().min_w(0).truncate().text_size(12).child(row.title))
+          .child(div().id("session-state-" + row.key).w(67).flex_none().text_right().text_size(10.5).text_color(pending ? t.accent : row.live && row.status !== "idle" ? t[row.status] || t.muted : t.dim).child(trailing))
+          .child(div().id("session-action-slot-" + row.key).w(24).h(24).flex_none()
+            .child(div().id("session-name-" + row.key).size(24).p(0).flex().items_center().justify_center().rounded(4).text_color(t.muted).cursor_pointer().hover(el => el.bg(t.hover))
+              .tooltip("Session actions").accessibility_label("Session actions")
+              .on_click((_event, cx) => { cx.stop_propagation(); this.actionsRow(row); })
+              .child(svg("mods/sessions-plus/more.svg").size(14)))))
+        .when(detailed, el => el.child(div().id("session-detail-" + row.key).pl(21).pr(30).min_w(0).truncate().text_size(10.5).text_color(t.muted).child(subtitle)))
+        .when(detailed && this.all && Boolean(row.cwd), el => el.child(div().pl(21).pr(30).min_w(0).truncate().text_size(10.5).text_color(t.dim).child(row.cwd)));
     };
-    return v_flex().id("sessions-plus").size_full().min_h(0).bg(t.surface).text_color(t.foreground).text_size(12.5)
-      .child(h_flex().h(34).px(10).gap(5).items_center().flex_none()
-        .child(div().font_semibold().child("Sessions")).child(div().flex_1().text_size(11).text_color(t.dim).child(String(rows.length)))
-        .child(smallButton("sessions-notes", svg("mods/sessions-plus/notes.svg").size(15), () => this.openNotes()).tooltip("Project and session notes").accessibility_label("Project and session notes"))
-        .child(smallButton("sessions-commands", svg("mods/sessions-plus/commands.svg").size(15), () => this.openCommands()).tooltip("Project commands").accessibility_label("Project commands"))
-        .child(smallButton("sessions-prompts", svg("mods/sessions-plus/prompt-queue.svg").size(15), () => this.openPrompts()).tooltip("Pending prompts").accessibility_label("Pending prompts"))
-        .child(smallButton("sessions-inbox", svg("mods/sessions-plus/inbox.svg").size(15), () => openOverlay({ mod: "sessions-plus", kind: "dialog", frame: "none", width: 560, height: 500, props: { role: "inbox" } })).tooltip("Agent inbox").accessibility_label("Agent inbox"))
-        .when(window()?.platform === "macos", el => el.child(smallButton("sessions-trash", svg("mods/sessions-plus/trash.svg").size(15), (_e, cx) => { this.showingTrash = true; this.refreshTrash(cx); cx.notify(); }).tooltip("Session Trash").accessibility_label("Session Trash")))
-        .child(smallButton("sessions-refresh", svg("mods/sessions-plus/refresh.svg").size(14).flex_none().when(this.loading, el => el.spin(850)), (_e, cx) => this.refresh(cx))
-          .size(24).p(0).rounded(4).flex_none().flex().items_center().justify_center().text_color(this.loading ? t.accent : t.muted).disabled(this.loading).when(this.loading, el => el.cursor_default()).tooltip(this.loading ? "Refreshing sessions…" : "Refresh sessions").accessibility_label("Refresh sessions")))
-      .child(h_flex().id("sessions-workspace-tools").px(9).pb(7).gap(5).min_w(0).flex_none()
-        .child(smallButton("sessions-services", "Services", () => this.openWorkspaceTool("services")).tooltip("Containers and listening ports"))
-        .child(smallButton("sessions-presets", "Projects", () => this.openWorkspaceTool("presets")).tooltip("Saved project workspace presets"))
-        .child(smallButton("sessions-lineage", "Lineage", () => this.openWorkspaceTool("lineage")).tooltip("Agent and command parent relationships"))
-        .child(smallButton("sessions-tools", "Tools", () => this.openWorkspaceTool("tools")).tooltip("Deliverables, screen picker and screenshot mode")))
-      .child(h_flex().id("sessions-filters").px(9).pb(7).gap(6).min_w(0).flex_none()
+    return v_flex().id("sessions-plus").size_full().min_h(0).min_w(0).bg(t.chrome || t.surface).text_color(t.foreground).text_size(12)
+      .when(!this.all, el => el.child(v_flex().id("sessions-context").px(10).pt(6).pb(4).gap(1).flex_none()
+        .child(h_flex().h(18).gap(6).items_center().min_w(0)
+          .child(svg("mods/workspace-chrome/folder.svg").size(14).flex_none().text_color(t.muted))
+          .child(div().flex_1().min_w(0).truncate().font_medium().tooltip(context.cwd).child(folder))
+          .when(Boolean(context.on), el => el.child(div().flex_none().text_size(10.5).text_color(t.dim).child("@" + context.on))))
+        .when(detailed && Boolean(context.cwd), el => el.child(div().pl(20).min_w(0).truncate().text_size(10.5).text_color(t.dim).tooltip(context.cwd).child(context.cwd)))))
+      .child(h_flex().id("sessions-toolbar").h(32).px(8).gap(4).items_center().min_w(0).flex_none()
         .child(this.filterDropdown("sessions-scope", this.all ? "all" : "current", [
           { value: "current", label: "This folder" }, { value: "all", label: "All folders" },
-        ], value => { this.all = value === "all"; }))
-        .child(this.filterDropdown("sessions-provider", this.provider, [
-          { value: "all", label: "All agents" }, ...Object.entries(PROVIDERS).map(([value, label]) => ({ value, label, provider: value })),
-        ], value => { this.provider = value; }))
-        .child(this.filterDropdown("sessions-source", this.source, [
-        { value: "all", label: "All sources" }, ...Object.entries(ORIGINS).map(([value, label]) => ({ value, label })),
-      ], value => { this.source = value; })))
-      .child(div().mx(10).mb(8).px(8).h(29).flex_none().border_1().border_color(t.border).rounded(6).child(Input.new(this.input).w_full().h_full()))
-      .child(v_flex().id("sessions-list").flex_1().min_h(0).px(6).gap(3).overflow_y_scrollbar()
+        ], value => { this.all = value === "all"; }, true))
+        .child(div().flex_none().text_size(10.5).text_color(t.dim).child(String(rows.length)))
+        .child(this.toolbarPopover("sessions-filter-toggle", "Filter sessions", "mods/sessions-plus/filter.svg", filters, this.provider !== "all" || this.source !== "all"))
+        .child(div().id("sessions-refresh").size(24).p(0).rounded(4).flex_none().flex().items_center().justify_center()
+          .text_color(this.loading ? t.accent : t.muted).disabled(this.loading)
+          .when(this.loading, el => el.cursor_default()).when(!this.loading, el => el.cursor_pointer().hover(s => s.bg(t.hover)))
+          .tooltip(this.loading ? "Refreshing sessions…" : "Refresh sessions").accessibility_label("Refresh sessions")
+          .on_click((_event, cx) => { cx.stop_propagation(); if (!this.loading) this.refresh(cx); })
+          .child(svg("mods/sessions-plus/refresh.svg").size(14).flex_none().when(this.loading, el => el.spin(850))))
+        .child(this.toolbarPopover("sessions-more-actions", "Workspace tools", "mods/sessions-plus/more.svg", this.toolsMenu())))
+      .child(div().mx(8).mb(6).px(7).h(28).flex_none().border_1().border_color(t.input || t.border).rounded(5).bg(t.background).child(Input.new(this.input).w_full().h_full()))
+      .when(this.provider !== "all" || this.source !== "all", el => el.child(h_flex().id("sessions-active-filters").px(9).pb(5).gap(8).min_w(0).flex_none()
+        .when(this.provider !== "all", el => el.child(chip("sessions-agent-filter", PROVIDERS[this.provider] || "Agent", () => { this.provider = "all"; })))
+        .when(this.source !== "all", el => el.child(chip("sessions-source-filter", ORIGINS[this.source] || "Source", () => { this.source = "all"; })))))
+      .child(v_flex().id("sessions-list").flex_1().min_h(0).min_w(0).px(6).gap(2).overflow_y_scrollbar()
         .children(rows.slice(0, this.visible).flatMap((row, index, visibleRows) => {
           const group = historyGroup(row), first = index === 0 || historyGroup(visibleRows[index - 1]) !== group;
-          return [...(first ? [div().px(9).pt(7).pb(3).font_semibold().text_size(10.5).text_color(t.muted).child(group)] : []), rowView(row)];
+          return [...(first ? [div().px(7).pt(7).pb(3).font_medium().text_size(10.5).text_color(t.muted).child(group)] : []), rowView(row)];
         }))
         .when(!rows.length, el => el.child(div().p(12).text_color(t.muted).child(this.loading ? "Reading local session history…" : context.remote && !this.all ? "Choose All folders for local history and remote live sessions." : "No sessions here. Try All folders or another search.")))
         .when(rows.length > this.visible, el => el.child(smallButton("sessions-more", "Show more", (_e, cx) => { this.visible += 60; cx.notify(); }))))
       .when(Boolean(this.error), el => el.child(div().p(9).max_h(70).overflow_y_scrollbar().text_size(11).text_color(t.ansi1).child(this.error)))
       .when(this.warnings.length > 0 || this.limited, el => el.child(div().p(9).max_h(55).overflow_y_scrollbar().text_size(10.5).text_color(t.muted).child([...this.warnings, ...(this.limited ? ["Showing recent history; scan limit reached."] : [])].join(" "))))
-      .child(div().px(10).py(6).flex_none().text_size(10.5).text_color(t.dim).child(window()?.platform === "macos" ? "Local history · Right-click for session actions" : "Live sessions · Local history requires macOS"));
+      .child(div().px(9).py(5).flex_none().text_size(10.5).text_color(t.dim).child(window()?.platform === "macos" ? "Local history · Right-click for session actions" : "Live sessions · Local history requires macOS"));
   }
 
   renderTrash() {

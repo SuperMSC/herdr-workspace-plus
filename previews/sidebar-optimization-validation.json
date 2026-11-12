@@ -1,0 +1,32 @@
+{
+  "status": "released",
+  "baseVersion": "0.12.1",
+  "date": "2026-11-12",
+  "tests": 791,
+  "testMode": "default concurrency",
+  "nativeChecks": [
+    "files-plus",
+    "sessions-plus",
+    "project-spaces",
+    "agents-plus"
+  ],
+  "matchedRuntimeFiles": 207,
+  "runtimeErrors": [],
+  "protectedConfigurationsUnchanged": true,
+  "topRightToolbarPreserved": true,
+  "layoutFilesChanged": false,
+  "sharedDensityKey": "project-spaces.density.v1",
+  "fileFilterScope": "loaded entries only",
+  "capturedMenuContexts": [
+    "Changes repository actions",
+    "Sessions workspace tools",
+    "Sessions row actions"
+  ],
+  "visualInspection": [
+    "unified sidebar",
+    "Files panel",
+    "original top-right navigation"
+  ],
+  "sourceProjectionAndOwnershipUnchanged": true,
+  "version": "0.12.2"
+}

@@ -21,6 +21,8 @@ function element() {
   } });
   return proxy;
 }
+function inputState() { return { text: "", events: {}, on(name, callback) { this.events[name] = callback; }, value() { return this.text; }, set_value(value) { this.text = value; }, release() {} }; }
+function popover(id) { const node = element().id(id); node.trigger = child => node.child(child); node.content = child => node.child(child); return node; }
 const nodes = node => !node || typeof node !== "object" ? [] : [node, ...node.childNodes.flatMap(nodes)];
 const find = (node, id) => nodes(node).find(node => node.attrs.id === id);
 const text = node => typeof node === "string" ? node : (node?.childNodes ?? []).map(text).join(" ");
@@ -46,6 +48,7 @@ function harness(root, state = {}, options = {}) {
   const cx = { notify() {}, stop_propagation() {}, timer: { every() {}, after(_delay, fn) { timers.push(fn); } }, focus_handle: () => ({ focus() {} }),
     spawn(task) { tasks.push(task(cx)); } };
   const dependencies = {
+    InputState: { new: inputState }, Input: { new: element }, Popover: { new: popover },
     projectContext: () => ({ cwd: root, on: null, space: "space" }),
     Preview: class { clear() {} refresh() {} open() {} close() {} render() { return element(); } },
     ...model, div: element, svg: element, h_flex: element, v_flex: element,
@@ -124,7 +127,7 @@ test("the Files header exposes preferences while previewing and ordinary item/Ch
   const root = fixture(t), f = harness(root); await f.finish();
   f.browser.file = "file.txt";
   const tree = f.render();
-  assert.match(text(tree), /Files/); assert.doesNotMatch(text(tree), /Files Plus/);
+  assert.match(text(tree), /Explorer/); assert.doesNotMatch(text(tree), /Files Plus/);
   find(tree, "files-plus-root-menu").events.on_click({}, f.cx);
   const props = f.overlays[0].props;
   assert.equal(props.preferences, true); assert.equal(props.target.path, `${root}/file.txt`);

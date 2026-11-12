@@ -25,3 +25,6 @@ The 0.12.1 sidebar update uses transparent directory rows, persistent direct-pin
 
 
 Version 0.12.1 uses a shared 78px trailing dock for projects, directories and terminals: a 19px pin slot, 3px gap and 56px right-aligned summary, all with a 5px right inset. Details and action buttons are transparent at rest, with hover feedback following the shipped Spaces/chrome controls. Detailed status text shares its icon column right edge and remains aligned on resize; hovering reveals the already-reserved pin control without narrowing or reflowing titles.
+
+
+The 0.12.2 sidebar optimization keeps Files / Changes / Sessions at the original window top-right. The left sidebar uses view/filter menus and inline status; right panels use compact contextual toolbars and the shared density preference. All 791 tests and four native checks passed, with 207 runtime files matching. The running sidebar, Files panel and top navigation were inspected without publishing private conversation screenshots. See sidebar-optimization-validation.json.

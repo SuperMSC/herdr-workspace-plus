@@ -1,7 +1,7 @@
 // Modified from Herdr Files (Apache-2.0): context menus, captured targets and immediate refresh.
 // A lazy file browser for the focused pane's folder, with bounded read-only previews.
 import { div, svg } from "gpui-kit";
-import { v_flex, h_flex } from "gpui-base";
+import { v_flex, h_flex, Input, InputState, Popover } from "gpui-base";
 import { spaces, panes, focused, exec, watchFolder, theme, settings, window, openOverlay, shared, setShared } from "herdr";
 
 import { openFileTab, projectContext } from "./file-tabs.js";
@@ -13,6 +13,7 @@ import { CHANGE_KEY, SHOW_HIDDEN_KEY, visibleEntry, targetFor, menuHeight, apply
 function location() { return projectContext(); }
 const key = source => JSON.stringify(source || location());
 const PER_FOLDER = 500, TOTAL = 5000;
+const SIDEBAR_DENSITY_KEY = "project-spaces.density.v1";
 
 async function directory(path, on, showHidden = false) {
   const windowsDirectory = async () => {
@@ -43,6 +44,9 @@ export default class Browser {
   init(_props, cx) {
     this.source = _props.source; this.width = 320; this.mode = "tree"; this.browseFolder = ""; this.libraryFolded = new Set(); this.clearArmed = false;
     this.handle = cx.focus_handle();
+    this.filterQuery = ""; this.modeOpen = false; this.modeIndex = 0;
+    this.filterInput = InputState.new({ placeholder: "Filter files…" });
+    this.filterInput.on("change", (_event, cx) => { this.filterQuery = String(this.filterInput.value()).slice(0, 300); cx.notify(); });
     this.lastChange = shared(CHANGE_KEY)?.revision;
     this.folderRequests = new Map();
     this.saved = new Map();
@@ -86,7 +90,8 @@ export default class Browser {
       const saved = this.saved.get(next);
       this.context = { key: next, cwd, on, showHidden }; this.root = cwd; this.on = on; this.entries = new Map(); this.folders = new Set(saved?.folders);
       this.pending = new Set(); this.marks = {}; this.show(null); this.watched = null; this.error = null; this.limited = false;
-      this.loading = false; this.browseFolder = "";
+      this.loading = false; this.browseFolder = ""; this.modeOpen = false;
+      this.filterQuery = ""; this.filterInput?.set_value("");
       if (saved?.file) this.show(saved.file, cx, false);
     }
     if (!cwd || this.loading) return;
@@ -206,11 +211,23 @@ export default class Browser {
   }
 
   visibleEntries() {
-    if (this.mode === "tree") return this.listEntries();
-    const paths = libraryFor(shared(LIBRARY_KEY), this.root, this.on)[this.mode];
-    if (libraryView(shared(LIBRARY_VIEW_KEY)) === "tree") return treeRows(pathTree(paths), this.libraryFolded);
-    // Flat keeps the list's own order; the folder follows the name, dimmed.
-    return paths.map(path => { const at = path.lastIndexOf("/"); return { path, name: path.slice(at + 1), hint: at > 0 ? path.slice(0, at) : "", dir: false, depth: 0 }; });
+    const query = String(this.filterQuery || "").slice(0, 300).trim().toLocaleLowerCase();
+    let entries;
+    if (this.mode === "tree") entries = this.listEntries();
+    else {
+      const paths = libraryFor(shared(LIBRARY_KEY), this.root, this.on)[this.mode];
+      if (libraryView(shared(LIBRARY_VIEW_KEY)) === "tree") entries = treeRows(pathTree(paths), query ? new Set() : this.libraryFolded);
+      // Flat keeps the list's own order; the folder follows the name, dimmed.
+      else entries = paths.map(path => { const at = path.lastIndexOf("/"); return { path, name: path.slice(at + 1), hint: at > 0 ? path.slice(0, at) : "", dir: false, depth: 0 }; });
+    }
+    if (!query) return entries;
+    const keep = new Set();
+    for (const entry of entries) if (entry.path.toLocaleLowerCase().includes(query)) {
+      keep.add(entry.path);
+      let parent = entry.path;
+      while (parent.includes("/")) { parent = parent.slice(0, parent.lastIndexOf("/")); keep.add(parent); }
+    }
+    return entries.filter(entry => keep.has(entry.path));
   }
 
   // The header's fold button: in the tree, collapse every open folder below the current one,
@@ -310,7 +327,7 @@ export default class Browser {
     if (!paused) this.refresh(cx);
   }
 
-  close() { this.disposed = true; this.context = null; this.refreshTimer?.cancel?.(); this.watchTask?.cancel?.(); }
+  close() { this.disposed = true; this.context = null; this.refreshTimer?.cancel?.(); this.watchTask?.cancel?.(); this.filterInput?.release(); }
 
   dirtyFolders() {
     if (this.dirtyMarks !== this.marks) { this.dirtyMarks = this.marks; this.dirty = dirtyFolders(this.marks, this.root); }
@@ -324,7 +341,7 @@ export default class Browser {
     // One 14px lane per level, each with a hairline, so nested rows read as a tree.
     const guides = Array.from({ length: depth }, (_, i) => div().w(14).h_full().flex_none().flex().justify_center()
       .child(div().w(1).h_full().bg(t.border)).id(`${localId("guide")}-${i}`));
-    return h_flex().id(idPrefix + "-" + path).h(26).flex_none().min_w(0).pl(4).pr(8).items_center().rounded(6).cursor_pointer()
+    return h_flex().id(idPrefix + "-" + path).h(this.rowHeight || 28).flex_none().min_w(0).pl(4).pr(8).items_center().rounded(6).cursor_pointer()
       .when(active, el => el.bg(t.selected)).when(!active, el => el.hover(s => s.bg(t.hover)))
       .on_click((e, cx) => this.pick(entry, e, cx)).on_mouse_down("right", (_e, cx) => this.menu(path, dir, cx))
       .children(guides)
@@ -350,6 +367,30 @@ export default class Browser {
       .child(svg(`mods/files-plus/icons/${icon}.svg`).size(13).flex_none());
   }
 
+  modePicker(t) {
+    const options = [["tree", "Explorer", "tree", "File tree"], ["recent", "Recent", "history", "Recent files"], ["pinned", "Pinned", "pin", "Pinned files"]];
+    const current = options.find(option => option[0] === this.mode) || options[0];
+    const choose = (mode, cx) => { this.mode = mode; this.modeOpen = false; this.show(null); cx.notify(); };
+    const trigger = h_flex().id("files-mode-picker").h(24).max_w(110).px(5).gap(4).flex_none().min_w(0).items_center().rounded(4).cursor_pointer().text_size(12).text_color(t.foreground)
+      .tooltip("Explorer, recent and pinned files").accessibility_label("File view: " + current[1]).hover(el => el.bg(t.hover))
+      .child(div().min_w(0).truncate().child(current[1])).child(svg("mods/files-plus/chevron-down.svg").size(10).flex_none().text_color(t.dim));
+    const content = v_flex().id("files-view-menu").w(180).p(4).gap(2).rounded(6).border_1().border_color(t.border).bg(t.surface).text_size(12).text_color(t.foreground)
+      .on_key_down((event, cx) => {
+        const key = String(event.key || "").toLowerCase();
+        if (["up", "arrowup", "down", "arrowdown"].includes(key)) {
+          cx.stop_propagation(); this.modeIndex = (this.modeIndex + (key === "up" || key === "arrowup" ? -1 : 1) + options.length) % options.length; cx.notify();
+        } else if (key === "enter") { cx.stop_propagation(); choose(options[this.modeIndex || 0][0], cx); }
+        else if (key === "escape") { cx.stop_propagation(); this.modeOpen = false; cx.notify(); }
+      })
+      .children(options.map(([mode, title, glyph, description], index) => h_flex().id(mode === "tree" ? "files-tree-mode" : "files-" + mode).h(29).px(7).gap(7).items_center().rounded(4).cursor_pointer().text_color(t.foreground)
+        .when(Boolean(this.modeOpen && this.modeIndex === index), el => el.bg(t.selected)).hover(el => el.bg(t.hover)).tooltip(description).accessibility_label(description)
+        .on_click((_event, cx) => { cx.stop_propagation(); choose(mode, cx); })
+        .child(div().w(12).flex_none().text_color(t.accent).child(this.mode === mode ? "✓" : ""))
+        .child(svg("mods/files-plus/icons/" + glyph + ".svg").size(14).flex_none()).child(title)));
+    return div().flex_none().child(Popover.new("files-mode-popover").open(Boolean(this.modeOpen)).anchor("top_left")
+      .on_open_change((open, cx) => { this.modeOpen = open; if (open) this.modeIndex = Math.max(0, options.findIndex(option => option[0] === this.mode)); cx.notify(); }).trigger(trigger).content(content));
+  }
+
   rows(prefix, depth, out, t) { return [...out, ...this.listEntries(prefix, depth).map(entry => this.row(entry, t))]; }
 
   scheduleSync(cx) {
@@ -361,39 +402,39 @@ export default class Browser {
 
   render(cx, navigation = null) {
     this.scheduleSync(cx);
-    const t = theme(), library = libraryFor(shared(LIBRARY_KEY), this.root, this.on);
+    const t = theme(), library = libraryFor(shared(LIBRARY_KEY), this.root, this.on), entries = this.visibleEntries();
+    this.rowHeight = shared(SIDEBAR_DENSITY_KEY) === "compact" ? 26 : 28;
     const crumbPath = this.file || this.browseFolder, crumbs = breadcrumbs(this.root, crumbPath);
     if (!this.file && crumbs.length) crumbs[crumbs.length - 1].dir = true;
     const visibleCrumbs = this.width < 420 && crumbs.length > 3 ? [crumbs[0], { label: "…", path: crumbs[crumbs.length - 3].path, dir: true }, ...crumbs.slice(-2)] : crumbs;
     const crumbMax = Math.min(180, Math.max(24, (this.width - 24 - (this.file ? 28 : 0)) / visibleCrumbs.length - 4));
     const tree = navigation ? navigation(t, cx) : v_flex().id("files-navigation").flex_1().min_w(0).min_h(0)
       .when(this.mode !== "tree", el => el.child(this.libraryHeader(t, library[this.mode].length)))
-      .child(v_flex().id("files-tree-" + this.mode + "-" + this.browseFolder).flex_1().min_h(0).overflow_y_scrollbar().px(6).py(4).on_mouse_down("right", (_e, cx) => this.menu(this.browseFolder, true, cx)).children(this.visibleEntries().map(entry => this.row(entry, t)))
-        .when(!this.visibleEntries().length || Boolean(this.error && this.mode === "tree"), el => el.child(div().p(8).text_size(12).text_color(t.dim).child(this.mode === "tree" ? this.error || (this.loading ? "Loading files…" : this.root ? "No files" : "No folder") : this.mode === "recent" ? "Files you open will appear here." : "Use the pin beside a preview path to keep a file here.")))
+      .child(v_flex().id("files-tree-" + this.mode + "-" + this.browseFolder).flex_1().min_h(0).overflow_y_scrollbar().px(6).py(4).on_mouse_down("right", (_e, cx) => this.menu(this.browseFolder, true, cx)).children(entries.map(entry => this.row(entry, t)))
+        .when(!entries.length || Boolean(this.error && this.mode === "tree"), el => el.child(div().p(8).text_size(12).text_color(t.dim).child(String(this.filterQuery || "").trim() && !entries.length ? "No matching files in this tree." : this.mode === "tree" ? this.error || (this.loading ? "Loading files…" : this.root ? "No files" : "No folder") : this.mode === "recent" ? "Files you open will appear here." : "Use the pin beside a preview path to keep a file here.")))
         .when(this.limited && this.mode === "tree", el => el.child(div().p(8).text_size(11).text_color(t.dim).child("File list limited to 500 entries per folder and 5,000 total"))));
-    return v_flex().id("files").size_full().min_h(0).min_w(0).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border).text_color(t.foreground).text_size(13).track_focus(this.handle)
+    return v_flex().id("files").size_full().min_h(0).min_w(0).overflow_hidden().bg(t.chrome).text_color(t.foreground).text_size(13).track_focus(this.handle)
       .on_size_change((size, cx) => { if (Math.abs(this.width - size.width) > 1) { this.width = size.width; cx.notify(); } })
-      // One header block: the title and controls, then the path, with a single divider below.
-      .child(v_flex().id("files-header").flex_none().px(12).pt(10).pb(6).gap(4)
-        .child(h_flex().h(26).gap(4).items_center()
-          .child(div().flex_1().min_w(0).truncate().text_size(13).font_semibold().child("Files"))
-          .child(h_flex().id("files-modes").flex_none().p(2).gap(1).rounded(7).border_1().border_color(t.border)
-            .child(this.segment("files-tree-mode", "tree", "File tree", this.mode === "tree", (_e, cx) => { this.mode = "tree"; this.show(null); cx.notify(); }, t))
-            .child(this.segment("files-recent", "history", "Recent files", this.mode === "recent", (_e, cx) => { this.mode = "recent"; this.show(null); cx.notify(); }, t))
-            .child(this.segment("files-pinned", "pin", "Pinned files", this.mode === "pinned", (_e, cx) => { this.mode = "pinned"; this.show(null); cx.notify(); }, t)))
+      // One compact toolbar; the current path and filter remain separate from actions.
+      .child(v_flex().id("files-header").flex_none().px(8).pt(5).pb(7).gap(4)
+        .child(h_flex().h(26).gap(3).items_center()
+          .child(this.modePicker(t)).child(div().flex_1())
           .child((fold => iconButton("files-fold-all", fold.open ? "collapse-all" : "expand-all", this.expanding ? "Expanding folders…" : fold.open ? "Collapse all folders" : this.mode === "tree" ? "Expand folders (4 levels; skips node_modules, .git and build folders)" : "Expand all groups", (_e, cx) => this.foldAll(cx), t, false, !fold.usable || this.expanding))(this.foldState()))
           .when(Boolean(this.onWorkspaceManage), el => el.child(iconButton("files-workspace-folders", "folder-plus", "Workspace folders", (_e, cx) => this.onWorkspaceManage(cx), t, false, !this.root)))
           .child(iconButton("files-search", "search", "Search project", (_e, cx) => this.search(cx), t, false, !this.root))
           .child(iconButton("files-plus-root-menu", "more", "File actions", (_e, cx) => this.menu(this.file ?? this.browseFolder, !this.file, cx, true), t)))
-        .child(h_flex().id("files-breadcrumbs").h(22).flex_none().gap(4).min_w(0).overflow_hidden().items_center()
+        .child(h_flex().id("files-breadcrumbs").h(20).flex_none().gap(4).min_w(0).overflow_hidden().items_center()
           // Each crumb is as wide as its name, up to an even share of the row; longer names truncate.
+          .when(Boolean(this.on), el => el.child(div().flex_none().text_size(10.5).text_color(t.dim).tooltip("Machine: " + this.on).child("@" + this.on)))
           .children(visibleCrumbs.map((crumb, index) => h_flex().max_w(crumbMax).flex_none().min_w(0).gap(4).items_center()
             .when(index > 0, el => el.child(div().flex_none().text_size(11).text_color(t.dim).child("/")))
-            .child(div().id("crumb-" + crumb.path).min_w(0).truncate().text_size(11.5).text_color(crumb.dir && index < visibleCrumbs.length - 1 ? t.dim : t.muted).tooltip(crumb.path || this.root || "Files")
+            .child(div().id("crumb-" + crumb.path).min_w(0).truncate().text_size(11.5).text_color(crumb.dir && index < visibleCrumbs.length - 1 ? t.dim : t.muted).tooltip((this.on ? this.on + ":" : "") + (crumb.path ? this.root + "/" + crumb.path : this.root || "Files"))
               .when(crumb.dir, el => el.cursor_pointer().hover(s => s.text_color(t.accent))).on_click((_e, cx) => { if (crumb.dir) this.navigate(crumb.path, cx); }).child(crumb.label))))
           .child(div().flex_1())
-          .when(Boolean(this.file), el => el.child(iconButton("files-pin-current", "pin", library.pinned.includes(this.file) ? "Unpin file" : "Pin file", (_e, cx) => { this.updateLibrary("pin", this.file); cx.notify(); }, t, library.pinned.includes(this.file))))))
-      .child(div().h(1).flex_none().mx(12).bg(t.border))
+          .when(Boolean(this.file), el => el.child(iconButton("files-pin-current", "pin", library.pinned.includes(this.file) ? "Unpin file" : "Pin file", (_e, cx) => { this.updateLibrary("pin", this.file); cx.notify(); }, t, library.pinned.includes(this.file)))))
+        .child(div().id("files-local-filter").h(28).px(7).min_w(0).flex_none().rounded(5).border_1().border_color(t.input || t.border).bg(t.surface)
+          .tooltip("Filter the current tree. Search project searches all folders.").child(Input.new(this.filterInput).w_full().h_full().text_size(12))))
+      .child(div().h(1).flex_none().mx(8).bg(t.border))
       .child(h_flex().id("files-content").flex_1().min_h(0).min_w(0).items_stretch().overflow_hidden()
         .child(tree));
   }

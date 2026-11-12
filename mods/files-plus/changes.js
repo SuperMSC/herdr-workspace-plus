@@ -2,7 +2,7 @@ import { projectContext } from "./file-tabs.js";
 import { fileIcon } from "./icons.js";
 // Modified from Herdr Changes (Apache-2.0). Git reads and UI extensions are independent of Git write actions.
 import { div, svg } from "gpui-kit";
-import { v_flex, h_flex, InputState, Input, VirtualListScrollHandle, v_resizable, resizable_panel } from "gpui-base";
+import { v_flex, h_flex, InputState, Input, VirtualListScrollHandle, v_resizable, resizable_panel, Popover } from "gpui-base";
 import { spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, window, openOverlay, shared, setShared } from "herdr";
 import { CHANGE_KEY, targetFor, menuHeight } from "./model.js";
 import { fileKey, fileTree, diffRows, splitRows, splitDisplay, inlineDisplay, diffCounts, treeFolders } from "./git-model.js";
@@ -11,12 +11,12 @@ import { diffView, splitHeader } from "./git-diff.js";
 import { REVIEW_KEY, reviewState, saveReview, reviewFileKey, anchorFor, viewedVersion, setViewed } from "./review-model.js";
 
 function location() { const { cwd, on } = projectContext(); return { cwd, on }; }
-const button = (id, label, selected, action, t) => div().id(id).px(7).py(4).rounded(5).text_size(11).flex_none().cursor_pointer().bg(selected ? t.selected : t.background).text_color(selected ? t.foreground : t.muted).hover(e => e.bg(t.hover)).tooltip(id === "git-expand" ? "Open larger diff preview" : id === "git-refresh" ? "Refresh Git data" : label).accessibility_label(id === "git-expand" ? "Open larger diff preview" : id === "git-refresh" ? "Refresh Git data" : label).on_click((_e, cx) => action(cx)).child(label);
+const button = (id, label, selected, action, t) => div().id(id).px(7).py(4).rounded(5).text_size(11).flex_none().h(24).py(0).flex().items_center().justify_center().cursor_pointer().when(selected, el => el.bg(t.selected)).text_color(selected ? t.foreground : t.muted).hover(e => e.bg(t.hover)).tooltip(id === "git-expand" ? "Open larger diff preview" : id === "git-refresh" ? "Refresh Git data" : label).accessibility_label(id === "git-expand" ? "Open larger diff preview" : id === "git-refresh" ? "Refresh Git data" : label).on_click((_e, cx) => action(cx)).child(label);
 
 export default class Changes {
   init(props, cx) {
     this.props = props || {}; this.source = this.props.source;
-    this.page = this.props.selection?.commit ? "history" : "changes";
+    this.page = this.props.selection?.commit ? "history" : "changes"; this.headerMenu = null; this.headerMenuIndex = 0;
     this.listMode = this.props.listMode || "tree"; this.diffMode = this.props.diffMode || "inline"; this.collapsed = new Set();
     this.lastChange = shared(CHANGE_KEY)?.revision;
     this.refreshRequest = 0; this.diffRequest = 0; this.historyRequest = 0; this.commitRequest = 0;
@@ -368,11 +368,11 @@ export default class Changes {
   }
 
   fileRow(file, t) {
-    if (file.directory) return h_flex().id(`git-dir-${file.key}`).h(26).flex_none().pl(8 + file.depth * 12).gap(6).items_center().cursor_pointer().hover(e => e.bg(t.hover))
+    if (file.directory) return h_flex().id(`git-dir-${file.key}`).h(this.compact ? 26 : 28).flex_none().pl(8 + file.depth * 12).gap(6).items_center().cursor_pointer().hover(e => e.bg(t.hover))
       .on_click((_e, cx) => { if (this.collapsed.has(file.key)) this.collapsed.delete(file.key); else this.collapsed.add(file.key); cx.notify(); })
       .child(svg(`mods/files-plus/chevron-${file.collapsed ? "right" : "down"}.svg`).size(12).flex_none().text_color(t.dim)).child(fileIcon(file.name, true)).child(div().truncate().text_color(t.muted).child(file.name));
     const selected = this.selectedFile(), name = this.listMode === "tree" ? file.path.split("/").pop() : file.path;
-    return h_flex().id(`change-${fileKey(file)}`).h(28).flex_none().pl(8 + (file.depth || 0) * 12).pr(8).gap(6).items_center().rounded(5).cursor_pointer()
+    return h_flex().id(`change-${fileKey(file)}`).h(this.compact ? 26 : 28).flex_none().pl(8 + (file.depth || 0) * 12).pr(8).gap(6).items_center().rounded(5).cursor_pointer()
       .when(selected && fileKey(selected) === fileKey(file), e => e.bg(t.selected)).hover(e => e.bg(t.hover)).on_click((_e, cx) => this.pick(file, cx)).on_mouse_down("right", (_e, cx) => this.menu(file, cx))
       .child(div().w(14).flex_none().text_size(11).text_color(file.status === "A" ? t.ansi2 : ["D", "U"].includes(file.status) ? t.ansi1 : t.blocked).child(file.status))
       .when(Boolean(this.reviewVersions[reviewFileKey(file)] && viewedVersion(this.reviewDraft(), file, this.reviewVersions[reviewFileKey(file)])), el => el.child(div().text_size(10).text_color(t.ansi2).tooltip("Viewed this content version").child("✓")))
@@ -432,11 +432,6 @@ export default class Changes {
     const commit = commitsOnly ? this.selectedCommit : null;
     const navigation = commitsOnly ? v_flex().size_full().min_h(0).min_w(0).child(this.historyList(t)) : v_flex().size_full().min_h(0).min_w(0)
       .when(this.page === "history", e => e.child(this.historyList(t)))
-      .child(h_flex().h(29).flex_none().px(6).gap(3).items_center()
-        .child(button("git-tree", "Tree", this.listMode === "tree", cx => { this.listMode = "tree"; cx.notify(); }, t))
-        .child(button("git-flat", "Flat", this.listMode === "flat", cx => { this.listMode = "flat"; cx.notify(); }, t))
-        .child(div().flex_1()).child(div().text_size(10).text_color(t.dim).child(this.page === "history" ? `${this.historyFiles.length} files` : `${this.fileCount || 0} files`))
-        .when(this.listMode === "tree", e => e.child(this.foldAllButton(t))))
       .child(this.fileList(t))
       .when(this.limited && this.page === "changes", e => e.child(div().px(10).py(3).text_size(10).text_color(t.dim).child("Showing the first 1,000 changed files")));
     const preview = v_flex().size_full().min_h(0).min_w(0)
@@ -480,24 +475,74 @@ export default class Changes {
       .when(this.page === "history", e => e.child(div().px(10).py(5).text_size(10).text_color(t.dim).child("History is read-only · upstream counts use the last fetched refs.")));
   }
 
+  headerItems(kind) {
+    if (kind === "mode") return [
+      { id: "git-changes-tab", label: "Changes", checked: this.page === "changes", act: cx => this.setPage("changes", cx) },
+      { id: "git-history-tab", label: "History", checked: this.page === "history", act: cx => this.setPage("history", cx) },
+    ];
+    return [
+      { id: "git-tree", label: "Group by folder", checked: this.listMode === "tree", act: () => { this.listMode = "tree"; } },
+      { id: "git-flat", label: "Flat list", checked: this.listMode === "flat", act: () => { this.listMode = "flat"; } },
+      { id: "git-graph-open", label: "Graph", disabled: !this.root, act: () => this.openRepositoryTool("graph") },
+      { id: "git-github-open", label: "PR / CI", disabled: !this.root, act: () => this.openRepositoryTool("github") },
+      { id: "git-header-review", label: "Review notes", disabled: !this.root, act: () => this.openReview() },
+      { id: "git-header-expand", label: "Open larger diff", disabled: !this.selectedFile(), act: () => this.expand() },
+    ];
+  }
+
+  chooseHeader(item, cx) {
+    const captured = this.headerTarget;
+    this.headerMenu = null;
+    if (item.disabled) { cx.notify(); return; }
+    if (this.disposed || !captured || captured.key !== this.contextKey() || captured.root !== this.root || captured.on !== this.on) {
+      this.note = "The workspace changed. Open this menu again."; cx.notify(); return;
+    }
+    item.act(cx); cx.notify();
+  }
+
+  headerPopover(kind, t) {
+    const open = this.headerMenu === kind, items = this.headerItems(kind), name = kind === "mode" ? this.page === "history" ? "History" : "Changes" : "Repository actions";
+    const trigger = h_flex().id("git-header-" + kind).h(24).when(kind === "more", el => el.w(24)).px(kind === "mode" ? 4 : 0).gap(4).flex_none().items_center().justify_center().rounded(4).text_size(11.5).text_color(t.muted).cursor_pointer().hover(el => el.bg(t.hover).text_color(t.foreground)).accessibility_label(name).tooltip(name)
+      .when(kind === "mode", el => el.child(name).child(svg("mods/files-plus/chevron-down.svg").size(10)))
+      .when(kind === "more", el => el.child(svg("mods/files-plus/icons/more.svg").size(14)));
+    const menu = v_flex().id("git-header-menu-" + kind).w(210).p(4).gap(1).rounded(6).border_1().border_color(t.border).bg(t.surface).text_color(t.foreground).text_size(12)
+      .on_key_down((event, cx) => {
+        const key = String(event.key || "").toLowerCase();
+        if (["up", "arrowup", "down", "arrowdown"].includes(key)) { cx.stop_propagation(); this.headerMenuIndex = (this.headerMenuIndex + (key === "up" || key === "arrowup" ? -1 : 1) + items.length) % items.length; cx.notify(); }
+        else if (key === "enter") { cx.stop_propagation(); this.chooseHeader(items[this.headerMenuIndex || 0], cx); }
+        else if (key === "escape") { cx.stop_propagation(); this.headerMenu = null; cx.notify(); }
+      })
+      .children(items.map((item, index) => h_flex().id(item.id).h(29).px(7).gap(6).items_center().rounded(4).text_color(item.disabled ? t.dim : t.foreground).when(item.disabled, el => el.opacity(0.45)).when(!item.disabled, el => el.cursor_pointer().hover(el => el.bg(t.hover))).when(open && index === this.headerMenuIndex, el => el.bg(t.selected))
+        .on_click((_event, cx) => { cx.stop_propagation(); this.chooseHeader(item, cx); })
+        .child(div().w(13).flex_none().text_color(t.accent).child(item.checked ? "✓" : "")).child(item.label)));
+    return div().flex_none().child(Popover.new("git-header-popover-" + kind).open(open).anchor("top_left")
+      .on_open_change((next, cx) => { this.headerMenu = next ? kind : this.headerMenu === kind ? null : this.headerMenu; if (next) { this.headerMenuIndex = 0; this.headerTarget = { key: this.contextKey(), root: this.root, on: this.on }; } cx.notify(); }).trigger(trigger).content(menu));
+  }
+
   render(cx) {
     this.scheduleSync(cx);
-    const t = theme();
+    const t = theme(); this.compact = shared("project-spaces.density.v1") === "compact";
     const loading = Boolean(this.loading || this.historyLoading);
     const branch = this.branch.name || (this.root ? "Branch unavailable" : "No repository"), counts = this.branch.upstream ? `↑${this.branch.ahead} ↓${this.branch.behind}` : "No upstream";
-    return v_flex().id("changes").size_full().min_h(0).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border).text_color(t.foreground).text_size(12).track_focus(this.handle)
+    return v_flex().id("changes").size_full().min_h(0).min_w(0).rounded(this.props.expanded ? 10 : 0).overflow_hidden().bg(this.props.expanded ? t.background : t.chrome).when(this.props.expanded, el => el.border_1().border_color(t.border)).text_color(t.foreground).text_size(12).track_focus(this.handle)
       .on_key_down((e, cx) => { if (e.key === "escape" && this.typing) { this.typing = false; this.handle.focus(); cx.stop_propagation(); cx.notify(); } })
-      .child(h_flex().h(38).flex_none().px(8).gap(4).items_center().border_b(1).border_color(t.border)
-        .child(button("git-changes-tab", "Changes", this.page === "changes", cx => this.setPage("changes", cx), t))
-        .child(button("git-history-tab", "History", this.page === "history", cx => this.setPage("history", cx), t))
-        .child(button("git-graph-open", "Graph", false, () => this.openRepositoryTool("graph"), t))
-        .child(button("git-github-open", "PR / CI", false, () => this.openRepositoryTool("github"), t))
-        .child(div().flex_1()).when(this.props.expanded, e => e.child(button("git-preview-files", "Files", Boolean(this.showFiles), cx => { this.showFiles = !this.showFiles; cx.notify(); }, t))).child(div().id("git-refresh").w(24).h(24).p(0).flex_none().flex().items_center().justify_center().rounded(4)
-          .text_color(loading ? t.accent : t.muted).disabled(loading).tooltip(loading ? "Refreshing Git data…" : "Refresh Git data").accessibility_label("Refresh Git data")
-          .when(loading, el => el.cursor_default()).when(!loading, el => el.cursor_pointer().hover(s => s.bg(t.hover)))
-          .on_click((_e, cx) => { if (!this.loading && !this.historyLoading) { this.refresh(cx); if (this.page === "history") this.loadHistory(cx, true); cx.notify(); } })
-          .child(svg("mods/files-plus/refresh.svg").id("git-refresh-icon").size(14).flex_none().when(loading, el => el.spin(850)))))
-      .child(h_flex().h(26).flex_none().px(10).gap(8).items_center().text_size(10).text_color(t.dim).child(div().flex_1().min_w(0).truncate().tooltip(this.branch.upstream ? `${branch} → ${this.branch.upstream}` : branch).child(branch)).child(div().flex_none().tooltip("Ahead/behind the last fetched upstream refs").child(counts)))
+      .child(v_flex().id("git-context-header").flex_none().px(8).pt(6).pb(5).gap(3)
+        .child(h_flex().h(23).gap(6).items_center()
+          .child(svg("mods/files-plus/icons/folder.svg").size(14).text_color(t.muted))
+          .child(div().flex_1().min_w(0).truncate().font_semibold().text_size(12.5).tooltip((this.on ? "@" + this.on + ": " : "") + (this.root || this.sourceLocation().cwd || "No folder")).child(String(this.root || this.sourceLocation().cwd || "No folder").replace(/[\\/]+$/, "").split(/[\\/]/).pop() || "No folder"))
+          .child(div().max_w(110).truncate().text_size(11).text_color(t.dim).tooltip(this.branch.upstream ? branch + " → " + this.branch.upstream + " · " + counts : branch).child(branch)))
+        .when(!this.compact, el => el.child(div().h(14).min_w(0).truncate().text_size(10.5).text_color(t.dim).tooltip((this.on ? "@" + this.on + ": " : "") + (this.root || this.sourceLocation().cwd || "")).child((this.on ? "@" + this.on + ": " : "") + (this.root || this.sourceLocation().cwd || ""))))
+        .child(h_flex().h(24).gap(3).items_center()
+          .child(this.headerPopover("mode", t))
+          .child(div().flex_1().min_w(0).truncate().text_size(10.5).text_color(t.dim).child(this.page === "history" ? this.commits.length + " commits" : (this.fileCount ?? this.files.length) + " files"))
+          .when(this.listMode === "tree", el => el.child(this.foldAllButton(t)))
+          .when(this.props.expanded, el => el.child(button("git-preview-files", "Files", Boolean(this.showFiles), cx => { this.showFiles = !this.showFiles; cx.notify(); }, t)))
+          .child(div().id("git-refresh").size(24).p(0).flex_none().flex().items_center().justify_center().rounded(4)
+            .text_color(loading ? t.accent : t.muted).disabled(loading).tooltip(loading ? "Refreshing Git data…" : "Refresh Git data").accessibility_label("Refresh Git data")
+            .when(loading, el => el.cursor_default()).when(!loading, el => el.cursor_pointer().hover(el => el.bg(t.hover)))
+            .on_click((_event, cx) => { if (!this.loading && !this.historyLoading) { this.refresh(cx); if (this.page === "history") this.loadHistory(cx, true); cx.notify(); } })
+            .child(svg("mods/files-plus/refresh.svg").id("git-refresh-icon").size(14).flex_none().when(loading, el => el.spin(850))))
+          .child(this.headerPopover("more", t))))
       .child(this.panes(t));
   }
 }

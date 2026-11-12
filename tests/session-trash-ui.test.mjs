@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import * as model from "../mods/sessions-plus/model.js";
 import * as inboxModel from "../mods/sessions-plus/inbox-model.js";
 import { createTrashClient } from "../mods/sessions-plus/trash-client.js";
+import { promptTargets } from "../mods/sessions-plus/prompt-queue-model.js";
 
 const id = "11111111-1111-4111-8111-111111111111";
 const session = () => {
@@ -43,7 +44,7 @@ function harness({ state = {}, target = session(), role, action = "trash", platf
   const cx = { notify() { notifications++; }, stop_propagation() { stopped++; }, focus_handle: () => ({ focus() {} }),
     spawn(task) { if (defer) queued.push(task); else tasks.push(task(cx)); },
     timer: { every(ms, callback) { timers.push({ ms, callback }); }, after(ms, callback) { timers.push({ ms, callback }); } } };
-  const dependencies = { privacyGuard: () => null, settings: () => ({zoom:1}), ...model, ...inboxModel, agents: () => running, createTrashClient, View: class {}, div: element, svg: element, h_flex: element, v_flex: element,
+  const dependencies = { promptTargets, privacyGuard: () => null, settings: () => ({zoom:1}), ...model, ...inboxModel, agents: () => running, createTrashClient, View: class {}, div: element, svg: element, h_flex: element, v_flex: element,
     InputState: { new: () => ({ on() {}, value: () => "", focus() {} }) }, Input: { new: element }, providerIcon: (provider, size) => element().id(`provider-icon-${provider}`).size(size),
     Popover: { new: id => element().id(id) },
     theme: () => ({}), window: () => ({ platform }), appHome: () => "/fixture/herdr", props: () => p,
@@ -102,7 +103,7 @@ test("live, remote and unsupported-platform menus disable Trash", () => {
     const f = harness(options), menu = f.menu();
     assert.equal(menu.items[1].disabled, true); menu.choose(1);
     assert.equal(f.overlays.length, 0); assert.equal(f.calls.length, 0);
-    menu.render().events["on_key_down:"]({ key: "down" }, f.cx); assert.equal(menu.at, menu.items[2].disabled ? 0 : 2);
+    menu.render().events["on_key_down:"]({ key: "down" }, f.cx); assert.equal(menu.at, menu.items.findIndex((item, index) => index > 0 && !item.disabled));
   }
 });
 
@@ -412,7 +413,7 @@ test("a missing restore payload stays visible as an error instead of claiming su
 test("Trash uses an accessible icon and refresh removes externally emptied entries", async () => {
   const f = harness(), panel = f.panel(); await f.finish();
   const button = find(panel.render(f.cx), "sessions-trash");
-  assert.equal(text(button), ""); assert.equal(button.attributes.tooltip, "Session Trash"); assert.equal(button.attributes.accessibility_label, "Session Trash");
+  assert.equal(text(button).trim(), "Session Trash"); assert.equal(button.attributes.tooltip, "Session Trash"); assert.equal(button.attributes.accessibility_label, "Session Trash");
   button.events["on_click:"]({}, f.cx); await f.finish(); assert.equal(panel.trashEntries.length, 1);
   panel.trashRead = async () => ({ entries: [] }); panel.refreshTrash(f.cx); await f.finish();
   assert.deepEqual(panel.trashEntries, []); assert.match(text(panel.render(f.cx)), /No sessions in Trash/);
@@ -442,7 +443,7 @@ test("source filtering uses metadata and preserves search, date groups, and shor
   panel.source = "main";
   let tree = panel.render(f.cx);
   assert(find(tree, `session-${session().key}`)); assert(!find(tree, "session-automated"));
-  assert.match(text(tree), /Today/); assert.match(text(tree), /Updated just now · 11111111/);
+  assert.match(text(tree), /Today/); assert.match(find(tree, "session-" + session().key).attributes.tooltip, /Updated just now · 11111111/); assert.equal(text(find(tree, "session-state-" + session().key)), "just now");
   panel.source = "review"; panel.query = "Unrelated"; tree = panel.render(f.cx);
   assert(find(tree, "session-automated")); assert(!find(tree, `session-${session().key}`));
   panel.query = "no match"; assert.match(text(panel.render(f.cx)), /No sessions here/);
@@ -500,4 +501,44 @@ test("Screen picker action refuses a recycled terminal address and captures the 
   const menu=f.menu(); assert.equal(menu.items.find(item=>item.id==="screen-picker").disabled,false);
   f.running[0] = {...f.running[0],cwd:"/new"};
   assert.equal(menu.pickerTarget.cwd,"/original"); assert.equal(menu.pickerTarget.on,"server");
+});
+
+test("Sessions keeps tools in a context-checked menu, clears individual filters and shares the compact density", async () => {
+  const context = { focus: { cwd: "/fixture/project" } }, f = harness({ role: "sessions", context }), panel = f.panel(); await f.finish();
+  let tree = panel.render(f.cx);
+  assert(find(tree, "sessions-toolbar")); assert(!find(tree, "sessions-workspace-tools")); assert(!find(tree, "sessions-filters"));
+  for (const id of ["notes", "commands", "prompts", "inbox", "trash", "services", "presets", "lineage", "tools"]) assert(find(tree, "sessions-" + id));
+  const popover = find(tree, "sessions-more-actions-popover"); popover.events["on_open_change:"](true, f.cx);
+  context.focus = { cwd: "/changed-project" };
+  find(panel.render(f.cx), "sessions-notes").events["on_click:"]({}, f.cx);
+  assert.equal(f.overlays.length, 0); assert.match(panel.error, /project changed/); assert.equal(panel.panelMenu, null);
+  context.focus = { cwd: "/fixture/project" }; panel.provider = "claude"; panel.source = "main"; panel.query = "Original";
+  tree = panel.render(f.cx);
+  find(tree, "sessions-agent-filter-clear").events["on_click:"]({}, f.cx);
+  assert.equal(panel.provider, "all"); assert.equal(panel.source, "main"); assert.equal(panel.query, "Original");
+  find(panel.render(f.cx), "sessions-source-filter-clear").events["on_click:"]({}, f.cx);
+  assert.equal(panel.source, "all");
+  f.state["project-spaces.density.v1"] = "compact"; tree = panel.render(f.cx);
+  const row = panel.rows()[0], entity = find(tree, "session-" + row.key), slot = find(entity, "session-action-slot-" + row.key);
+  assert.equal(entity.attributes.h, 30); assert(!find(entity, "session-detail-" + row.key));
+  assert.equal(slot.attributes.w, 24); assert.equal(slot.attributes.h, 24);
+  f.state["project-spaces.density.v1"] = "detailed"; tree = panel.render(f.cx);
+  assert(find(tree, "session-detail-" + row.key)); assert.equal(find(tree, "session-action-slot-" + row.key).attributes.w, slot.attributes.w);
+  assert.deepEqual(f.launches, []); assert.deepEqual(f.calls.map(call => call.args[1]), ["scan"]);
+});
+
+test("captured session actions retain notes and prompt targets without following changed focus or a recycled terminal", async () => {
+  const f = harness({ role: "sessions" }), panel = f.panel(); await f.finish();
+  f.running.push({ address: "server/t8", state: "live", created_ms: 42, pid: 100, argv: ["claude", "--resume", id], cwd: "/remote/project", status: "working", title: "Captured remote agent" });
+  const row = panel.rows().find(row => row.address === "server/t8"); assert(row);
+  panel.actionsRow(row); const captured = f.overlays.at(-1).props; assert.equal(captured.promptTarget.address, "server/t8"); assert.equal(captured.promptTarget.created, 42);
+  const menu = new f.Actions(); menu.init({ ...captured, overlay: "captured-menu" }, f.cx);
+  captured.project.root = "/elsewhere"; captured.promptTarget.cwd = "/elsewhere"; f.running[0] = { ...f.running[0], cwd: "/changed", created_ms: 99 };
+  menu.choose(menu.items.findIndex(item => item.id === "notes"));
+  assert.deepEqual(f.overlays.at(-1).props.project, { root: "/remote/project", on: "server" }); assert.equal(f.overlays.at(-1).props.session.address, "server/t8");
+  menu.choose(menu.items.findIndex(item => item.id === "prompt-queue"));
+  assert.equal(f.overlays.at(-1).props.target.created, 42); assert.equal(f.overlays.at(-1).props.target.cwd, "/remote/project");
+  const recycled = new f.Actions(); recycled.init({ ...captured, overlay: "recycled-menu" }, f.cx);
+  assert.equal(recycled.items.find(item => item.id === "prompt-queue").disabled, true); assert.equal(recycled.items.find(item => item.id === "screen-picker").disabled, true);
+  assert.deepEqual(f.launches, []);
 });

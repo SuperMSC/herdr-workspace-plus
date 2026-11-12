@@ -143,7 +143,7 @@ async function changesHarness() {
     ...reviewModel,
     projectContext: () => ({ cwd: active, on: null }), closeButton: element, v_resizable: element, resizable_panel: element, fileIcon: element, div: element, svg: element, h_flex: element, v_flex: element, fileKey, fileTree, diffRows, splitRows, splitDisplay, inlineDisplay, diffCounts, treeFolders, splitHeader: () => null, createGitReader, READ,
     diffView: () => element().id("diff-preview"), theme: () => ({}), settings: () => ({}), window: () => ({ platform: "macos" }),
-    Input: { new: element }, InputState: { new: () => ({ on() {}, set_value() {}, release() {} }) }, VirtualListScrollHandle: { new: () => ({ scroll_to_item() {}, release() {} }) },
+    Popover: { new: element }, Input: { new: element }, InputState: { new: () => ({ on() {}, set_value() {}, release() {} }) }, VirtualListScrollHandle: { new: () => ({ scroll_to_item() {}, release() {} }) },
     spaces: () => [{ active: true, folder: active }], focused: () => ({}), panes: () => [], shared: () => change, setShared() {}, CHANGE_KEY: "changes", targetFor() {}, menuHeight: () => 200,
     openOverlay: spec => overlays.push(spec), watchFolder: () => new Promise(() => {}), readTextFile: async () => "",
     exec: async (_command, args, options) => { calls.push({ args, options }); return { code: 0, stdout: args.includes("--show-toplevel") ? `${options.cwd}\n` : "", stderr: "" }; },
@@ -237,4 +237,30 @@ test("a commit's whole diff keeps file and hunk lines and drops the per-file pre
   const shown = inlineDisplay(diffRows(lines));
   assert.equal(shown[0].kind, ""); assert.equal(shown[2].kind, "-");
   await assert.rejects(() => reader.commitDiff({ hash: "nope", parents: [] }), /Invalid commit/);
+});
+
+
+test("compact Changes menus retain every mode and repository tool at the captured source", async () => {
+  const f = await changesHarness(); f.view.init({ source: { cwd: "/repo/subdir", on: "remote-one" } }, f.cx); await f.drain();
+  f.view.root = "/repo"; f.view.on = "remote-one";
+  assert.deepEqual(f.view.headerItems("mode").map(item => item.id), ["git-changes-tab", "git-history-tab"]);
+  const items = f.view.headerItems("more");
+  assert.deepEqual(items.map(item => item.id), ["git-tree", "git-flat", "git-graph-open", "git-github-open", "git-header-review", "git-header-expand"]);
+  f.view.headerTarget = { key: f.view.contextKey(), root: f.view.root, on: f.view.on }; f.view.headerMenu = "more";
+  f.view.chooseHeader(items.find(item => item.id === "git-flat"), f.cx); assert.equal(f.view.listMode, "flat"); assert.equal(f.view.headerMenu, null);
+  const selected = f.view.headerItems("more").find(item => item.id === "git-github-open");
+  f.view.headerTarget = { key: f.view.contextKey(), root: f.view.root, on: f.view.on };
+  const previousWindow = globalThis.window; globalThis.window = { viewport_size: () => ({ width: 1200, height: 900 }) };
+  try { f.view.chooseHeader(selected, f.cx); } finally { if (previousWindow === undefined) delete globalThis.window; else globalThis.window = previousWindow; }
+  assert.equal(f.overlays.at(-1).props.role, "github"); assert.equal(f.overlays.at(-1).props.root, "/repo"); assert.equal(f.overlays.at(-1).props.on, "remote-one");
+});
+
+test("a delayed Changes menu cannot follow focus into another repository or act after close", async () => {
+  const f = await changesHarness(); f.view.init({ source: { cwd: "/first", on: null } }, f.cx); await f.drain();
+  f.view.root = "/first"; f.view.on = null;
+  const item = f.view.headerItems("more").find(item => item.id === "git-graph-open");
+  f.view.headerTarget = { key: f.view.contextKey(), root: f.view.root, on: f.view.on };
+  f.view.source = { cwd: "/second", on: null }; f.view.chooseHeader(item, f.cx);
+  assert.equal(f.overlays.length, 0); assert.match(f.view.note, /workspace changed/i);
+  f.view.source = { cwd: "/first", on: null }; f.view.close(); f.view.chooseHeader(item, f.cx); assert.equal(f.overlays.length, 0);
 });

@@ -67,13 +67,15 @@ function element() {
     return value => { object.attrs[key] = value; return proxy; };
   } }); return proxy;
 }
+function inputState() { return { text: "", events: {}, on(name, callback) { this.events[name] = callback; }, value() { return this.text; }, set_value(value) { this.text = value; }, release() {} }; }
+function popover(id) { const node = element().id(id); node.trigger = child => node.child(child); node.content = child => node.child(child); return node; }
 const nodes = node => !node || typeof node !== "object" ? [] : [node, ...node.childNodes.flatMap(nodes)];
 const find = (tree, id) => nodes(tree).find(node => node.attrs.id === id);
 function harness(persisted = {}) {
   let location = { cwd: "/project", on: null, space: "s" }, rendering = false;
   const tasks = [], timers = [], previews = [], opened = [], overlays = [], state = persisted;
   const cx = { notify() { assert.equal(rendering, false); }, stop_propagation() {}, focus_handle: () => ({ focus() {} }), timer: { after(_ms, fn) { timers.push(fn); }, every() {} }, spawn(fn) { tasks.push(fn(cx)); } };
-  const deps = { ...library, ...model, projectContext: () => ({ ...location }), openFileTab: value => opened.push(value), div: element, svg: element, h_flex: element, v_flex: element, fileIcon: element,
+  const deps = { ...library, ...model, InputState: { new: inputState }, Input: { new: element }, Popover: { new: popover }, projectContext: () => ({ ...location }), openFileTab: value => opened.push(value), div: element, svg: element, h_flex: element, v_flex: element, fileIcon: element,
     iconButton: (id, icon, label, fn) => element().id(id).on_click(fn),
     Preview: class { clear() {} close() {} refresh() {} open(root, path, on) { previews.push({ root, path, on }); } render() { return element().id("preview"); } },
     shared: key => state[key], setShared(key, value) { assert.equal(rendering, false); state[key] = value; },
@@ -196,4 +198,48 @@ test("in grouped Recent the fold button folds and unfolds every group", async ()
   assert.deepEqual([...f.browser.libraryFolded].sort(), ["a", "b"]);
   find(f.render(), "files-fold-all").events.on_click({}, f.cx);
   assert.equal(f.browser.libraryFolded.size, 0);
+});
+
+test("the local filter keeps loaded ancestors and file identities without expanding or reading folders", async () => {
+  const f = harness(); await f.flush(); f.browser.toggle("src", f.cx); await f.flush();
+  const folders = [...f.browser.folders], entries = [...f.browser.entries.keys()]; let reads = 0;
+  f.browser.loadFolder = async () => { reads++; throw new Error("Filtering must not read folders"); };
+  f.browser.filterInput.set_value("A.PY"); f.browser.filterInput.events.change({}, f.cx);
+  assert.deepEqual(f.browser.visibleEntries().map(entry => entry.path), ["src", "src/a.py"]);
+  const tree = f.render(); find(tree, "file-src/a.py").events.on_click({}, f.cx);
+  assert.deepEqual(f.opened, [{ root: "/project", path: "src/a.py", on: null }]);
+  assert.equal(reads, 0); assert.deepEqual([...f.browser.folders], folders); assert.deepEqual([...f.browser.entries.keys()], entries);
+  f.browser.filterInput.set_value(""); f.browser.filterInput.events.change({}, f.cx);
+  assert.deepEqual(f.browser.visibleEntries().map(entry => entry.path), ["src", "src/a.py", "src/b.py", "readme.md"]);
+  f.browser.filterInput.set_value("not-loaded.txt"); f.browser.filterInput.events.change({}, f.cx);
+  assert.equal(f.browser.visibleEntries().length, 0); assert.equal(reads, 0);
+});
+
+test("filtering grouped pins temporarily reveals matching descendants without changing stored folds", async () => {
+  const f = harness(); await f.flush(); f.browser.mode = "pinned";
+  f.browser.updateLibrary("pin", "src/a.py"); f.browser.updateLibrary("pin", "src/b.py");
+  f.state[library.LIBRARY_VIEW_KEY] = "tree"; f.browser.libraryFolded.add("src");
+  assert.deepEqual(f.browser.visibleEntries().map(entry => entry.path), ["src"]);
+  f.browser.filterInput.set_value("a.py"); f.browser.filterInput.events.change({}, f.cx);
+  assert.deepEqual(f.browser.visibleEntries().map(entry => entry.path), ["src", "src/a.py"]);
+  assert.deepEqual([...f.browser.libraryFolded], ["src"]);
+  f.browser.filterInput.set_value(""); f.browser.filterInput.events.change({}, f.cx);
+  assert.deepEqual(f.browser.visibleEntries().map(entry => entry.path), ["src"]);
+});
+
+test("the compact toolbar keeps keyboard mode changes, exact remote context and full project search", async () => {
+  const f = harness(); await f.flush(); let tree = f.render();
+  assert(!find(tree, "files-modes")); assert(find(tree, "files-mode-picker")); assert(find(tree, "files-local-filter"));
+  find(tree, "files-mode-popover").events.on_open_change(true, f.cx);
+  tree = f.render(); const popup = find(tree, "files-view-menu");
+  popup.events.on_key_down({ key: "ArrowDown" }, f.cx); popup.events.on_key_down({ key: "Enter" }, f.cx);
+  assert.equal(f.browser.mode, "recent"); assert.equal(f.browser.modeOpen, false);
+  f.browser.filterInput.set_value("before-switch"); f.browser.filterInput.events.change({}, f.cx);
+  f.switchTo({ cwd: "/remote-project", on: "server", space: "remote" }); f.render(); await f.flush(); tree = f.render();
+  assert.equal(f.browser.filterQuery, ""); assert.equal(find(tree, "crumb-").attrs.tooltip, "server:/remote-project");
+  find(tree, "files-search").events.on_click({}, f.cx);
+  assert.deepEqual(f.overlays.at(-1).props, { role: "search", root: "/remote-project", on: "server" });
+  f.browser.mode = "tree"; const entry = f.browser.visibleEntries()[0];
+  assert.equal(f.browser.row(entry, {}).attrs.h, 28);
+  f.state["project-spaces.density.v1"] = "compact"; f.render(); assert.equal(f.browser.row(entry, {}).attrs.h, 26);
 });

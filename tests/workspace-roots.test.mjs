@@ -151,3 +151,17 @@ test("replacing eight folded roots does not strand new folders behind obsolete f
   assert.deepEqual([...view.folded()], [model.rootKey("/new-a", null)]);
   assert.equal(state[model.WORKSPACE_FOLDS_KEY][model.workspaceKey(context)].length, 1);
 });
+
+test("one local filter keeps same-name files distinct in every captured workspace root", () => {
+  const context = { cwd: "/first", on: "server", space: "remote/s1" }, roots = [{ path: "/first", name: "First" }, { path: "/second", name: "Second" }], opened = [];
+  const state = { [model.WORKSPACES_KEY]: model.saveWorkspace(null, context, roots) };
+  const deps = { ...model, ...browserModel, ...library, projectContext: () => context, shared: key => state[key], setShared: (key, value) => { state[key] = value; },
+    div: element, svg: element, h_flex: element, v_flex: element, fileIcon: element, iconButton: (id, _glyph, _label, action) => element().id(id).on_click(action), openFileTab: value => opened.push(value), theme: () => ({}), window: () => ({ platform: "macos" }), settings: () => ({}), openOverlay() {}, exec() { throw new Error("Filtering must not read files"); } };
+  const Browser = load("browser", deps), Workspace = load("workspace-browser", { ...deps, Browser }), view = new Workspace();
+  view.p = { source: context }; view.context = context; view.roots = roots;
+  view.children = new Map(roots.map(root => { const browser = new Browser(); Object.assign(browser, { source: { cwd: root.path, on: "server" }, root: root.path, on: "server", mode: "tree", browseFolder: "", entries: new Map([["", [{ name: "same.js", dir: false }, { name: "other.js", dir: false }]]]), folders: new Set(), marks: {}, handle: { focus() {} } }); return [model.rootKey(root.path, "server"), browser]; }));
+  view.main = view.children.values().next().value; view.main.filterQuery = "same";
+  const tree = view.navigation({}); assert(find(tree, "workspace-0-same.js")); assert(find(tree, "workspace-1-same.js")); assert(!find(tree, "workspace-0-other.js")); assert(!find(tree, "workspace-1-other.js"));
+  find(tree, "workspace-1-same.js").events.on_click({}, { notify() {}, stop_propagation() {} });
+  assert.deepEqual(opened, [{ root: "/second", path: "same.js", on: "server" }]);
+});

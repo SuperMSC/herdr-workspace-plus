@@ -13,7 +13,7 @@ export function fileIcon(path, directory = false, open = false) {
 
 export function iconButton(id, icon, label, click, t, active = false, disabled = false) {
   return div().id(id).w(24).h(24).p(0).flex_none().flex().items_center().justify_center().rounded(4)
-    .text_color(active ? t.accent : t.muted).bg(active ? t.selected : t.background).disabled(disabled)
+    .text_color(active ? t.accent : t.muted).when(active, el => el.bg(t.selected)).disabled(disabled)
     .tooltip(label).accessibility_label(label).when(disabled, el => el.opacity(0.4).cursor_default())
     .when(!disabled, el => el.cursor_pointer().hover(s => s.bg(t.hover)))
     .on_click((e, cx) => { cx.stop_propagation(); if (!disabled) click(e, cx); })

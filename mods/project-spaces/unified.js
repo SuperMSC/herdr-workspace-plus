@@ -1,13 +1,13 @@
 import { div, svg, image } from "gpui-kit";
-import { h_flex, v_flex, Input } from "gpui-base";
+import { h_flex, v_flex, Input, Popover } from "gpui-base";
 import { agents, terminals, spaces, panes, focused, theme, run, shared, setShared, setAgentOrder } from "herdr";
-import { DENSITY_KEY, SIDEBAR_COLUMNS } from "./model.js";
+import { SIDEBAR_COLUMNS } from "./model.js";
 import { DIRECTORY_PINS_KEY, normalizeDirectoryPins, setDirectoryPin } from "./directory-pins.js";
 import { unifiedRows, validateUnifiedTarget } from "./unified-model.js";
 const chrome = name => `mods/workspace-chrome/${name}.svg`;
 const label = (value, limit = 500) => String(value ?? "").replace(/[\x00-\x1f\x7f]/g, " ").slice(0, limit);
 const TREE_STEP = 20;
-const CONTROL = { height: 24, radius: 4, glyph: 14, segmentHeight: 22, segmentRadius: 5, textWidth: 64 };
+const CONTROL = { height: 24, radius: 4, glyph: 14 };
 const treeDepth = row => Math.min(4, Math.max(0, Number.isFinite(row.displayDepth) ? row.displayDepth : row.depth || 0));
 const statusName = status => ({ blocked: "Needs you", done: "Done", working: "Working", idle: "Idle" }[status] || "Unknown");
 
@@ -147,8 +147,9 @@ export default class UnifiedSidebar {
     const childStatus = ["blocked", "done", "working", "idle"].includes(row.branchStatus) && row.branchStatus !== row.status ? "Child activity: " + statusName(row.branchStatus) : "";
     const contextDetails = [localMetadata, childStatus].filter(Boolean).join(" · ");
     const statusColor = disabled || row.status === "idle" ? t.dim : t[row.status] || t.accent;
-    const hasDetails = detailed && Boolean(contextDetails || knownStatus), showAgentPin = agent && (row.pinned || this.hovered === row.id);
-    const hasColumns = agent || row.kind === "space" || knownStatus || Boolean(directoryPin);
+    const hasDetails = detailed && Boolean(contextDetails), showAgentPin = agent && (row.pinned || this.hovered === row.id);
+    const showStatus = knownStatus && !["space", "group"].includes(row.kind), pinWidth = agent || row.kind === "space" || directoryPin ? SIDEBAR_COLUMNS.pin : 0;
+    const statusWidth = showStatus ? detailed ? 72 : 13 : 0, actionWidth = pinWidth + (pinWidth && statusWidth ? SIDEBAR_COLUMNS.gap : 0) + statusWidth;
     const fullDetails = [this.metadata(row, true), ownStatus, row.branchStatus && row.branchStatus !== row.status ? "Child activity: " + statusName(row.branchStatus) : ""].filter(Boolean).join(" · ");
     const tooltip = [completeTask, fullDetails, row.parentId ? "Parent: " + label(row.parentId, 256) : "", target?.address, target?.reason].filter(Boolean).join("\n");
     const folding = div().id("unified-fold-" + row.id).w(18).h(16).flex_none().rounded(4).flex().items_center().justify_center().text_color(t.dim)
@@ -158,15 +159,16 @@ export default class UnifiedSidebar {
     if (row.kind === "space") icon = svg(chrome("folder")).id("unified-directory-icon-" + row.id).size(14).text_color(t.muted || t.dim);
     if (program?.icon) icon = program.tint ? svg(program.icon).size(14).flex_none().text_color(t.foreground) : image(program.icon).size(14).flex_none();
     const statusGlyph = row.status === "working" ? svg(chrome("spinner")).size(11).text_color(t.working).spin(900) : div().size(row.status === "blocked" ? 8 : 7).rounded(4).bg(row.status === "idle" ? "#00000000" : t[row.status] || t.dim).when(row.status === "idle", el => el.border_1().border_color(t.idle || t.dim));
-    const statusControl = knownStatus ? div().id("unified-status-" + row.id).size(13).flex().items_center().justify_center().tooltip(ownStatus).child(statusGlyph) : null;
+    const statusControl = showStatus ? h_flex().id("unified-status-" + row.id).h(19).gap(4).items_center().justify_end().tooltip(ownStatus)
+      .child(div().size(13).flex_none().flex().items_center().justify_center().child(statusGlyph))
+      .when(detailed, el => el.child(div().id("unified-status-text-" + row.id).flex_none().text_size(10.5).font_medium().text_color(statusColor).child(ownStatus))) : null;
     const pinControl = !agent ? directoryPin : showAgentPin ? div().id("unified-pin-" + row.id).size(19).flex_none().rounded(4).flex().items_center().justify_center().text_color(row.pinned ? t.accent : t.dim).tooltip(row.pinned ? "Unpin agent" : "Pin agent")
-      .cursor_pointer().hover(el => el.bg(t.hover)).on_click((_event, cx) => { cx.stop_propagation(); this.pin(row, cx); }).child(svg(chrome(row.pinned ? "pin-off" : "pin")).size(12)) : null;
-    const actions = h_flex().id("unified-actions-" + row.id).w(hasColumns ? SIDEBAR_COLUMNS.width : 0).flex_none().gap(SIDEBAR_COLUMNS.gap).items_center().when(detailed, el => el.items_start())
-      .when(hasColumns, el => el.child(div().id((agent ? "unified-agent-pin-slot-" : "unified-directory-pin-slot-") + row.id).size(SIDEBAR_COLUMNS.pin).flex_none().when(Boolean(pinControl), el => el.child(pinControl))))
-      .when(hasColumns, el => el.child(div().id("unified-status-slot-" + row.id).w(SIDEBAR_COLUMNS.summary).h(13).flex_none().flex().items_center().justify_end().when(Boolean(statusControl), el => el.child(statusControl))));
-    const metadataLine = hasDetails ? h_flex().id("unified-meta-" + row.id).absolute().left(53 + depth * TREE_STEP).right(SIDEBAR_COLUMNS.inset).bottom(3).min_w(0).overflow_hidden().h(13).gap(5).items_center().justify_end().text_size(10.5).line_height("13px").tooltip(fullDetails)
-      .when(Boolean(contextDetails), el => el.child(div().id("unified-context-" + row.id).flex_1().min_w(0).truncate().text_color(t.dim).child(contextDetails)))
-      .when(knownStatus, el => el.child(div().id("unified-status-text-" + row.id).flex_none().font_medium().text_color(statusColor).child(ownStatus))) : null;
+      .cursor_pointer().hover(el => el.bg(t.hover)).on_mouse_down("left", (_event, cx) => cx.stop_propagation()).on_mouse_up("left", (_event, cx) => cx.stop_propagation())
+      .on_click((_event, cx) => { cx.stop_propagation(); this.pin(row, cx); }).child(svg(chrome(row.pinned ? "pin-off" : "pin")).size(12)) : null;
+    const actions = h_flex().id("unified-actions-" + row.id).w(actionWidth).h(19).flex_none().gap(SIDEBAR_COLUMNS.gap).items_center()
+      .when(pinWidth > 0, el => el.child(div().id((agent ? "unified-agent-pin-slot-" : "unified-directory-pin-slot-") + row.id).size(pinWidth).flex_none().when(Boolean(pinControl), el => el.child(pinControl))))
+      .when(statusWidth > 0, el => el.child(div().id("unified-status-slot-" + row.id).w(statusWidth).h(19).flex_none().flex().items_center().justify_end().child(statusControl)));
+    const metadataLine = hasDetails ? div().id("unified-meta-" + row.id).min_w(0).truncate().h(13).text_size(10.5).line_height("13px").text_color(t.dim).tooltip(fullDetails).child(contextDetails) : null;
     const body = h_flex().id("unified-entity-" + row.id).relative().min_w(0).min_h(detailed ? 26 : 28).py(detailed ? 3 : 0).when(!detailed, el => el.h(28)).flex_none().pl(4 + depth * TREE_STEP).pr(SIDEBAR_COLUMNS.inset).gap(5).items_start().when(!detailed, el => el.items_center()).rounded(7).tooltip(tooltip)
       .bg(row.focused ? t.selected : "#00000000").text_color(disabled ? t.dim : t.foreground).when(row.kind === "space", el => el.rounded(4)).cursor_pointer().hover(el => el.bg(row.focused ? t.selected : t.hover))
       .on_click((_event, cx) => this.navigate(row, cx))
@@ -174,9 +176,8 @@ export default class UnifiedSidebar {
       .children(this.guides(row, t)).child(folding).child(div().id("unified-icon-" + row.id).w(18).h(16).mr(3).flex_none().flex().items_center().justify_center().child(icon))
       .child(v_flex().flex_1().min_w(0).gap(2)
         .child(div().id("unified-task-" + row.id).min_w(0).text_size(12).font_weight(400).when(row.kind === "space", el => el.font_semibold().text_size(12.5)).when(detailed, el => el.max_h(32).overflow_hidden().whitespace_normal().line_height("16px")).when(!detailed, el => el.truncate()).child(task))
-        .when(hasDetails, el => el.child(div().id("unified-meta-slot-" + row.id).h(13).flex_none())))
-      .child(actions)
-      .when(Boolean(metadataLine), el => el.child(metadataLine));
+        .when(Boolean(metadataLine), el => el.child(metadataLine)))
+      .child(actions);
     return body;
   }
   projectGap(row, index) {
@@ -209,9 +210,9 @@ export default class UnifiedSidebar {
       .child(div().w(18).h(18).flex_none().flex().items_center().justify_center().when(Boolean(row.foldable), el => el.child(svg(chrome(row.folded ? "chevron-right" : "chevron-down")).size(10))))
       .child(div().w(18).h(18).mr(3).flex_none().flex().items_center().justify_center().child(svg(chrome("folder")).size(15)))
       .child(div().flex_1().min_w(0).truncate().text_size(12.5).font_semibold().child(row.title || row.name || "Workspaces"))
-      .child(h_flex().w(SIDEBAR_COLUMNS.width).flex_none().gap(SIDEBAR_COLUMNS.gap).items_center()
+      .child(h_flex().w(SIDEBAR_COLUMNS.pin * 2 + SIDEBAR_COLUMNS.gap).flex_none().gap(SIDEBAR_COLUMNS.gap).items_center()
         .child(div().size(SIDEBAR_COLUMNS.pin).flex_none().when(Boolean(pin), el => el.child(pin)))
-        .child(div().w(SIDEBAR_COLUMNS.summary).flex_none().text_right().text_size(11).text_color(t.dim).child(String(row.count ?? row.childCount ?? ""))));
+        .child(div().w(SIDEBAR_COLUMNS.pin).min_w(0).flex_none().truncate().text_right().text_size(11).text_color(t.dim).tooltip(String(row.count ?? row.childCount ?? "")).child(String(row.count ?? row.childCount ?? ""))));
     return this.entityRow(row, index, frame, cx, pin)
       .when(row.kind === "space", el => el.mt(spacing))
       .when(row.kind === "space" && Boolean(row.sourceSpace?.auto) && canonical.spaces.has(row.spaceId), el => el.on_mouse_down("right", (_event, cx) => { cx.stop_propagation(); owner.spaceMenu(row.sourceSpace); }));
@@ -221,31 +222,53 @@ export default class UnifiedSidebar {
     const result = this.result || { rows: [], agentOrder: [], pages: 1 }, rows = result.rows || [], t = theme(), st = frame.state || {}, collapsed = frame.collapsed, view = st.mode === "status" ? "status" : "project";
     if (this.result) setAgentOrder(result.agentOrder || []);
     const canonical = { groups: new Set((owner.lastGroups || []).map(group => group.key)), spaces: new Set((owner.lastRows || []).map(row => row.w?.id)) };
-    const normalButton = (id, text, action, selected = false, disabled = false) => div().id(id).h(CONTROL.height).min_w(CONTROL.textWidth).px(8).py(0).flex_none().rounded(CONTROL.radius).text_size(11.5).line_height("16px").flex().items_center().justify_center().when(selected, el => el.bg(t.selected)).text_color(disabled ? t.dim : selected ? t.accent : t.muted).disabled(disabled)
-      .when(disabled, el => el.opacity(0.4).cursor_default()).when(!disabled, el => el.cursor_pointer().hover(el => el.bg(t.hover).text_color(t.foreground))).on_click((_event, cx) => { cx.stop_propagation(); if (!disabled) action(cx); }).child(text);
-    const iconButton = (id, icon, title, action, disabled = false) => normalButton(id, svg(icon).size(CONTROL.glyph).flex_none(), action, false, disabled).w(CONTROL.height).min_w(CONTROL.height).p(0).text_color(t.muted).tooltip(title).accessibility_label(title);
-    const textSegment = (id, text, action, selected) => div().id(id).h(CONTROL.segmentHeight).min_w(CONTROL.textWidth).px(8).py(0).flex_none().flex().items_center().justify_center().rounded(CONTROL.segmentRadius).text_size(11.5).line_height("16px").cursor_pointer().text_color(selected ? t.foreground : t.dim)
-      .tooltip(text).accessibility_label(text).when(selected, el => el.bg(t.selected)).when(!selected, el => el.hover(el => el.bg(t.hover).text_color(t.muted))).on_click((_event, cx) => { cx.stop_propagation(); action(cx); }).child(text);
-    const segments = id => h_flex().id(id).flex_none().p(2).gap(1).rounded(7).border_1().border_color(t.border);
+    const normalButton = (id, text, action, disabled = false) => div().id(id).h(CONTROL.height).px(5).py(0).flex_none().rounded(CONTROL.radius).text_size(11.5).line_height("16px").flex().gap(4).items_center().justify_center().text_color(disabled ? t.dim : t.muted).disabled(disabled)
+      .when(disabled, el => el.opacity(0.4).cursor_default()).when(!disabled, el => el.cursor_pointer().hover(el => el.bg(t.hover).text_color(t.foreground)))
+      .when(Boolean(action), el => el.on_click((_event, cx) => { cx.stop_propagation(); if (!disabled) action(cx); })).child(text);
+    const iconButton = (id, icon, title, action, disabled = false) => normalButton(id, svg(icon).size(CONTROL.glyph).flex_none(), action, disabled).w(CONTROL.height).min_w(CONTROL.height).p(0).text_color(t.muted).tooltip(title).accessibility_label(title);
     const changeView = (mode, cx) => { owner.save({ ...owner.state(), mode }); this.page = 0; this.cacheKey = null; cx.notify(); };
+    const changeFilter = (filter, cx) => { owner.projectFilter = filter; this.page = 0; this.cacheKey = null; cx.notify(); };
+    const dropdown = (id, trigger, options, current, choose) => {
+      const pick = (key, cx) => { this.toolbarMenu = null; choose(key, cx); };
+      const menu = v_flex().id(id + "-items").w(184).p(5).gap(1).rounded(6).border_1().border_color(t.border).bg(t.popover || t.surface).text_size(12).text_color(t.foreground)
+        .on_key_down((event, cx) => {
+          const key = String(event.key || "").toLowerCase();
+          if (["up", "arrowup", "down", "arrowdown"].includes(key)) this.toolbarIndex = ((this.toolbarIndex || 0) + (key === "up" || key === "arrowup" ? -1 : 1) + options.length) % options.length;
+          else if (key === "enter") { cx.stop_propagation(); pick(options[this.toolbarIndex || 0][0], cx); return; }
+          else if (key === "escape") this.toolbarMenu = null;
+          else return;
+          cx.stop_propagation(); cx.notify();
+        })
+        .children(options.map(([key, title], index) => h_flex().id(id + "-" + key).h(29).px(7).gap(7).items_center().rounded(4).cursor_pointer().when(this.toolbarMenu === id && this.toolbarIndex === index, el => el.bg(t.selected)).hover(el => el.bg(t.hover))
+          .on_click((_event, cx) => { cx.stop_propagation(); pick(key, cx); })
+          .child(div().size(13).flex_none().when(key === current, el => el.child(svg(chrome("check")).size(13).text_color(t.accent))))
+          .child(div().flex_1().child(title))));
+      return Popover.new(id).open(this.toolbarMenu === id).anchor("top_left")
+        .on_open_change((open, cx) => {
+          if (open) { this.toolbarMenu = id; this.toolbarIndex = Math.max(0, options.findIndex(([key]) => key === current)); }
+          else if (this.toolbarMenu === id) this.toolbarMenu = null;
+          cx.notify();
+        }).trigger(trigger).content(menu);
+    };
+    const viewControl = normalButton("unified-view", div().child(view === "status" ? "Status" : "Projects"), null).accessibility_label("Workspace view").child(svg(chrome("chevron-down")).size(10));
+    const filterControl = normalButton("unified-filter", div().child("Filter"), null).accessibility_label("Filter workspaces and tasks").when(frame.filter !== "all", el => el.text_color(t.accent)).child(svg(chrome("chevron-down")).size(10));
     const allMode = this.foldMode === "collapse" ? "expand" : "collapse";
     const body = collapsed ? rows.filter(row => row.target).map((row, index) => h_flex().id(`unified-rail-${row.id}`).h(28).flex_none().px(4).gap(4).justify_center().items_center().rounded(5).cursor_pointer().hover(el => el.bg(t.hover)).tooltip([row.title, this.metadata(row, true)].filter(Boolean).join("\n"))
       .on_click((_event, cx) => this.navigate(row, cx)).child(div().text_size(10).child(String(index + 1))).child(div().size(6).rounded(3).bg(t[row.status] || t.dim))) : rows.map((row, index) => this.draw(row, index, frame, owner, cx, canonical));
     return v_flex().id("unified-sidebar").size_full().min_h(0).min_w(0).bg(t.chrome).text_color(t.foreground).text_size(12).track_focus(this.handle)
-      .child(h_flex().w_full().min_w(0).h(32).flex_none().pl(collapsed ? 3 : 11).pr(6).gap(4).items_center()
-        .when(!collapsed, el => el.child(div().flex_1().min_w(0).truncate().text_size(11.5).text_color(t.dim).child("Workspace")).child(normalButton("unified-density", frame.density === "compact" ? "Compact" : "Details", cx => { setShared(DENSITY_KEY, frame.density === "compact" ? "detailed" : "compact"); cx.notify(); }).w(64)))
-        .child(iconButton("unified-new-space", chrome("plus"), "New space", () => run("space.new"))))
-      .when(!collapsed, el => el.child(v_flex().flex_none().px(7).gap(5).pb(7)
-        .child(h_flex().w_full().min_w(0).gap(4).items_center()
-          .child(segments("unified-view-segments")
-            .child(textSegment("unified-view-project", "Projects", cx => changeView("project", cx), view === "project"))
-            .child(textSegment("unified-view-status", "Status", cx => changeView("status", cx), view === "status")))
+      .when(collapsed, el => el.child(h_flex().h(32).pl(3).pr(6).items_center().child(iconButton("unified-new-space", chrome("plus"), "New space", () => run("space.new")))))
+      .when(!collapsed, el => el.child(v_flex().id("unified-controls").flex_none().px(7).pt(8).pb(5).gap(4)
+        .child(div().id("unified-search").h(28).min_w(0).flex_none().px(7).bg(t.surface).border_1().border_color(t.input).rounded(6).child(Input.new(owner.queryInput).w_full().h_full()))
+        .child(h_flex().id("unified-toolbar").w_full().min_w(0).h(28).gap(3).items_center()
+          .child(dropdown("unified-view-menu", viewControl, [["project", "Projects"], ["status", "Status"]], view, changeView))
           .child(div().flex_1())
+          .child(dropdown("unified-filter-menu", filterControl, [["all", "All"], ["active", "Active"], ["attention", "Needs attention"]], frame.filter, changeFilter))
           .child(iconButton("unified-toggle-all", `mods/files-plus/icons/${allMode}-all.svg`, allMode === "expand" ? "Expand all" : "Collapse all", cx => this.foldAll(this.foldMode === "collapse" ? "expand" : "collapse", cx)))
+          .child(iconButton("unified-new-space", chrome("plus"), "New space", () => run("space.new")))
           .child(iconButton("unified-settings", "mods/files-plus/icons/more.svg", "Workspace actions", () => owner.viewMenu())))
-        .child(Input.new(owner.queryInput).h(28).px(7).bg(t.surface).border_1().border_color(t.input).rounded(6))
-        .child(segments("unified-filter-segments").children([["all", "All"], ["active", "Active"], ["attention", "Needs attention"]].map(([key, title]) => textSegment(`unified-filter-${key}`, title, cx => { owner.projectFilter = key; this.page = 0; this.cacheKey = null; cx.notify(); }, frame.filter === key)))
-      )))
+        .when(frame.filter !== "all", el => el.child(h_flex().id("unified-filter-chip").min_w(0).h(22).px(5).gap(4).items_center().text_size(10.5).text_color(t.accent)
+          .child(div().truncate().child(frame.filter === "active" ? "Active" : "Needs attention"))
+          .child(iconButton("unified-clear-filter", chrome("x"), "Clear filter", cx => changeFilter("all", cx)))))))
       .child(v_flex().id("unified-sidebar-rows").flex_1().min_h(0).px(collapsed ? 3 : 6).gap(2).overflow_y_scrollbar()
         .on_mouse_up("left", (_event, cx) => { if (owner.drag) { owner.drag = owner.over = null; cx.notify(); } }).children(body)
         .when(!rows.length, el => el.child(div().px(8).py(12).text_size(11).text_color(t.dim).child(this.result ? "No matching workspaces or agents" : "Preparing workspace…"))))

@@ -74,19 +74,19 @@ export default class WorkspaceBrowser {
     setShared(WORKSPACE_FOLDS_KEY, current); this.applyPaused(cx); this.applied = this.signature(); cx.notify();
   }
   navigation(t) {
-    const folded = this.folded(); let remaining = 5000;
+    const folded = this.folded(), rowHeight = shared("project-spaces.density.v1") === "compact" ? 26 : 28; let remaining = 5000;
     return v_flex().id("workspace-navigation").flex_1().min_h(0).min_w(0).overflow_y_scrollbar().px(6).py(4).children(this.roots.map((root, index) => {
       const key = rootKey(root.path, this.context.on), browser = this.children.get(key), closed = folded.has(key);
-      browser.mode = this.main.mode;
+      browser.mode = this.main.mode; browser.filterQuery = this.main.filterQuery || ""; browser.rowHeight = rowHeight;
       const entries = closed ? [] : browser.visibleEntries(), visible = entries.slice(0, remaining); remaining -= visible.length;
       return v_flex().id(`workspace-root-tree-${index}`).flex_none().min_w(0)
-        .child(h_flex().id(`workspace-root-${index}`).h(30).flex_none().gap(6).px(5).items_center().rounded(5).bg(t.raised).cursor_pointer()
+        .child(h_flex().id(`workspace-root-${index}`).h(rowHeight).flex_none().gap(6).px(5).items_center().rounded(4).hover(el => el.bg(t.hover)).cursor_pointer()
           .on_click((_e, cx) => this.toggle(key, cx)).on_mouse_down("right", (_e, cx) => browser.menu("", true, cx, true))
           .child(svg(`mods/files-plus/chevron-${closed ? "right" : "down"}.svg`).size(10).text_color(t.dim)).child(fileIcon(root.path, true, !closed))
           .child(div().flex_1().min_w(0).truncate().font_semibold().tooltip(`${this.context.on ? this.context.on + ":" : ""}${root.path}`).child(root.name))
           .child(iconButton(`workspace-root-search-${index}`, "search", "Search this folder", (_e, cx) => Browser.prototype.search.call({ ...browser, onWorkspaceSearch: null }, cx), t)))
         .when(!closed, el => el.when(browser.mode !== "tree", child => child.child(browser.libraryHeader(t, entries.length, `workspace-${index}-`))).children(visible.map(entry => browser.row(entry, t, `workspace-${index}`)))
-          .when(!visible.length, child => child.child(div().px(10).py(6).text_color(t.dim).text_size(11).child(browser.error || (browser.loading ? "Loading files…" : browser.mode === "tree" ? "No files" : "No saved files in this folder"))))
+          .when(!visible.length, child => child.child(div().px(10).py(6).text_color(t.dim).text_size(11).child(browser.error || (browser.loading ? "Loading files…" : browser.filterQuery?.trim() ? "No matching files in this folder." : browser.mode === "tree" ? "No files" : "No saved files in this folder"))))
           .when(visible.length < entries.length || browser.limited, child => child.child(div().px(10).py(5).text_color(t.dim).text_size(10.5).child("Workspace display limit reached; use Search to find more files."))));
     }));
   }
