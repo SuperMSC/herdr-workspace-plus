@@ -1,0 +1,44 @@
+{
+  "theme": "workspace-frosted",
+  "surface": "neutral-black",
+  "visibleDesktopTransparency": false,
+  "blur": false,
+  "checks": [
+    {
+      "mod": "files-plus",
+      "passed": true
+    },
+    {
+      "mod": "sessions-plus",
+      "passed": true
+    },
+    {
+      "mod": "project-spaces",
+      "passed": true
+    },
+    {
+      "mod": "agents-plus",
+      "passed": true
+    }
+  ],
+  "errors": [],
+  "tests": {
+    "passed": 798,
+    "failed": 0
+  },
+  "terminal": {
+    "cursor": "#dfc18d",
+    "border": "#dfc18d26",
+    "focus": "#dfc18d66",
+    "source": "working",
+    "layoutTokensApplied": true
+  },
+  "nativeMenuInteraction": "not completed: UI automation timed out",
+  "menuRegressionTests": 7,
+  "layoutPreservedExceptThemeAndPaneBorderColors": true,
+  "runtimeSourcesMatched": 208,
+  "version": "0.12.3",
+  "status": "released",
+  "baseVersion": "0.12.2",
+  "date": "2026-11-12"
+}

@@ -5,6 +5,7 @@ import { div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { run, closeOverlay, openOverlay, theme, shared, setShared, spaces } from "herdr";
 import { STATE_KEY, DENSITY_KEY, DENSITIES, projectDensity, MODES, SORTS, PALETTE, MARK, normalizeState, assignSpace, setGroupColor, stepGroup, ungroup, foldAll } from "./model.js";
+import { beginMenuTooltip, endMenuTooltip } from "./menu-tooltip.js";
 import { DIRECTORY_PINS_KEY, normalizeDirectoryPins, setDirectoryPin } from "./directory-pins.js";
 
 export const MOD = "project-spaces";
@@ -32,8 +33,17 @@ export function openPrompt(props) {
 }
 
 /** Open a menu role at the pointer, sized to its rows. */
-export function openMenu(role, props, rows) {
-  openOverlay({ mod: MOD, kind: "popup", width: 220, height: Math.min(460, 14 + rows * 31), props: { role, ...props } });
+export function openMenu(role, props, rows, tooltipScope = null) {
+  const tooltipToken = tooltipScope ? beginMenuTooltip(tooltipScope) : null;
+  try {
+    const overlay = openOverlay({ mod: MOD, kind: "popup", width: 220, height: Math.min(460, 14 + rows * 31),
+      props: { role, ...props, ...(tooltipToken ? { tooltipScope, tooltipToken } : {}) } });
+    if (typeof overlay !== "string" || !overlay) throw new Error("The workspace menu could not be opened.");
+    return overlay;
+  } catch (error) {
+    if (tooltipToken) endMenuTooltip(tooltipScope, tooltipToken);
+    throw error;
+  }
 }
 
 function spaceItems(p) {
@@ -118,9 +128,28 @@ export function menuRows(role, p) {
 export class Menu {
   init(p, cx) {
     this.p = p;
-    this.handle = cx.focus_handle();
-    this.handle.focus();
-    this.at = this.items().findIndex(it => it.act && !it.disabled);
+    try {
+      this.handle = cx.focus_handle();
+      this.handle.focus();
+      this.at = this.items().findIndex(it => it.act && !it.disabled);
+    } catch (error) {
+      this.releaseTooltip();
+      throw error;
+    }
+  }
+
+  releaseTooltip() {
+    if (this.p?.tooltipScope && this.p?.tooltipToken) endMenuTooltip(this.p.tooltipScope, this.p.tooltipToken);
+  }
+
+  close() {
+    try { this.handle?.release?.(); }
+    finally { this.releaseTooltip(); }
+  }
+
+  dismiss() {
+    try { closeOverlay(this.p.overlay); }
+    catch (error) { this.releaseTooltip(); throw error; }
   }
 
   items() {
@@ -129,7 +158,7 @@ export class Menu {
 
   choose(i, cx, it = this.items()[i]) {
     if (!it?.act || it.disabled) return;
-    if (!it.keep) closeOverlay(this.p.overlay);
+    if (!it.keep) this.dismiss();
     it.act();
     cx?.notify();
   }
@@ -153,6 +182,11 @@ export class Menu {
   }
 
   render() {
+    try { return this.content(); }
+    catch (error) { this.releaseTooltip(); throw error; }
+  }
+
+  content() {
     const t = theme();
     const list = this.items();
     // A popup is as tall as its content: no flex_1 or scroll wrapper, or it measures 0.
@@ -161,7 +195,7 @@ export class Menu {
         if (e.key === "down") this.step(list, 1);
         else if (e.key === "up") this.step(list, -1);
         else if (e.key === "enter") this.choose(this.at, cx, list[this.at]);
-        else if (e.key === "escape") closeOverlay(this.p.overlay);
+        else if (e.key === "escape") this.dismiss();
         else return;
         cx.stop_propagation();
         cx.notify();

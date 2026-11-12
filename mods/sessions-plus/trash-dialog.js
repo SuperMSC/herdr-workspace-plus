@@ -86,9 +86,9 @@ export default class TrashDialog {
 
     const button = (id, text, primary, callback) => h_flex().id(id).h(32).px(14).gap(8).items_center().rounded(8).text_size(13)
       .font_medium().border_1().cursor_pointer().hover(s => s.opacity(0.88)).when(this.busy, el => el.opacity(0.5))
-      .border_color(primary ? (trash ? t.blocked : t.solid) : t.input)
-      .bg(primary ? (trash ? t.blocked : t.solid) : t.raised)
-      .text_color(primary ? (trash ? "#ffffff" : t.solid_foreground) : t.foreground)
+      .border_color(primary ? (trash ? (t.danger || t.blocked) : t.solid) : t.input)
+      .bg(primary ? (trash ? (t.danger || t.blocked) : t.solid) : t.raised)
+      .text_color(primary ? (trash ? (t.danger_foreground || "#ffffff") : t.solid_foreground) : t.foreground)
       .on_click(callback).child(text)
       .when(primary && !this.busy, el => el.child(div().text_size(11).opacity(0.7).child("↵")));
 

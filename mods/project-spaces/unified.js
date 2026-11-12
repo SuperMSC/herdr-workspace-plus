@@ -1,6 +1,7 @@
 import { div, svg, image } from "gpui-kit";
 import { h_flex, v_flex, Input, Popover } from "gpui-base";
 import { agents, terminals, spaces, panes, focused, theme, run, shared, setShared, setAgentOrder } from "herdr";
+import { menuTooltipKey } from "./menu-tooltip.js";
 import { SIDEBAR_COLUMNS } from "./model.js";
 import { DIRECTORY_PINS_KEY, normalizeDirectoryPins, setDirectoryPin } from "./directory-pins.js";
 import { unifiedRows, validateUnifiedTarget } from "./unified-model.js";
@@ -13,6 +14,7 @@ const statusName = status => ({ blocked: "Needs you", done: "Done", working: "Wo
 
 export default class UnifiedSidebar {
   init(p, cx) { this.p = p; this.foldMode = null; this.opened = new Set(); this.folded = new Set(); this.page = 0; this.error = ""; this.handle = cx.focus_handle(); this.epoch = 0; this.nextCheck = 0; this.pending = false; }
+  tooltipKey(id) { return this.popupTooltipState ? menuTooltipKey(id, this.popupTooltipState) : id; }
   snapshots(frame) { return frame.snapshots || { spaces: frame.spaces || [], agents: frame.agents || [], terminals: frame.terminals || [], panes: frame.panes || [], focus: frame.focus || null }; }
   fresh() { return { spaces: spaces(), agents: agents(), terminals: terminals(), panes: panes(), focus: focused() }; }
   heldDone(snapshot) {
@@ -115,7 +117,7 @@ export default class UnifiedSidebar {
     const t = theme(), pins = normalizeDirectoryPins(shared(DIRECTORY_PINS_KEY)), direct = Boolean(row.directoryPinned), disabled = Boolean(row.target?.disabled);
     const inherited = row.kind === "space" && (row.directoryInheritedPin || pins.groups.includes(row.groupKey));
     const title = direct ? (row.kind === "group" ? "Unpin project" : inherited ? "Unpin directory (project remains pinned)" : "Unpin directory") : inherited ? "Pinned with project" : row.kind === "group" ? "Pinned with its directories and tasks" : "Pinned with its tasks";
-    return div().id("unified-directory-pin-" + row.id).size(19).flex_none().rounded(4).flex().items_center().justify_center().text_color(direct && !disabled ? t.accent : t.dim).tooltip(disabled ? row.target.reason || "Pin actions unavailable for this directory" : title).accessibility_label(title)
+    return div().id("unified-directory-pin-" + row.id).size(19).flex_none().rounded(4).flex().items_center().justify_center().text_color(direct && !disabled ? t.accent : t.dim).when(!this.popupTooltipState?.open, el => el.tooltip(disabled ? row.target.reason || "Pin actions unavailable for this directory" : title)).accessibility_label(title)
       .when(direct && !disabled, el => el.cursor_pointer().hover(el => el.bg(t.hover))
         .on_mouse_down("left", (_event, cx) => cx.stop_propagation())
         .on_mouse_up("left", (_event, cx) => { cx.stop_propagation(); owner.drag = owner.over = null; })
@@ -159,17 +161,17 @@ export default class UnifiedSidebar {
     if (row.kind === "space") icon = svg(chrome("folder")).id("unified-directory-icon-" + row.id).size(14).text_color(t.muted || t.dim);
     if (program?.icon) icon = program.tint ? svg(program.icon).size(14).flex_none().text_color(t.foreground) : image(program.icon).size(14).flex_none();
     const statusGlyph = row.status === "working" ? svg(chrome("spinner")).size(11).text_color(t.working).spin(900) : div().size(row.status === "blocked" ? 8 : 7).rounded(4).bg(row.status === "idle" ? "#00000000" : t[row.status] || t.dim).when(row.status === "idle", el => el.border_1().border_color(t.idle || t.dim));
-    const statusControl = showStatus ? h_flex().id("unified-status-" + row.id).h(19).gap(4).items_center().justify_end().tooltip(ownStatus)
+    const statusControl = showStatus ? h_flex().id("unified-status-" + row.id).h(19).gap(4).items_center().justify_end().when(!this.popupTooltipState?.open, el => el.tooltip(ownStatus))
       .child(div().size(13).flex_none().flex().items_center().justify_center().child(statusGlyph))
       .when(detailed, el => el.child(div().id("unified-status-text-" + row.id).flex_none().text_size(10.5).font_medium().text_color(statusColor).child(ownStatus))) : null;
-    const pinControl = !agent ? directoryPin : showAgentPin ? div().id("unified-pin-" + row.id).size(19).flex_none().rounded(4).flex().items_center().justify_center().text_color(row.pinned ? t.accent : t.dim).tooltip(row.pinned ? "Unpin agent" : "Pin agent")
+    const pinControl = !agent ? directoryPin : showAgentPin ? div().id("unified-pin-" + row.id).size(19).flex_none().rounded(4).flex().items_center().justify_center().text_color(row.pinned ? t.accent : t.dim).when(!this.popupTooltipState?.open, el => el.tooltip(row.pinned ? "Unpin agent" : "Pin agent"))
       .cursor_pointer().hover(el => el.bg(t.hover)).on_mouse_down("left", (_event, cx) => cx.stop_propagation()).on_mouse_up("left", (_event, cx) => cx.stop_propagation())
       .on_click((_event, cx) => { cx.stop_propagation(); this.pin(row, cx); }).child(svg(chrome(row.pinned ? "pin-off" : "pin")).size(12)) : null;
     const actions = h_flex().id("unified-actions-" + row.id).w(actionWidth).h(19).flex_none().gap(SIDEBAR_COLUMNS.gap).items_center()
       .when(pinWidth > 0, el => el.child(div().id((agent ? "unified-agent-pin-slot-" : "unified-directory-pin-slot-") + row.id).size(pinWidth).flex_none().when(Boolean(pinControl), el => el.child(pinControl))))
       .when(statusWidth > 0, el => el.child(div().id("unified-status-slot-" + row.id).w(statusWidth).h(19).flex_none().flex().items_center().justify_end().child(statusControl)));
-    const metadataLine = hasDetails ? div().id("unified-meta-" + row.id).min_w(0).truncate().h(13).text_size(10.5).line_height("13px").text_color(t.dim).tooltip(fullDetails).child(contextDetails) : null;
-    const body = h_flex().id("unified-entity-" + row.id).relative().min_w(0).min_h(detailed ? 26 : 28).py(detailed ? 3 : 0).when(!detailed, el => el.h(28)).flex_none().pl(4 + depth * TREE_STEP).pr(SIDEBAR_COLUMNS.inset).gap(5).items_start().when(!detailed, el => el.items_center()).rounded(7).tooltip(tooltip)
+    const metadataLine = hasDetails ? div().id("unified-meta-" + row.id).min_w(0).truncate().h(13).text_size(10.5).line_height("13px").text_color(t.dim).when(!this.popupTooltipState?.open, el => el.tooltip(fullDetails)).child(contextDetails) : null;
+    const body = h_flex().id(this.tooltipKey("unified-entity-" + row.id)).relative().min_w(0).min_h(detailed ? 26 : 28).py(detailed ? 3 : 0).when(!detailed, el => el.h(28)).flex_none().pl(4 + depth * TREE_STEP).pr(SIDEBAR_COLUMNS.inset).gap(5).items_start().when(!detailed, el => el.items_center()).rounded(7).when(!this.popupTooltipState?.open, el => el.tooltip(tooltip))
       .bg(row.focused ? t.selected : "#00000000").text_color(disabled ? t.dim : t.foreground).when(row.kind === "space", el => el.rounded(4)).cursor_pointer().hover(el => el.bg(row.focused ? t.selected : t.hover))
       .on_click((_event, cx) => this.navigate(row, cx))
       .on_hover((on, cx) => { const next = on ? row.id : this.hovered === row.id ? null : this.hovered; if (next !== this.hovered) { this.hovered = next; cx.notify(); } })
@@ -204,7 +206,7 @@ export default class UnifiedSidebar {
         .when(Boolean(row.status), el => el.child(div().size(5).rounded(3).bg(t[row.status] || t.dim))))
       .child(div().flex_1().font_semibold().child(row.title || row.name || "Workspaces"))
       .when(Boolean(row.count ?? row.childCount), el => el.child(div().text_size(10).child(String(row.count ?? row.childCount))));
-    if (row.kind === "group") return h_flex().id(`unified-readonly-group-${row.id}`).relative().w_full().min_w(0).min_h(28).mt(spacing).pl(4 + depth * TREE_STEP).pr(SIDEBAR_COLUMNS.inset).gap(5).flex_none().items_center().bg("#00000000").rounded(4).hover(el => el.bg(t.hover)).children(this.guides(row, t))
+    if (row.kind === "group") return h_flex().id(this.tooltipKey(`unified-readonly-group-${row.id}`)).relative().w_full().min_w(0).min_h(28).mt(spacing).pl(4 + depth * TREE_STEP).pr(SIDEBAR_COLUMNS.inset).gap(5).flex_none().items_center().bg("#00000000").rounded(4).hover(el => el.bg(t.hover)).children(this.guides(row, t))
       .when(Boolean(row.foldable), el => el.cursor_pointer().on_click((_event, cx) => this.fold(row, cx)))
       .when(Boolean(row.sourceGroup) && canonical.groups.has(row.groupKey), el => el.on_mouse_down("right", (_event, cx) => { cx.stop_propagation(); owner.groupMenu(row.sourceGroup); }))
       .child(div().w(18).h(18).flex_none().flex().items_center().justify_center().when(Boolean(row.foldable), el => el.child(svg(chrome(row.folded ? "chevron-right" : "chevron-down")).size(10))))
@@ -212,12 +214,13 @@ export default class UnifiedSidebar {
       .child(div().flex_1().min_w(0).truncate().text_size(12.5).font_semibold().child(row.title || row.name || "Workspaces"))
       .child(h_flex().w(SIDEBAR_COLUMNS.pin * 2 + SIDEBAR_COLUMNS.gap).flex_none().gap(SIDEBAR_COLUMNS.gap).items_center()
         .child(div().size(SIDEBAR_COLUMNS.pin).flex_none().when(Boolean(pin), el => el.child(pin)))
-        .child(div().w(SIDEBAR_COLUMNS.pin).min_w(0).flex_none().truncate().text_right().text_size(11).text_color(t.dim).tooltip(String(row.count ?? row.childCount ?? "")).child(String(row.count ?? row.childCount ?? ""))));
+        .child(div().w(SIDEBAR_COLUMNS.pin).min_w(0).flex_none().truncate().text_right().text_size(11).text_color(t.dim).when(!this.popupTooltipState?.open, el => el.tooltip(String(row.count ?? row.childCount ?? ""))).child(String(row.count ?? row.childCount ?? ""))));
     return this.entityRow(row, index, frame, cx, pin)
       .when(row.kind === "space", el => el.mt(spacing))
       .when(row.kind === "space" && Boolean(row.sourceSpace?.auto) && canonical.spaces.has(row.spaceId), el => el.on_mouse_down("right", (_event, cx) => { cx.stop_propagation(); owner.spaceMenu(row.sourceSpace); }));
   }
   render(frame, owner, cx) {
+    this.popupTooltipState = frame.popupTooltipState || null;
     this.request(frame, owner, cx);
     const result = this.result || { rows: [], agentOrder: [], pages: 1 }, rows = result.rows || [], t = theme(), st = frame.state || {}, collapsed = frame.collapsed, view = st.mode === "status" ? "status" : "project";
     if (this.result) setAgentOrder(result.agentOrder || []);
@@ -225,7 +228,7 @@ export default class UnifiedSidebar {
     const normalButton = (id, text, action, disabled = false) => div().id(id).h(CONTROL.height).px(5).py(0).flex_none().rounded(CONTROL.radius).text_size(11.5).line_height("16px").flex().gap(4).items_center().justify_center().text_color(disabled ? t.dim : t.muted).disabled(disabled)
       .when(disabled, el => el.opacity(0.4).cursor_default()).when(!disabled, el => el.cursor_pointer().hover(el => el.bg(t.hover).text_color(t.foreground)))
       .when(Boolean(action), el => el.on_click((_event, cx) => { cx.stop_propagation(); if (!disabled) action(cx); })).child(text);
-    const iconButton = (id, icon, title, action, disabled = false) => normalButton(id, svg(icon).size(CONTROL.glyph).flex_none(), action, disabled).w(CONTROL.height).min_w(CONTROL.height).p(0).text_color(t.muted).tooltip(title).accessibility_label(title);
+    const iconButton = (id, icon, title, action, disabled = false) => normalButton(id, svg(icon).size(CONTROL.glyph).flex_none(), action, disabled).w(CONTROL.height).min_w(CONTROL.height).p(0).text_color(t.muted).when(!this.popupTooltipState?.open, el => el.tooltip(title)).accessibility_label(title);
     const changeView = (mode, cx) => { owner.save({ ...owner.state(), mode }); this.page = 0; this.cacheKey = null; cx.notify(); };
     const changeFilter = (filter, cx) => { owner.projectFilter = filter; this.page = 0; this.cacheKey = null; cx.notify(); };
     const dropdown = (id, trigger, options, current, choose) => {
@@ -253,11 +256,11 @@ export default class UnifiedSidebar {
     const viewControl = normalButton("unified-view", div().child(view === "status" ? "Status" : "Projects"), null).accessibility_label("Workspace view").child(svg(chrome("chevron-down")).size(10));
     const filterControl = normalButton("unified-filter", div().child("Filter"), null).accessibility_label("Filter workspaces and tasks").when(frame.filter !== "all", el => el.text_color(t.accent)).child(svg(chrome("chevron-down")).size(10));
     const allMode = this.foldMode === "collapse" ? "expand" : "collapse";
-    const body = collapsed ? rows.filter(row => row.target).map((row, index) => h_flex().id(`unified-rail-${row.id}`).h(28).flex_none().px(4).gap(4).justify_center().items_center().rounded(5).cursor_pointer().hover(el => el.bg(t.hover)).tooltip([row.title, this.metadata(row, true)].filter(Boolean).join("\n"))
+    const body = collapsed ? rows.filter(row => row.target).map((row, index) => h_flex().id(this.tooltipKey(`unified-rail-${row.id}`)).h(28).flex_none().px(4).gap(4).justify_center().items_center().rounded(5).cursor_pointer().hover(el => el.bg(t.hover)).when(!this.popupTooltipState?.open, el => el.tooltip([row.title, this.metadata(row, true)].filter(Boolean).join("\n")))
       .on_click((_event, cx) => this.navigate(row, cx)).child(div().text_size(10).child(String(index + 1))).child(div().size(6).rounded(3).bg(t[row.status] || t.dim))) : rows.map((row, index) => this.draw(row, index, frame, owner, cx, canonical));
     return v_flex().id("unified-sidebar").size_full().min_h(0).min_w(0).bg(t.chrome).text_color(t.foreground).text_size(12).track_focus(this.handle)
-      .when(collapsed, el => el.child(h_flex().h(32).pl(3).pr(6).items_center().child(iconButton("unified-new-space", chrome("plus"), "New space", () => run("space.new")))))
-      .when(!collapsed, el => el.child(v_flex().id("unified-controls").flex_none().px(7).pt(8).pb(5).gap(4)
+      .when(collapsed, el => el.child(h_flex().id(this.tooltipKey("unified-rail-controls")).h(32).pl(3).pr(6).items_center().child(iconButton("unified-new-space", chrome("plus"), "New space", () => run("space.new")))))
+      .when(!collapsed, el => el.child(v_flex().id(this.tooltipKey("unified-controls")).flex_none().px(7).pt(8).pb(5).gap(4)
         .child(div().id("unified-search").h(28).min_w(0).flex_none().px(7).bg(t.surface).border_1().border_color(t.input).rounded(6).child(Input.new(owner.queryInput).w_full().h_full()))
         .child(h_flex().id("unified-toolbar").w_full().min_w(0).h(28).gap(3).items_center()
           .child(dropdown("unified-view-menu", viewControl, [["project", "Projects"], ["status", "Status"]], view, changeView))
@@ -272,7 +275,7 @@ export default class UnifiedSidebar {
       .child(v_flex().id("unified-sidebar-rows").flex_1().min_h(0).px(collapsed ? 3 : 6).gap(2).overflow_y_scrollbar()
         .on_mouse_up("left", (_event, cx) => { if (owner.drag) { owner.drag = owner.over = null; cx.notify(); } }).children(body)
         .when(!rows.length, el => el.child(div().px(8).py(12).text_size(11).text_color(t.dim).child(this.result ? "No matching workspaces or agents" : "Preparing workspace…"))))
-      .when((result.pages || 1) > 1, el => el.child(h_flex().flex_none().px(6).py(5).gap(4).items_center()
+      .when((result.pages || 1) > 1, el => el.child(h_flex().id(this.tooltipKey("unified-page-controls")).flex_none().px(6).py(5).gap(4).items_center()
         .child(iconButton("unified-prev", chrome("chevron-left"), "Previous page", cx => { this.page = Math.max(0, this.page - 1); this.cacheKey = null; cx.notify(); }, this.page <= 0))
         .child(div().flex_1().text_center().text_size(10).text_color(t.dim).child(`${this.page + 1}/${result.pages}`))
         .child(iconButton("unified-next", chrome("chevron-right"), "Next page", cx => { this.page++; this.cacheKey = null; cx.notify(); }, this.page + 1 >= result.pages))))

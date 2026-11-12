@@ -13,6 +13,8 @@ function fixture(props = { unified: true }, mode = 'project') {
     InputState: { new: () => input }, UnifiedSidebar: class { init(p) { calls.push(['init', p]); } render(frame, owner, cx) { calls.push(['render', frame, owner, cx]); return 'UNIFIED'; } close() { calls.push('close'); } },
     Menu: class { init(p) { calls.push(['menu', p]); } render() { return 'MENU'; } }, Prompt: class {}, run: (...args) => calls.push(['run', ...args]), exec: () => { throw Error('No automatic execution'); }, openMenu: (...args) => calls.push(['open-menu', ...args]), menuRows: () => 1,
   };
+  const tooltipSource = readFileSync(new URL('../mods/project-spaces/menu-tooltip.js', import.meta.url), 'utf8').replace(/^import[\s\S]*?;\n/gm, '').replaceAll('export ', '');
+  Object.assign(dependencies, new Function('shared', 'setShared', tooltipSource + '\nreturn { menuTooltipState, menuTooltipKey, endMenuTooltip };')(dependencies.shared, dependencies.setShared));
   const source = readFileSync(new URL('../mods/project-spaces/main.js', import.meta.url), 'utf8').replace(/^import[\s\S]*?;\n/gm, '').replace('export default class', 'return class');
   const Sidebar = new Function(...Object.keys(dependencies), source)(...Object.values(dependencies)), sidebar = new Sidebar(), cx = { timer: { every() {} }, notify() {} };
   sidebar.init({}, cx);

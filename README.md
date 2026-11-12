@@ -320,3 +320,11 @@ Files / Changes / Sessions retain their original position in the window’s top-
 Files uses the Explorer / Recent / Pinned dropdown. Filter files narrows the currently loaded tree without starting a disk scan; Search project still searches across the workspace. Changes / History share a mode dropdown, with Graph, PR / CI, list modes and larger previews in its actions menu. Existing diff, hunk, review, commit and resizable-preview behavior is retained.
 
 Use node update.mjs --separate-sidebar to restore the recorded original two blocks. Migration is explicit, conservative, idempotent and reversible, and refuses conflicting custom edits. The default updater preserves the chosen layout. Detailed uses a two-line task title and context; Compact reduces row height. No space or terminal is moved or stopped by layout migration.
+
+## Black surface theme
+
+`themes/workspace-frosted.json` is an optional dark palette for the existing workspace. It uses a plain canvas, neutral-black surfaces, soft borders and a quiet silver accent. Alpha surfaces blend over the layout canvas; with a plain background this is subtle and does not reveal the desktop. No wallpaper or background image is required. Owned menus, dropdowns and dialogs follow the same theme tokens, with a more opaque popover surface and a separate high-contrast danger-button pair. Native macOS file and permission windows keep their system appearance. The theme does not add desktop background blur or change the layout.
+
+Copy the theme file into Herdr’s `themes/` directory, then choose `workspace-frosted` in the theme picker. The terminal cursor uses the warm gold Working color. For matching translucent pane outlines, set `content.pane.border.color` to `terminal_border` and `content.pane.focus.color` to `terminal_focus` in the layout; other border geometry stays as configured. The normal mod updater preserves an already installed custom theme.
+
+Project and directory context menus temporarily suppress their source hover tooltips; closing a menu restores them. Menu dismissal and failed opening release the suppression state without changing project membership or scroll-container identity.
