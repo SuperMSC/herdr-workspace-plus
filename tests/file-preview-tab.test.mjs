@@ -1,3 +1,4 @@
+import { uiFunction } from "./helpers/ui-function.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
@@ -37,7 +38,7 @@ function harness({ props = {}, storedPath, tabName = "old.py", registered = true
     spaces: () => allSpaces, panes: () => allPanes, shared: key => state[key],
     setShared(key, value) { assert(!rendering, "render must never write shared state"); state[key] = value; writes.push(key); },
     run(...args) { assert(!rendering, "render must never run commands"); commands.push(args); }, openOverlay: spec => overlays.push(spec) };
-  const FilePreview = new Function(...Object.keys(deps), source)(...Object.values(deps)), view = new FilePreview();
+  const FilePreview = uiFunction(...Object.keys(deps), source)(...Object.values(deps)), view = new FilePreview();
   view.init(p, cx);
   return { view, cx, p, row, state, opens, refreshes, closures, after, every, writes, commands, overlays,
     notifications: () => notifications, stopped: () => stopped,

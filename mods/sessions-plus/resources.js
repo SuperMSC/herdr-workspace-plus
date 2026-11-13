@@ -1,5 +1,6 @@
 // Herdr's resource use in the status bar, after Orca's resource manager: a memory badge and
 // terminal count that open a panel with CPU and memory for Herdr and each terminal.
+import { TYPE } from "./type-scale.js";
 import { div, svg } from "gpui-kit";
 import { v_flex, h_flex, Popover } from "gpui-base";
 import { exec, theme, window } from "herdr";
@@ -45,7 +46,7 @@ export default class Resources {
 
   trigger(t) {
     const s = this.snapshot, high = pressure(s) === "high";
-    return h_flex().id("workspace-resources-trigger").h(22).px(5).gap(5).flex_none().items_center().rounded(5).cursor_pointer()
+    return h_flex().id("workspace-resources-trigger").h(24).line_height("16px").text_size(TYPE.sm).px(5).gap(5).flex_none().items_center().rounded(5).cursor_pointer()
       .hover(el => el.bg(t.hover)).tooltip(this.tooltip()).accessibility_label("Herdr resource use")
       .child(svg("mods/sessions-plus/memory.svg").size(13).flex_none().text_color(t.dim))
       .child(div().whitespace_nowrap().font_medium().text_color(high ? t.ansi3 : t.muted).child(s ? badgeMemory(s.herdr.memory) : "—"))
@@ -78,7 +79,7 @@ export default class Resources {
         .child(this.metrics(t, cpu, memory, true)))
       .when(open, el => el.children(rows.map(row => h_flex().h(24).pl(25).pr(8).gap(5).items_center()
         .child(div().flex_1().min_w(0).truncate().text_color(t.muted).child(row.label))
-        .when(Boolean(row.note), el => el.child(div().flex_none().text_size(10.5).text_color(t.dim).child(row.note)))
+        .when(Boolean(row.note), el => el.child(div().flex_none().text_size(TYPE.xs).text_color(t.dim).child(row.note)))
         .child(this.metrics(t, row.cpu, row.memory)))));
   }
 
@@ -93,25 +94,25 @@ export default class Resources {
         .child(svg("mods/sessions-plus/refresh.svg").size(13).flex_none().when(this.busy, el => el.spin(850))));
     if (!s) return v_flex().size_full().child(header).child(div().p(12).text_color(this.error ? t.ansi1 : t.dim).child(this.error || "Reading…"));
     const summary = h_flex().flex_none().px(10).py(8).gap(6).items_center().border_b(1).border_color(t.border)
-      .child(div().font_semibold().text_size(13).text_color(t.foreground).child(formatCpu(s.cpu)))
+      .child(div().font_semibold().text_size(TYPE.md).text_color(t.foreground).child(formatCpu(s.cpu)))
       .child(div().text_color(t.dim).opacity(0.6).child("·"))
-      .child(div().font_semibold().text_size(13).text_color(t.foreground).child(formatMemory(s.memory)))
+      .child(div().font_semibold().text_size(TYPE.md).text_color(t.foreground).child(formatMemory(s.memory)))
       .child(div().text_color(t.dim).child("resident"))
       .child(div().flex_1())
       .child(this.spark(t));
-    const columns = h_flex().h(22).flex_none().px(8).gap(5).items_center().bg(t.raised).text_size(10).text_color(t.dim)
+    const columns = h_flex().h(22).flex_none().px(8).gap(5).items_center().bg(t.raised).text_size(TYPE.xs).text_color(t.dim)
       .child(div().flex_1().pl(18).child("NAME")).child(div().w(46).text_right().child("CPU")).child(div().w(64).text_right().child("MEMORY"));
     const herdr = [
       { label: "App", note: s.app.count > 1 ? `×${s.app.count}` : "", cpu: s.app.cpu, memory: s.app.memory },
       { label: "herdr-core", note: s.core.count > 1 ? `×${s.core.count}` : "", cpu: s.core.cpu, memory: s.core.memory },
     ].filter(row => row.label !== "App" || s.app.count);
     const terminals = s.terminals.map(row => ({ label: row.label, note: row.processes > 1 ? `×${row.processes}` : "", cpu: row.cpu, memory: row.memory }));
-    return v_flex().size_full().min_h(0).text_size(11)
+    return v_flex().size_full().min_h(0).text_size(TYPE.sm)
       .child(header).child(summary).child(columns)
       .child(v_flex().id("resources-list").flex_1().min_h(0).overflow_y_scrollbar()
         .child(this.section(t, "herdr", "Herdr", null, s.herdr.cpu, s.herdr.memory, herdr))
         .child(this.section(t, "terminals", "Terminals", s.terminals.length, s.terminalCpu, s.terminalMemory, terminals)))
-      .child(div().flex_none().px(10).py(6).border_t(1).border_color(t.border).text_size(10).text_color(t.dim)
+      .child(div().flex_none().px(10).py(6).border_t(1).border_color(t.border).text_size(TYPE.xs).text_color(t.dim)
         .child("CPU: recent average, 100% = one core"));
   }
 

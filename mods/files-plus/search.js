@@ -1,3 +1,4 @@
+import { TYPE } from "./type-scale.js";
 import { fileIcon, closeButton } from "./icons.js";
 // Project search stays read-only and captures its folder when opened.
 import { div, svg } from 'gpui-kit';
@@ -74,7 +75,7 @@ export default class Search {
     cx.spawn(async cx => {
       try {
         if (await readTextFile(`${appHome()}/mods/sessions-plus/mod.json`) === null) throw new Error("Pending prompts requires the Sessions Plus companion. Run the full workspace updater first.");
-        if (!this.disposed) openOverlay({ mod: "sessions-plus", kind: "dialog", frame: "none", width: 660, height: 540, props: { role: "reference", reference } });
+        if (!this.disposed) openOverlay({ mod: "sessions-plus", kind: "dialog", frame: "none", width: 660, height: 540, props: { role: "prompt-queue", reference } });
       } catch (error) { if (!this.disposed) this.error = String(error.message || error); }
       finally { this.referenceBusy = false; if (!this.disposed) cx.notify(); }
     });
@@ -84,13 +85,13 @@ export default class Search {
   chip(id, label, active, action, t, tooltip) { return div().id(`search-${id}`).px(7).py(5).rounded(5).flex_none().cursor_pointer().bg(active ? t.selected : t.surface).hover(s => s.bg(t.hover)).tooltip(tooltip || label).on_click(action).child(label); }
   render(cx) {
     const t = theme(), groups = groupedMatches(this.matches), empty = !this.query.value().trim(), loading = Boolean(this.loading);
-    return v_flex().id('project-search').size_full().min_h(0).min_w(0).rounded(10).overflow_hidden().border_1().border_color(t.border).bg(t.background).text_color(t.foreground).text_size(12).p(12).gap(8)
-      .child(h_flex().flex_none().gap(8).items_center().child(div().font_semibold().text_size(14).child(this.roots?.length > 1 ? 'Workspace search' : 'Project search')).child(div().flex_1().min_w(0).truncate().text_color(t.dim).tooltip(this.roots?.map(source => source.root).join(' · ') || this.root || '').child(this.roots?.length > 1 ? `${this.roots.length} folders` : this.root || 'No folder')))
+    return v_flex().id('project-search').size_full().min_h(0).min_w(0).rounded(10).overflow_hidden().border_1().border_color(t.border).bg(t.background).text_color(t.foreground).text_size(TYPE.md).p(12).gap(8)
+      .child(h_flex().flex_none().gap(8).items_center().child(div().font_semibold().text_size(TYPE.lg).child(this.roots?.length > 1 ? 'Workspace search' : 'Project search')).child(div().flex_1().min_w(0).truncate().text_color(t.dim).tooltip(this.roots?.map(source => source.root).join(' · ') || this.root || '').child(this.roots?.length > 1 ? `${this.roots.length} folders` : this.root || 'No folder')))
       .child(h_flex().flex_none().gap(5).items_center().child(Input.new(this.query).h(32).flex_1().min_w(80).px(8).rounded(5).bg(t.surface).border_1().border_color(t.input))
         .child(this.chip('content', 'Content', this.mode === 'content', (_e, cx) => { this.mode = 'content'; this.schedule(cx); }, t))
         .child(this.chip('files', 'Files', this.mode === 'files', (_e, cx) => { this.mode = 'files'; this.schedule(cx); }, t))
         .child(div().id('search-refresh').w(24).h(24).p(0).flex_none().flex().items_center().justify_center().rounded(4)
-          .text_color(loading ? t.accent : t.muted).disabled(loading).tooltip(loading ? 'Searching…' : 'Run search').accessibility_label('Run search')
+          .text_color(loading ? t.accent : t.muted).disabled(loading).tooltip(`${loading ? 'Searching…' : 'Run search'}\nRead only · respects ignore rules · up to 500 matches / 30 per file · files up to 2 MiB`).accessibility_label('Run search')
           .when(loading, el => el.cursor_default()).when(!loading, el => el.cursor_pointer().hover(s => s.bg(t.hover)))
           .on_click((_e, cx) => { if (!this.loading) this.run(cx); })
           .child(svg('mods/files-plus/refresh.svg').id('search-refresh-icon').size(14).flex_none().when(loading, el => el.spin(850)))))
@@ -111,7 +112,6 @@ export default class Search {
             .when(this.mode !== 'files' && !this.collapsed.has(group.key || group.path), el => el.children(group.matches.map((match, i) => h_flex().id(`search-match-${group.key || group.path}-${i}`).min_h(28).px(8).gap(6).items_center().cursor_pointer().bg(this.selected === match ? t.selected : t.background).hover(s => s.bg(t.hover)).on_click((_e, cx) => this.choose(match, cx)).child(div().w(40).flex_none().text_right().text_color(t.dim).child(String(match.line))).child(div().flex_1().min_w(0).truncate().child(match.text))))))))
         .when(Boolean(this.selected), el => el.child(v_flex().id('search-preview-pane').flex_1().h_full().min_w(0).min_h(0).overflow_hidden().border_l(1).border_color(t.border)
           .child(h_flex().flex_none().px(8).gap(6).items_center().child(div().flex_1().min_w(0).truncate().text_color(t.muted).child(this.selected.path)).child(this.chip('add-reference', 'Add reference', false, (_e, cx) => this.reference(cx), t, 'Add this file and line to pending prompts')).child(closeButton('search-close-preview', 'Close preview', (_e, cx) => { this.selected = null; this.preview.clear(); cx.notify(); }, t)))
-          .child(this.preview.render(cx)))))
-      .child(div().flex_none().text_size(10).text_color(t.dim).child('Read only · respects ignore rules · up to 500 matches / 30 per file · files up to 2 MiB'));
+          .child(this.preview.render(cx)))));
   }
 }

@@ -1,3 +1,4 @@
+import { uiFunction } from "./helpers/ui-function.mjs";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import { readFileSync } from "node:fs";
@@ -110,7 +111,7 @@ function harness({rows=candidates(),scan,verify,file}={}){
   const cx={notify(){assert(!rendering);},stop_propagation(){},focus_handle:()=>({focus(){focused=true;},is_focused:()=>focused}),spawn(callback){tasks.push(callback(cx));},write_to_clipboard:text=>copied.push(text),open_url:url=>opened.push(url)};
   const state=options=>{let text=options.value||'';const events={};const object={value:()=>text,set_value(value){text=value;},on(name,callback){events[name]=callback;},type(value){text=value;events.change?.({},cx);},focus(){focused=false;},release(){object.released=true;}};retained.push(object);return object;};
   const deps={...model,div:element,h_flex:element,v_flex:element,Input:{new:element},Editor:{new:element},InputState:{new:state},EditorState:{new:state},terminals:()=>[terminal()],theme:()=>({}),appHome:()=>'/app',exec(){throw new Error('No real commands from UI fixture');},readTextFile:async(path,options)=>{calls.push(['file',path,options]);return file?file(path):'fixture text';},openOverlay:props=>overlays.push(props),closeOverlay(){},createScreenPickerClient:options=>({scan:async history=>{calls.push(['scan',options.target,history]);return scan?scan():{candidates:rows,captured:1};},verify:async()=>{calls.push(['verify']);return verify?verify():{};}})};
-  const Class=new Function(...Object.keys(deps),viewSource)(...Object.values(deps)),view=new Class();view.init({target:terminal(),context},cx);
+  const Class=uiFunction(...Object.keys(deps),viewSource)(...Object.values(deps)),view=new Class();view.init({target:terminal(),context},cx);
   return {view,cx,calls,overlays,copied,opened,retained,async settle(){for(let i=0;i<8;i++)await Promise.all(tasks.splice(0));},render(){rendering=true;try{return view.render(cx);}finally{rendering=false;}},click(id){const node=nodes(this.render()).find(node=>node.attrs.id===id);assert(node,id);node.events.on_click({},cx);}};
 }
 test("production letter selection previews literal data, Enter copies, search focus suppresses shortcuts and no command executes",async()=>{
@@ -120,7 +121,7 @@ test("production letter selection previews literal data, Enter copies, search fo
 });
 test("production references capture machine and text, and file reads require an explicit reliable selected path",async()=>{
   const f=harness();await f.settle();const row=f.view.rows.find(row=>row.path==='src/main.ts');f.view.choose(row,f.cx);f.click('screen-picker-reference');await f.settle();
-  assert.equal(f.overlays[0].props.role,'reference');assert.equal(f.overlays[0].props.on,'remote');assert(f.overlays[0].props.text.includes('src/main.ts:9:2'));assert.equal(f.calls.filter(call=>call[0]==='file').length,0);
+  assert.equal(f.overlays[0].props.role,"prompt-queue");assert.equal(f.overlays[0].props.on,'remote');assert(f.overlays[0].props.text.includes('src/main.ts:9:2'));assert.equal(f.calls.filter(call=>call[0]==='file').length,0);
   f.click('screen-picker-file');await f.settle();assert.deepEqual(f.calls.find(call=>call[0]==='file').slice(1),['/work/project/src/main.ts',{on:'remote'}]);assert.equal(f.retained[1].value(),'fixture text');
   const outside=f.view.rows.find(row=>row.value==='../secret.js');f.view.choose(outside,f.cx);f.view.action('file',f.cx);await f.settle();assert.equal(f.calls.filter(call=>call[0]==='file').length,1);assert.match(f.view.error,/captured filesystem root/);
 });

@@ -1,9 +1,11 @@
+import { uiFunction } from "./helpers/ui-function.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import * as model from "../mods/sessions-plus/prompt-queue-model.js";
 import { PROVIDERS } from "../mods/sessions-plus/model.js";
 import { deliverPrompts } from "../mods/sessions-plus/prompt-queue-client.js";
+import * as references from "../mods/sessions-plus/reference-model.js";
 
 const sessionId = "11111111-1111-4111-8111-111111111111";
 const terminal = (options = {}) => ({ address: "t7", state: "live", created_ms: 100, pid: 200, cwd: "/fixture/project", status: { state: "idle", task: "Fixture task" }, argv: ["codex", "resume", sessionId], foreground: { pid: 201, argv: ["codex", "resume", sessionId] }, ...options });
@@ -27,13 +29,13 @@ const descendants = node => !node || typeof node !== "object" ? [] : [node, ...n
 const find = (node, id) => descendants(node).find(child => child.attributes.id === id);
 const content = node => typeof node === "string" ? node : (node?.childNodes || []).map(content).join(" ");
 
-function harness({ initial = {}, reply = { code: 0, stdout: '{"turn":4}' } } = {}) {
+function harness({ initial = {}, reply = { code: 0, stdout: '{"turn":4}' }, props = {} } = {}) {
   const state = { value: initial, terminals: [terminal()], agents: [agent()], focus: { terminal: "t7" } }, tasks = [], sent = [], timers = [];
-  const p = { target: target(), overlay: "queue-overlay" };
+  const p = { target: target(), overlay: "queue-overlay", ...props };
   const cx = { notify() {}, stop_propagation() {}, focus_handle: () => ({ focus() {} }),
     timer: { every(milliseconds, callback) { timers.push({ milliseconds, callback, repeat: true }); }, after(milliseconds, callback) { timers.push({ milliseconds, callback }); } }, spawn(callback) { tasks.push(callback(cx)); } };
   const retained = { value: "", released: false, listeners: {}, focus() {}, set_value(value) { this.value = value; }, release() { this.released = true; }, on(name, callback) { this.listeners[name] = callback; } };
-  const dependencies = { ...model, PROVIDERS, deliverPrompts, div: element, v_flex: element, h_flex: element, Textarea: { new: element },
+  const dependencies = { ...model, ...references, PROVIDERS, deliverPrompts, div: element, v_flex: element, h_flex: element, Textarea: { new: element },
     TextareaState: { new: options => { retained.value = options.value; return { value: () => retained.value, set_value: value => retained.set_value(value), on: (name, callback) => retained.on(name, callback), focus() {}, release: () => retained.release() }; } },
     theme: () => ({}), focused: () => state.focus, agents: () => state.agents, terminals: () => state.terminals, panes: () => [],
     shared: () => state.value, setShared: (_key, value) => { state.value = value; }, closeOverlay() {}, run() {},
@@ -41,13 +43,44 @@ function harness({ initial = {}, reply = { code: 0, stdout: '{"turn":4}' } } = {
   };
   const source = readFileSync(new URL("../mods/sessions-plus/prompt-queue.js", import.meta.url), "utf8")
     .replace(/^import .*;\n/gm, "").replace("export default class", "return class");
-  const Queue = new Function(...Object.keys(dependencies), source)(...Object.values(dependencies));
+  const Queue = uiFunction(...Object.keys(dependencies), source)(...Object.values(dependencies));
   const view = new Queue(); view.init(p, cx);
   return { view, state, sent, retained, cx, tasks, timers, render: () => view.render(cx),
     async finish() { for (let index = 0; index < tasks.length; index++) await tasks[index]; },
     type(value) { retained.value = value; retained.listeners.change({}, cx); },
     click(id) { const button = find(view.render(cx), id); assert(button, `Missing ${id}`); button.events.on_click({}, cx); } };
 }
+
+test('prompt queue retains counts while moving permanent send and storage guidance into tooltips',()=>{
+ const f=harness(),tree=f.render();assert.doesNotMatch(content(tree),/Only your explicit Send|Saved locally/);assert.match(content(tree),/0\/\d+ instructions/);assert.match(find(tree,'prompt-send-all').attributes.tooltip,/Only your explicit Send/);assert(descendants(tree).some(node=>node.attributes.tooltip==='Saved locally'));
+});
+
+test("a captured reference opens as an editable queue draft and assignment preserves existing instructions and composer", () => {
+  const initial = model.saveComposer(itemState("Existing instruction"), target(), "Unfinished typing");
+  const f = harness({ initial, props: { reference: { root: "/fixture/project", relative: "a '$`file.txt", on: null, line: 7 } } });
+  assert(find(f.render(), "prompt-draft-editor")); assert.equal(f.view.target, null); assert.equal(f.view.read().drafts.length, 1);
+  assert(f.retained.value.includes(JSON.stringify("/fixture/project/a '$`file.txt") + ":7"));
+  f.type("Edited reference instructions"); const persisted = JSON.parse(JSON.stringify(f.state.value)); f.view.close();
+  const g = harness({ initial: persisted }); const draft = g.view.read().drafts[0];
+  g.click("prompt-draft-" + draft.id); assert.equal(g.retained.value, "Edited reference instructions"); g.click("prompt-recipient-t7");
+  const saved = model.queueFor(g.state.value, target()); assert.deepEqual(saved.items.map(item => item.text), ["Existing instruction", "Edited reference instructions"]);
+  assert.equal(saved.composer, "Unfinished typing"); assert.equal(saved.items[1].status, "pending"); assert.equal(g.view.read().drafts, undefined); assert.equal(g.retained.value, "Unfinished typing");
+  assert.equal(g.sent.length, 0); assert.equal(g.tasks.length, 0); assert.equal(g.view.prepared, null);
+});
+
+test("reference drafts restrict recipients to the captured machine and reject a reused terminal before assignment", () => {
+  const f = harness({ props: { text: "Remote evidence", on: "server" } });
+  assert(!find(f.render(), "prompt-recipient-t7")); f.view.choose(f.view.targets()[0], f.cx); assert.match(f.view.error, /captured machine/); assert.equal(f.view.read().drafts.length, 1);
+  const g = harness({ props: { text: "Local evidence", on: null } }), captured = g.view.targets()[0];
+  g.state.terminals[0].created_ms++; g.view.choose(captured, g.cx); assert.match(g.view.error, /changed or exited/); assert.equal(g.view.read().drafts.length, 1); assert.equal(g.view.read().queues.length, 0); assert.equal(g.sent.length, 0);
+});
+
+test("oversized references remain editable drafts until shortened and unassigned drafts can be removed", () => {
+  const f = harness({ props: { text: "x".repeat(model.QUEUE_LIMITS.text + 1), on: null } });
+  f.click("prompt-recipient-t7"); assert.match(f.view.error, /characters/); assert.equal(f.view.read().drafts.length, 1);
+  f.type("Short enough"); f.click("prompt-recipient-t7"); assert.equal(f.view.queue().items[0].text, "Short enough"); assert.equal(f.sent.length, 0);
+  const g = harness({ props: { text: "Remove this draft", on: null } }); g.click("prompt-draft-remove"); assert.equal(g.view.read().drafts, undefined); assert.equal(g.view.queue().items.length, 0);
+});
 
 test("targets separate fresh processes and reused terminals, and reject shells or incomplete identity", () => {
   const original = target();

@@ -1,4 +1,4 @@
-import { privacyToggle } from "./privacy.js";
+import { TYPE } from "./type-scale.js";
 import { div, svg } from "gpui-kit";
 import { h_flex, Popover } from "gpui-base";
 import { theme, shared, setShared } from "herdr";
@@ -65,7 +65,7 @@ export default class StatusBar {
       return [`${PROVIDERS[provider]}: updated ${clock}`];
     });
     const stop = (_event, cx) => cx.stop_propagation();
-    const quotaWidth = Math.max(0, (this.width ?? 1000) - (this.modeWidth ?? 68) - 46 - (this.privacyWidth ?? 60) - 4);
+    const quotaWidth = Math.max(0, (this.width ?? 1000) - (this.modeWidth ?? 68) - 46);
     const size = field => (value, cx) => {
       if (Number.isFinite(value.width) && Math.abs(value.width - (this[field] ?? -1)) > 0.5) {
         this[field] = value.width; cx.notify();
@@ -81,20 +81,20 @@ export default class StatusBar {
     const label = bars || needed(full, false) <= quotaWidth ? full : brief;
     const minimal = needed(label, bars) > quotaWidth && warnings.length > 0 && needed(() => "", false) <= quotaWidth;
     const collapsed = !minimal && needed(label, bars) > quotaWidth;
-    const refresh = div().id("quota-status-refresh").size(24).p(0).ml(2).flex_none().flex().items_center().justify_center().rounded(4)
+    const refresh = div().id("quota-status-refresh").size(24).line_height("16px").p(0).ml(2).flex_none().flex().items_center().justify_center().rounded(4)
       .text_color(loading ? t.accent : t.muted).disabled(refreshDisabled).accessibility_label("Refresh quota")
       .when(refreshDisabled, el => el.cursor_default().opacity(loading ? 1 : 0.45))
       .when(!refreshDisabled, el => el.cursor_pointer().hover(el => el.bg(t.hover).text_color(t.foreground)))
       .tooltip([refreshHint, ...refreshDetails].join("\n"))
       .on_mouse_down("left", stop).on_click((_event, cx) => { if (!refreshDisabled) this.quota.refresh(cx); })
       .child(svg("mods/sessions-plus/refresh.svg").id("quota-status-refresh-icon").size(14).flex_none().when(loading, el => el.spin(850)));
-    const groups = h_flex().id("quota-status-trigger").h(25).min_w(0).max_w(quotaWidth).gap(6).items_center().cursor_pointer()
-      .children((collapsed ? [] : summaries).map(item => h_flex().id(`quota-status-${item.provider}`).h(23).px(5).gap(6).flex_none().items_center().rounded(5)
+    const groups = h_flex().id("quota-status-trigger").h(24).line_height("16px").min_w(0).max_w(quotaWidth).gap(6).items_center().cursor_pointer()
+      .children((collapsed ? [] : summaries).map(item => h_flex().id(`quota-status-${item.provider}`).h(24).line_height("16px").px(5).gap(6).flex_none().items_center().rounded(5)
         .hover(el => el.bg(t.hover)).tooltip(item.tooltip)
         .child(providerIcon(item.provider, 15))
         .when(bars && item.row && !item.row.unlimited, el => el.child(div().w(32).h(5).flex_none().rounded(3).bg(t.raised).overflow_hidden()
           .child(div().h_full().w(`${Math.max(0, Math.min(100, item.row[mode]))}%`).rounded(3).bg(item.stale ? t.ansi3 : t.dim))))
-        .when(!minimal, el => el.child(div().whitespace_nowrap().text_color(item.stale ? t.ansi3 : t.muted).child(label(item))))
+        .when(!minimal, el => el.child(div().id(`quota-status-label-${item.provider}`).h(24).line_height("16px").flex().items_center().whitespace_nowrap().text_color(item.stale ? t.ansi3 : t.muted).child(label(item))))
         .when(Boolean(item.warning), el => el.child(div().id(`quota-status-warning-${item.provider}`).size(13).flex_none().text_color(t.ansi3).tooltip(item.warning).accessibility_label(`${PROVIDERS[item.provider]}: ${item.warning}`).child(svg("mods/sessions-plus/warning.svg").size(13))))))
       .when(collapsed || (!summaries.length && !loading), el => el.child(div().text_color(t.muted).tooltip("Open quota details").child("Quota")))
       .when(collapsed && warnings.length > 0, el => el.child(div().id("quota-status-warning").size(13).flex_none().text_color(t.ansi3)
@@ -104,13 +104,12 @@ export default class StatusBar {
       .on_open_change((open, cx) => { this.open = open; cx.notify(); })
       .trigger(groups)
       .content(div().w(430).h(510).rounded(9).border_1().border_color(t.border).bg(t.surface).overflow_hidden().child(this.quota.render()));
-    return h_flex().id("quota-statusbar").on_size_change(size("width")).size_full().min_w(0).px(6).gap(4).items_center().bg(t.chrome).when(!this.embedded, el => el.border_t(1).border_color(t.border)).text_size(11.5)
-      .child(div().id("quota-status-mode").on_size_change(size("modeWidth")).h(24).px(4).flex_none().flex().items_center().rounded(5).text_color(t.dim)
+    return h_flex().id("quota-statusbar").on_size_change(size("width")).size_full().min_w(0).px(6).gap(4).items_center().bg(t.chrome).when(!this.embedded, el => el.border_t(1).border_color(t.border)).text_size(TYPE.sm).line_height("16px")
+      .child(div().id("quota-status-mode").on_size_change(size("modeWidth")).h(24).line_height("16px").px(4).flex_none().flex().items_center().rounded(5).text_color(t.dim)
         .cursor_pointer().hover(el => el.bg(t.hover)).tooltip("Click to switch between remaining and used quota")
         .on_mouse_down("left", stop).on_click(() => setShared("sessions-plus.quota-mode", mode === "remaining" ? "used" : "remaining"))
         .child(mode === "used" ? "Used" : "Remaining"))
       .child(div().flex_initial().min_w(0).overflow_hidden().child(details))
-      .child(refresh)
-      .child(div().id("screenshot-mode-toggle").on_size_change(size("privacyWidth")).h(24).px(6).flex_none().rounded(4).cursor_pointer().text_color(t.muted).hover(el => el.bg(t.hover)).tooltip("Hide Agent Workspace panels for screenshots; terminal text remains visible").on_click(() => privacyToggle()).child("Privacy"));
+      .child(refresh);
   }
 }

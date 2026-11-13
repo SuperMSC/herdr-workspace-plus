@@ -1,3 +1,4 @@
+import { TYPE } from "./type-scale.js";
 import { div } from "gpui-kit";
 import { v_flex, h_flex, Input, InputState, Textarea, TextareaState } from "gpui-base";
 import { appHome, exec, theme, shared, setShared, readTextFile, openOverlay, closeOverlay } from "herdr";
@@ -111,10 +112,10 @@ export default class Deliverables {
     if (this.form) body = v_flex().flex_1().min_h(0).gap(9)
       .child(h_flex().gap(7).child(button("delivery-kind-file", "File", cx => { this.form.kind = "file"; this.keepForm(cx); }, this.busy, this.form.kind === "file")).child(button("delivery-kind-url", "URL", cx => { this.form.kind = "url"; this.keepForm(cx); }, this.busy, this.form.kind === "url")))
       .child(Input.new(this.inputs.title).h(32).px(7).border_1().border_color(t.input).rounded(5))
-      .child(div().text_size(10.5).text_color(t.dim).child(this.form.kind === "file" ? "File path on the captured machine" : "HTTP or HTTPS URL"))
+      .child(div().text_size(TYPE.xs).text_color(t.dim).child(this.form.kind === "file" ? "File path on the captured machine" : "HTTP or HTTPS URL"))
       .child(Input.new(this.inputs.location).h(32).px(7).border_1().border_color(t.input).rounded(5))
       .child(div().h(110).border_1().border_color(t.input).rounded(5).child(Textarea.new(this.inputs.note).size_full()))
-      .child(div().text_size(10.5).text_color(t.muted).child("This records a delivery for review. Files are opened only when you click Open; URLs open in your browser."))
+      .child(div().text_size(TYPE.xs).text_color(t.muted).child("This records a delivery for review. Files are opened only when you click Open; URLs open in your browser."))
       .when(this.conflict, el => el.child(div().text_color(t.blocked).child("The saved item changed. Your form is kept. Save a separate item to preserve both versions, or return and refresh the list.")))
       .child(div().flex_1()).child(h_flex().justify_end().gap(7).child(button("delivery-form-back", "Back · keep form", cx => this.back(cx), this.busy))
         .when(this.conflict, el => el.child(button("delivery-save-copy", "Save separate item", cx => this.save(cx, true), this.busy)))
@@ -129,25 +130,25 @@ export default class Deliverables {
           .child(h_flex().gap(6).items_center().child(div().flex_1().min_w(0).truncate().font_semibold().child(`${item.read ? "✓" : "●"} ${item.title}`))
             .child(button(`delivery-open-${item.id}`, item.kind === "url" ? "Open URL" : "Open file", cx => this.open(item, cx), this.opening))
             .child(button(`delivery-edit-${item.id}`, "Edit", cx => this.openForm(item, cx), this.busy)))
-          .child(div().truncate().text_size(10.5).text_color(t.dim).tooltip(item.location).child(item.location))
-          .when(Boolean(item.note), el => el.child(div().truncate().text_size(11).text_color(t.muted).tooltip(item.note).child(item.note)))
+          .child(div().truncate().text_size(TYPE.xs).text_color(t.dim).tooltip(item.location).child(item.location))
+          .when(Boolean(item.note), el => el.child(div().truncate().text_size(TYPE.sm).text_color(t.muted).tooltip(item.note).child(item.note)))
           .child(h_flex().gap(6).justify_end().child(button(`delivery-read-${item.id}`, item.read ? "Mark unread" : "Mark reviewed", cx => this.change("read", { id: item.id, expected: item.revision, value: !item.read }, cx), this.busy))
             .child(button(`delivery-archive-${item.id}`, item.archived ? "Restore" : "Archive", cx => this.change("archive", { id: item.id, expected: item.revision, value: !item.archived }, cx), this.busy))
             .when(item.archived, el => el.child(button(`delivery-remove-${item.id}`, this.confirmRemove === item.id ? "Confirm remove record" : "Remove record", cx => { if (this.confirmRemove === item.id) { this.confirmRemove = null; this.change("remove", { id: item.id, expected: item.revision }, cx); } else { this.confirmRemove = item.id; cx.notify(); } }, this.busy))))))
           .when(!data.items.length, el => el.child(div().p(12).text_color(t.muted).child(this.loading ? "Loading deliveries…" : "No matching deliveries. Add a file or link explicitly; folders are never scanned."))))
-        .child(h_flex().gap(7).items_center().child(div().flex_1().text_size(10.5).text_color(t.dim).child(`${data.total} matching · page ${data.page + 1}/${data.pages} · 20 per page`))
+        .child(h_flex().gap(7).items_center().child(div().flex_1().text_size(TYPE.xs).text_color(t.dim).child(`${data.total} matching · page ${data.page + 1}/${data.pages} · 20 per page`))
           .child(button("delivery-previous", "Previous", cx => { this.page = Math.max(0, data.page - 1); this.load(cx); }, data.page === 0 || this.loading || this.busy))
           .child(button("delivery-next", "Next", cx => { this.page = data.page + 1; this.load(cx); }, data.page + 1 >= data.pages || this.loading || this.busy)))
-        .when(drafts.length > 0, el => el.child(v_flex().max_h(120).gap(4).overflow_y_scrollbar().child(div().text_size(10.5).text_color(t.dim).child("Saved forms · restoring keeps the original"))
+        .when(drafts.length > 0, el => el.child(v_flex().max_h(120).gap(4).overflow_y_scrollbar().child(div().text_size(TYPE.xs).text_color(t.dim).child("Saved forms · restoring keeps the original"))
           .children(drafts.map(draft => h_flex().gap(6).items_center().child(div().flex_1().truncate().tooltip(`${draft.scope.on || "This computer"} · ${draft.scope.root}`).child(draft.title || draft.location || "Untitled form"))
             .child(button(`delivery-restore-${draft.id}`, draft.scope.key === this.scope.key ? "Restore copy" : "Open project", cx => this.restore(draft, cx), this.busy))
             .child(button(`delivery-discard-${draft.id}`, this.confirmDraft === draft.id ? "Confirm discard" : "Discard", cx => { if (this.confirmDraft === draft.id) this.discard(draft, cx); else { this.confirmDraft = draft.id; cx.notify(); } }, this.busy))))));
     }
-    return v_flex().id("deliverables").size_full().min_h(0).p(14).gap(9).rounded(10).border_1().border_color(t.border).bg(t.popover).text_color(t.foreground).text_size(12).track_focus(this.handle)
+    return v_flex().id("deliverables").size_full().min_h(0).p(14).gap(9).rounded(10).border_1().border_color(t.border).bg(t.popover).text_color(t.foreground).text_size(TYPE.md).track_focus(this.handle)
       .on_key_down((event, cx) => { if (event.key === "escape" && !this.busy) { closeOverlay(this.p.overlay); cx.stop_propagation(); } })
       .on_drop((event, cx) => this.drop(event.paths, cx))
-      .child(div().font_semibold().text_size(15).child("Deliverables to review"))
-      .child(div().truncate().text_size(10.5).text_color(t.dim).tooltip(this.scope ? `${this.scope.on || "This computer"} · ${this.scope.root}` : "No captured project").child(this.scope ? `${this.scope.on || "This computer"} · ${this.scope.root}` : "No captured project"))
+      .child(div().font_semibold().text_size(TYPE.lg).child("Deliverables to review"))
+      .child(div().truncate().text_size(TYPE.xs).text_color(t.dim).tooltip(this.scope ? `${this.scope.on || "This computer"} · ${this.scope.root}` : "No captured project").child(this.scope ? `${this.scope.on || "This computer"} · ${this.scope.root}` : "No captured project"))
       .child(body).when(Boolean(this.error || this.draftError), el => el.child(div().text_color(t.blocked).child(this.error || this.draftError)));
   }
 }

@@ -1,3 +1,4 @@
+import { TYPE } from "./type-scale.js";
 import { div, svg } from "gpui-kit";
 import { v_flex, h_flex, Input, InputState, Textarea, TextareaState, Editor, EditorState } from "gpui-base";
 import { theme, settings, shared, setShared, terminals, panes, exec, run, closeOverlay } from "herdr";
@@ -181,7 +182,7 @@ export default class Commands {
       .child(h_flex().gap(6).items_center().child(div().flex_1().truncate().text_color(record.status === "failed" || record.status === "unconfirmed" ? t.blocked : record.status === "succeeded" ? t.done : t.muted).child(commandStatusText(record)))
         .child(button(`command-console-${record.token}`, this.consoleBusy ? "Opening…" : "Console", cx => this.console(record, cx), !record.address || this.consoleBusy))
         .when(["running", "starting"].includes(record.status) && Boolean(record.address), el => el.child(button(`command-cancel-${record.token}`, "Cancel run", cx => { this.confirmCancel = record.token; cx.notify(); }, Boolean(record.cancelToken)))))
-      .when(Boolean(record.error), el => el.child(div().text_size(10.5).text_color(t.blocked).child(record.error)))
+      .when(Boolean(record.error), el => el.child(div().text_size(TYPE.xs).text_color(t.blocked).child(record.error)))
       .when(this.confirmCancel === record.token, el => el.child(h_flex().gap(6).items_center().child(div().flex_1().child("Stop only this task terminal?"))
         .child(button(`command-cancel-no-${record.token}`, "Keep running", cx => { this.confirmCancel = null; cx.notify(); }))
         .child(button(`command-cancel-yes-${record.token}`, "Stop task", cx => { this.confirmCancel = null; this.cancel(record, cx); }))));
@@ -193,12 +194,11 @@ export default class Commands {
     else if (this.form) body = v_flex().flex_1().min_h(0).gap(8)
       .child(div().font_semibold().child(this.form.id ? "Edit command" : "New command"))
       .child(Input.new(this.title).h(32).border_1().border_color(t.border).rounded(5))
-      .child(div().text_size(10.5).text_color(t.muted).child("Working folder"))
+      .child(div().text_size(TYPE.xs).text_color(t.muted).child("Working folder"))
       .child(Input.new(this.cwd).h(32).border_1().border_color(t.border).rounded(5))
-      .child(div().text_size(10.5).text_color(t.muted).child("Literal argv · JSON array · shell syntax requires an explicit shell executable"))
+      .child(div().text_size(TYPE.xs).text_color(t.muted).child("Literal argv · JSON array · shell syntax requires an explicit shell executable"))
       .child(div().flex_1().min_h(100).border_1().border_color(t.border).rounded(5).child(Textarea.new(this.argv).size_full()))
-      .child(div().text_size(10.5).text_color(t.muted).child("Form drafts are kept locally. Restore opens a separate copy; its original stays until discarded."))
-      .child(h_flex().gap(8).justify_end().child(button("commands-form-back", "Back · keep draft", cx => this.back(cx))).child(button("commands-form-save", "Save command", cx => this.save(cx), false, true)));
+      .child(h_flex().gap(8).justify_end().child(button("commands-form-back", "Back · keep draft", cx => this.back(cx)).tooltip("Form drafts are kept locally.")).child(button("commands-form-save", "Save command", cx => this.save(cx), false, true)));
     else body = v_flex().flex_1().min_h(0).gap(8)
       .child(h_flex().flex_none().gap(8).items_center().child(button("commands-new", "New command", cx => this.openForm(null, cx), !this.context)).child(div().flex_1())
         .child(button("commands-refresh", this.refreshing ? "Checking…" : "Check runs", cx => this.refresh(cx), this.refreshing || !project.runs.length)))
@@ -212,23 +212,23 @@ export default class Commands {
             .child(button(`command-edit-${command.id}`, "Edit", cx => this.openForm(command, cx), activeFor(command)))
             .child(button(`command-delete-${command.id}`, "Remove", cx => { this.confirmDelete = { id: command.id, revision: commandRevision(command) }; cx.notify(); }, activeFor(command)))
             .child(button(`command-start-${command.id}`, "Run", cx => this.start(command, cx), activeFor(command) || Boolean(this.busyToken), true)))
-          .child(div().text_size(10.5).text_color(t.muted).truncate().tooltip(JSON.stringify(command.argv)).child(JSON.stringify(command.argv)))
-          .child(div().text_size(10.5).text_color(t.dim).truncate().tooltip(command.cwd).child(command.cwd))
+          .child(div().text_size(TYPE.xs).text_color(t.muted).truncate().tooltip(JSON.stringify(command.argv)).child(JSON.stringify(command.argv)))
+          .child(div().text_size(TYPE.xs).text_color(t.dim).truncate().tooltip(command.cwd).child(command.cwd))
           .when(this.confirmDelete?.id === command.id, el => el.child(h_flex().gap(6).items_center().child(div().flex_1().child("Remove this saved command? Existing task output stays in core."))
             .child(button(`command-remove-no-${command.id}`, "Keep", cx => { this.confirmDelete = null; cx.notify(); }))
             .child(button(`command-remove-yes-${command.id}`, "Remove command", cx => this.remove(command, cx)))))
           .children(project.runs.filter(record => record.commandId === command.id).slice(-3).reverse().map(runRow))))
         .when(!project.commands.length, el => el.child(div().p(10).text_color(t.muted).child("Save a test, build, Python or Compose command for this project. Nothing runs until you click Run."))))
       .when(project.drafts.length > 0, el => el.child(v_flex().max_h(140).flex_none().gap(4).overflow_y_scrollbar().border_t(1).border_color(t.border)
-        .child(div().text_size(11).text_color(t.muted).child("Unfinished command forms"))
+        .child(div().text_size(TYPE.sm).text_color(t.muted).child("Unfinished command forms"))
         .children(project.drafts.map(draft => h_flex().id(`command-draft-${draft.draftId}`).gap(6).items_center()
           .child(div().flex_1().truncate().child(draft.title || "Untitled command"))
-          .child(button(`command-restore-${draft.draftId}`, "Restore copy", cx => this.openForm(null, cx, draft)))
+          .child(button(`command-restore-${draft.draftId}`, "Restore copy", cx => this.openForm(null, cx, draft)).tooltip("Restore opens a separate copy; its original stays until discarded."))
           .child(button(`command-discard-${draft.draftId}`, this.confirmDraft === draft.draftId ? "Confirm discard" : "Discard", cx => { if (this.confirmDraft === draft.draftId) this.discardDraft(draft, cx); else { this.confirmDraft = draft.draftId; cx.notify(); } }))))));
-    return v_flex().id("project-commands").size_full().min_h(0).p(16).gap(10).rounded(10).overflow_hidden().border_1().border_color(t.border).bg(t.popover).text_color(t.foreground).text_size(12)
+    return v_flex().id("project-commands").size_full().min_h(0).p(16).gap(10).rounded(10).overflow_hidden().border_1().border_color(t.border).bg(t.popover).text_color(t.foreground).text_size(TYPE.md)
       .track_focus(this.handle).on_key_down((event, cx) => { if (event.key === "escape") { closeOverlay(this.p.overlay); cx.stop_propagation(); } })
-      .child(h_flex().gap(8).items_center().child(svg("mods/sessions-plus/commands.svg").size(16).text_color(t.muted)).child(div().flex_1().font_semibold().text_size(15).child("Project commands")))
-      .when(Boolean(this.context), el => el.child(div().truncate().text_size(10.5).text_color(t.dim).tooltip(`${this.context.on || "This computer"} · ${this.context.root}`).child(`${this.context.on || "This computer"} · ${this.context.root}`)))
+      .child(h_flex().gap(8).items_center().child(svg("mods/sessions-plus/commands.svg").size(16).text_color(t.muted)).child(div().flex_1().font_semibold().text_size(TYPE.lg).child("Project commands")))
+      .when(Boolean(this.context), el => el.child(div().truncate().text_size(TYPE.xs).text_color(t.dim).tooltip(`${this.context.on || "This computer"} · ${this.context.root}`).child(`${this.context.on || "This computer"} · ${this.context.root}`)))
       .child(body)
       .when(Boolean(this.error), el => el.child(div().text_color(t.blocked).child(this.error)));
   }

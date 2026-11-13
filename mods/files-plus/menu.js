@@ -1,3 +1,4 @@
+import { TYPE } from "./type-scale.js";
 import { div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { closeOverlay, openOverlay, theme, exec, shared, setShared, settings, appHome, readTextFile } from "herdr";
@@ -41,7 +42,7 @@ export default class Menu {
         try {
           if (await readTextFile(`${appHome()}/mods/sessions-plus/mod.json`) === null) throw new Error("Pending prompts requires the Sessions Plus companion. Run the full workspace updater first.");
           closeOverlay(this.p.overlay);
-          openOverlay({ mod: "sessions-plus", kind: "dialog", frame: "none", width: 660, height: 540, props: { role: "reference", reference: { root: target.root, relative: target.relative, dir: target.dir, on: target.on ?? null } } });
+          openOverlay({ mod: "sessions-plus", kind: "dialog", frame: "none", width: 660, height: 540, props: { role: "prompt-queue", reference: { root: target.root, relative: target.relative, dir: target.dir, on: target.on ?? null } } });
         } catch (error) { this.error = String(error.message || error); }
         finally { this.busy = false; cx.notify(); }
       });
@@ -74,7 +75,7 @@ export default class Menu {
     const available = globalThis.window.viewport_size().height / (settings().zoom || 1) * 0.85;
     const height = menuHeight(this.target, this.options, available);
     const hint = localActions(this.target) ? "↑ ↓ select · Enter run · Esc close" : "File actions require local macOS";
-    return v_flex().id("files-plus-menu").w_full().h(height).min_h(0).p(4).bg(t.popover).text_size(12.8).text_color(t.foreground)
+    return v_flex().id("files-plus-menu").w_full().h(height).min_h(0).p(4).bg(t.popover).text_size(TYPE.md).text_color(t.foreground)
       .track_focus(this.handle)
       .on_key_down((event, cx) => {
         if (this.busy || !this.items.length) return;
@@ -85,7 +86,7 @@ export default class Menu {
         else return;
         cx.stop_propagation(); cx.notify();
       })
-      .child(div().h(22).flex_none().px(8).pt(2).truncate().text_size(11).text_color(t.dim).child(this.target?.name ?? "Files"))
+      .child(div().h(22).flex_none().px(8).pt(2).truncate().text_size(TYPE.sm).text_color(t.dim).child(this.target?.name ?? "Files"))
       .child(v_flex().id("files-plus-menu-items").flex_1().min_h(0).overflow_y_scrollbar().children(this.items.map((item, i) => v_flex().flex_none()
         .when(item.separator, el => el.child(div().mx(8).my(3).h(1).bg(t.border)))
         .child(h_flex().id(`files-plus-${item.id}`).h(30).px(8).rounded(6).items_center().cursor_pointer()
@@ -94,7 +95,7 @@ export default class Menu {
           .on_mouse_move((_event, cx) => { if (!this.busy && this.at !== i) { this.at = i; cx.notify(); } })
           .on_click((_event, cx) => this.choose(i, cx)).child(div().flex_1().child(item.label))
           .when(item.checked === true, el => el.child(div().flex_none().child("✓")))))))
-      .child(div().h(22).flex_none().overflow_y_scrollbar().px(8).pt(3).text_size(10.5)
+      .child(div().h(22).flex_none().overflow_y_scrollbar().px(8).pt(3).text_size(TYPE.xs)
         .text_color(this.error ? t.ansi1 : t.dim).child(this.error || (this.busy ? "Working…" : hint)));
   }
 }

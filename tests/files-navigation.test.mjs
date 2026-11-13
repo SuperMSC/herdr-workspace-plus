@@ -1,3 +1,4 @@
+import { uiFunction } from "./helpers/ui-function.mjs";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
@@ -52,7 +53,7 @@ test("breadcrumbs mark every ancestor as a folder", () => {
 });
 
 test("type and folder icons always resolve to bundled assets, including special names", () => {
-  const cases = [["MAIN.PY", false, "python"], ["a.tsx", false, "typescript"], ["a.jsonl", false, "json"], [".env.local", false, "config"], ["tests", true, "folder-test"], [".git", true, "folder-git"], ["src", true, "folder-code"], ["README", false, "markdown"], ["new.unknown", false, "file"]];
+  const cases = [["MAIN.PY", false, "python"], ["a.tsx", false, "typescript"], ["a.jsonl", false, "json"], [".env.local", false, "config"], ["tests", true, "folder-test"], [".git", true, "folder-git"], ["src", true, "folder-code"], ["README", false, "markdown"], ["README.md", false, "markdown"], ["CHANGELOG", false, "markdown"], ["CHANGELOG.md", false, "markdown"], ["README.txt", false, "document"], ["README.js", false, "javascript"], ["LICENSE", false, "document"], ["LICENSE.md", false, "document"], ["License-MIT", false, "document"], ["NOTICE", false, "document"], ["COPYING", false, "document"], ["new.unknown", false, "file"]];
   for (const [path, dir, expected] of cases) { const name = iconName(path, dir); assert.equal(name, expected); assert(existsSync(new URL(`../mods/files-plus/icons/${name}.svg`, import.meta.url))); }
 });
 
@@ -67,10 +68,11 @@ function element() {
     return value => { object.attrs[key] = value; return proxy; };
   } }); return proxy;
 }
-function inputState() { return { text: "", events: {}, on(name, callback) { this.events[name] = callback; }, value() { return this.text; }, set_value(value) { this.text = value; }, release() {} }; }
+function inputState() { return { text: "", events: {}, on(name, callback) { this.events[name] = callback; }, value() { return this.text; }, set_value(value) { this.text = value; }, focus() { this.focused = true; this.events.focus?.({}); }, release() {} }; }
 function popover(id) { const node = element().id(id); node.trigger = child => node.child(child); node.content = child => node.child(child); return node; }
 const nodes = node => !node || typeof node !== "object" ? [] : [node, ...node.childNodes.flatMap(nodes)];
 const find = (tree, id) => nodes(tree).find(node => node.attrs.id === id);
+const text = tree => typeof tree === 'string' ? tree : (tree?.childNodes || []).map(text).join(' ');
 function harness(persisted = {}) {
   let location = { cwd: "/project", on: null, space: "s" }, rendering = false;
   const tasks = [], timers = [], previews = [], opened = [], overlays = [], state = persisted;
@@ -83,7 +85,7 @@ function harness(persisted = {}) {
     theme: () => ({}), settings: () => ({ zoom: 1 }), window: () => ({ platform: "macos" }), openOverlay: value => overlays.push(value), watchFolder: async () => { throw new Error("No fixture watcher"); },
     exec: async (program, args) => ({ code: program === "git" ? 1 : 0, stdout: program === "git" ? "" : args[3].endsWith("/src") ? "f\0a.py\0f\0b.py\0" : "d\0src\0f\0readme.md\0" }) };
   const source = readFileSync(new URL("../mods/files-plus/browser.js", import.meta.url), "utf8").replace(/^import .*;\n/gm, "").replace("export default class", "return class");
-  const Browser = new Function(...Object.keys(deps), source)(...Object.values(deps)), browser = new Browser(); browser.init({}, cx);
+  const Browser = uiFunction(...Object.keys(deps), source)(...Object.values(deps)), browser = new Browser(); browser.init({}, cx);
   return { browser, cx, state, previews, opened, overlays, async flush() { while (timers.length) timers.shift()(cx); for (let i = 0; i < tasks.length; i++) await tasks[i]; }, switchTo(next) { location = next; }, render() { rendering = true; try { return browser.render(cx); } finally { rendering = false; } } };
 }
 globalThis.window = { viewport_size: () => ({ width: 1400, height: 900 }) };
@@ -126,7 +128,7 @@ test("folders carry their strongest Git mark, marks map to theme colors, and fol
   assert.equal(model.markColor("A", { ansi2: "#0dbc79", foreground: "#bfbfbf" }), "#4bbd92");
   assert.equal(model.mixColor("#000000", "#ffffff80", 0.5), "#808080");
   const source = readFileSync(new URL("../mods/files-plus/icons.js", import.meta.url), "utf8").replace(/^import .*;\n/gm, "").replaceAll("export function", "function");
-  const { iconFile } = new Function("div", "svg", "image", "iconName", source + "\nreturn { iconFile };")(element, element, element, iconName);
+  const { iconFile } = uiFunction("div", "svg", "image", "iconName", source + "\nreturn { iconFile };")(element, element, element, iconName);
   assert.equal(iconFile("src", true, true), "mods/files-plus/icons/folder-code-open.svg");
   assert.equal(iconFile("scripts", true), "mods/files-plus/icons/folder-scripts.svg");
   assert.equal(iconFile("a.py", false, true), "mods/files-plus/icons/python.svg");
@@ -229,17 +231,34 @@ test("filtering grouped pins temporarily reveals matching descendants without ch
 
 test("the compact toolbar keeps keyboard mode changes, exact remote context and full project search", async () => {
   const f = harness(); await f.flush(); let tree = f.render();
-  assert(!find(tree, "files-modes")); assert(find(tree, "files-mode-picker")); assert(find(tree, "files-local-filter"));
+  assert(!find(tree, "files-modes")); assert(find(tree, "files-mode-picker")); assert(!find(tree, "files-local-filter"));
   find(tree, "files-mode-popover").events.on_open_change(true, f.cx);
   tree = f.render(); const popup = find(tree, "files-view-menu");
   popup.events.on_key_down({ key: "ArrowDown" }, f.cx); popup.events.on_key_down({ key: "Enter" }, f.cx);
   assert.equal(f.browser.mode, "recent"); assert.equal(f.browser.modeOpen, false);
   f.browser.filterInput.set_value("before-switch"); f.browser.filterInput.events.change({}, f.cx);
   f.switchTo({ cwd: "/remote-project", on: "server", space: "remote" }); f.render(); await f.flush(); tree = f.render();
-  assert.equal(f.browser.filterQuery, ""); assert.equal(find(tree, "crumb-").attrs.tooltip, "server:/remote-project");
+  assert.equal(f.browser.filterQuery, ""); assert(!find(tree, "files-breadcrumbs")); assert.match(find(tree, "files-mode-picker").attrs.tooltip, /@server\n\/remote-project/);
   find(tree, "files-search").events.on_click({}, f.cx);
   assert.deepEqual(f.overlays.at(-1).props, { role: "search", root: "/remote-project", on: "server" });
   f.browser.mode = "tree"; const entry = f.browser.visibleEntries()[0];
   assert.equal(f.browser.row(entry, {}).attrs.h, 28);
   f.state["project-spaces.density.v1"] = "compact"; f.render(); assert.equal(f.browser.row(entry, {}).attrs.h, 26);
+});
+
+test('Files merges the root into its view picker and keeps one divider and deeper breadcrumbs',async()=>{
+ const f=harness();await f.flush();let tree=f.render();assert.equal(text(find(tree,'files-mode-picker')).trim(),'project');assert(!find(tree,'files-breadcrumbs'));assert.equal(nodes(tree).filter(node=>node.attrs.id==='files-header-divider').length,1);assert.equal(find(tree,'files-header-divider').attrs.h,1);
+ f.browser.navigate('src',f.cx);await f.flush();tree=f.render();assert(find(tree,'files-breadcrumbs'));assert(find(tree,'crumb-'));assert(find(tree,'crumb-src'));assert.equal(text(find(tree,'files-mode-picker')).trim(),'project');
+});
+
+test('local filter opens from its icon or Cmd+F and closes on Escape or empty blur without hiding an active query',async()=>{
+ const f=harness();await f.flush();assert(!find(f.render(),'files-local-filter'));find(f.render(),'files-filter').events.on_click({},f.cx);assert(find(f.render(),'files-local-filter'));await f.flush();assert.equal(f.browser.filterInput.focused,true);
+ f.browser.filterInput.set_value('src');f.browser.filterInput.events.change({},f.cx);f.browser.filterInput.events.blur({},f.cx);assert(find(f.render(),'files-local-filter'));assert.equal(f.browser.filterQuery,'src');
+ f.render().events.on_key_down({key:'escape'},f.cx);assert.equal(f.browser.filterQuery,'');assert(!find(f.render(),'files-local-filter'));
+ f.render().events.on_key_down({key:'f',modifiers:{platform:true}},f.cx);await f.flush();assert(find(f.render(),'files-local-filter'));f.browser.filterInput.set_value('');f.browser.filterInput.events.change({},f.cx);assert(find(f.render(),'files-local-filter'));f.browser.filterInput.events.blur({},f.cx);assert(!find(f.render(),'files-local-filter'));
+ f.render().events.on_key_down({key:'f',modifiers:{platform:true,shift:true}},f.cx);assert(!find(f.render(),'files-local-filter'));find(f.render(),'files-search').events.on_click({},f.cx);assert.equal(f.overlays.at(-1).props.role,'search');
+});
+
+test('a pending filter focus is cancelled when its browser closes',async()=>{
+ const f=harness();await f.flush();f.browser.openFilter(f.cx);f.browser.close();await f.flush();assert.notEqual(f.browser.filterInput.focused,true);
 });

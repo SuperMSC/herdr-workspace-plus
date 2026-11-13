@@ -1,3 +1,4 @@
+import { TYPE } from "./type-scale.js";
 import { div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { appHome, exec, shared, setShared, theme, closeOverlay, window } from "herdr";
@@ -30,9 +31,9 @@ export default class HunkDialog {
     const t = theme(), request = this.request;
     const button = (id, label, callback, disabled) => div().id(id).h(30).px(12).rounded(6).bg(t.raised).flex().items_center().text_color(disabled ? t.dim : t.foreground)
       .when(!disabled, el => el.cursor_pointer().hover(row => row.bg(t.hover))).on_click((_event, cx) => { if (!disabled) callback(cx); }).child(label);
-    return v_flex().id("hunk-operation").size_full().min_h(0).p(18).gap(12).rounded(10).border_1().border_color(t.border).bg(t.popover).text_color(t.foreground).text_size(12).track_focus(this.handle)
+    return v_flex().id("hunk-operation").size_full().min_h(0).p(18).gap(12).rounded(10).border_1().border_color(t.border).bg(t.popover).text_color(t.foreground).text_size(TYPE.md).track_focus(this.handle)
       .on_key_down((event, cx) => { if (event.key === "escape") { if (!this.busy) closeOverlay(this.p.overlay); cx.stop_propagation(); } })
-      .child(div().font_semibold().text_size(15).child(request.action === "stage" ? "Stage selected hunk" : "Unstage selected hunk"))
+      .child(div().font_semibold().text_size(TYPE.lg).child(request.action === "stage" ? "Stage selected hunk" : "Unstage selected hunk"))
       .child(div().truncate().tooltip(request.root + "/" + request.file.path).child(request.file.path || "No file selected"))
       .child(div().text_color(t.muted).child(request.hunk.header || ""))
       .child(div().text_color(t.dim).child("Only this hunk changes in the Git index. Working files and other staged changes are kept."))

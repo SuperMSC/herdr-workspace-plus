@@ -21,7 +21,8 @@ export function iconName(path, directory = false) {
     return "folder";
   }
   if (/^(dockerfile|makefile|justfile|\.env(?:\.|$)|\.gitignore$|\.gitattributes$|\.editorconfig$)/.test(name)) return "config";
-  if (/^(license|readme|changelog)(\.|$)/.test(name)) return "markdown";
+  if (/^(license|notice|copying)([.-]|$)/.test(name)) return "document";
+  if (/^(readme|changelog)(\.md)?$/.test(name)) return "markdown";
   const ext = name.split(".").pop();
   return Object.keys(groups).find(group => groups[group].includes(ext)) || "file";
 }

@@ -1,3 +1,4 @@
+import { TYPE } from "./type-scale.js";
 import { div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { appHome, exec, terminals, panes, theme, window, shared, setShared, closeOverlay } from "herdr";
@@ -84,28 +85,28 @@ export default class TrashDialog {
     const label = this.busy ? "Working…" : this.error ? "Retry" : trash ? "Move to Trash" : "Restore";
     const status = this.busy ? (this.ready ? "Working…" : "Checking session files…") : "";
 
-    const button = (id, text, primary, callback) => h_flex().id(id).h(32).px(14).gap(8).items_center().rounded(8).text_size(13)
+    const button = (id, text, primary, callback) => h_flex().id(id).h(32).px(14).gap(8).items_center().rounded(8).text_size(TYPE.md)
       .font_medium().border_1().cursor_pointer().hover(s => s.opacity(0.88)).when(this.busy, el => el.opacity(0.5))
       .border_color(primary ? (trash ? (t.danger || t.blocked) : t.solid) : t.input)
       .bg(primary ? (trash ? (t.danger || t.blocked) : t.solid) : t.raised)
       .text_color(primary ? (trash ? (t.danger_foreground || "#ffffff") : t.solid_foreground) : t.foreground)
       .on_click(callback).child(text)
-      .when(primary && !this.busy, el => el.child(div().text_size(11).opacity(0.7).child("↵")));
+      .when(primary && !this.busy, el => el.child(div().text_size(TYPE.sm).opacity(0.7).child("↵")));
 
     const session = h_flex().flex_none().gap(10).items_center().px(12).py(9).rounded(8).border_1().border_color(t.border).bg(t.background)
       .child(providerIcon(this.target.provider, 16))
       .child(v_flex().flex_1().min_w(0).gap(1)
-        .child(div().text_size(13).font_medium().text_color(t.foreground).truncate().child(this.target.title || this.target.id || "Session"))
-        .child(div().text_size(11.5).text_color(t.dim).truncate().child(this.target.id ? `${provider} · ${this.target.id}` : provider)));
+        .child(div().text_size(TYPE.md).font_medium().text_color(t.foreground).truncate().child(this.target.title || this.target.id || "Session"))
+        .child(div().text_size(TYPE.sm).text_color(t.dim).truncate().child(this.target.id ? `${provider} · ${this.target.id}` : provider)));
 
     const files = v_flex().flex_1().min_h(0).rounded(8).border_1().border_color(t.border).overflow_hidden()
       .child(h_flex().flex_none().h(26).px(12).items_center().border_b_1().border_color(t.border).bg(t.surface)
-        .text_size(11).text_color(t.dim).child(status || `${this.files.length} file${this.files.length === 1 ? "" : "s"}`))
-      .child(v_flex().id("session-trash-files").flex_1().min_h(0).px(12).py(6).gap(3).overflow_y_scrollbar().text_size(11.5).text_color(t.muted)
+        .text_size(TYPE.sm).text_color(t.dim).child(status || `${this.files.length} file${this.files.length === 1 ? "" : "s"}`))
+      .child(v_flex().id("session-trash-files").flex_1().min_h(0).px(12).py(6).gap(3).overflow_y_scrollbar().text_size(TYPE.sm).text_color(t.muted)
         .children(this.files.map(file => div().truncate().text_ellipsis_start().child(file))));
 
     return v_flex().id("session-trash-dialog").size_full().min_h(0).px(20).pt(20).pb(18).gap(14).rounded(12).overflow_hidden()
-      .border_1().border_color(t.border).bg(t.popover).text_color(t.foreground).text_size(13)
+      .border_1().border_color(t.border).bg(t.popover).text_color(t.foreground).text_size(TYPE.md)
       .track_focus(this.handle).on_key_down((event, cx) => {
         if (event.key === "escape") { if (!this.busy) closeOverlay(this.p.overlay); }
         else if (event.key === "enter") this.submit(cx);
@@ -116,15 +117,15 @@ export default class TrashDialog {
         .child(h_flex().size(36).flex_none().items_center().justify_center().rounded(10).bg(tone + "1f")
           .child(svg(`mods/sessions-plus/${trash ? "trash" : "refresh"}.svg`).size(16).text_color(tone)))
         .child(v_flex().flex_1().min_w(0).gap(3)
-          .child(div().text_size(15).font_semibold().truncate().child(trash ? "Move Session to Trash?" : "Restore Session?"))
-          .child(div().text_size(12.5).text_color(t.muted).child(note)))
+          .child(div().text_size(TYPE.lg).font_semibold().truncate().child(trash ? "Move Session to Trash?" : "Restore Session?"))
+          .child(div().text_size(TYPE.md).text_color(t.muted).child(note)))
         .child(div().flex_none().px(6).h(20).flex().items_center().rounded(5).border_1().border_color(t.border)
-          .text_size(10.5).text_color(t.dim).child("Esc")))
+          .text_size(TYPE.xs).text_color(t.dim).child("Esc")))
       .child(session)
-      .when(!trash && Boolean(this.target.message), el => el.child(div().flex_none().text_size(11.5).text_color(t.muted).child(this.target.message)))
+      .when(!trash && Boolean(this.target.message), el => el.child(div().flex_none().text_size(TYPE.sm).text_color(t.muted).child(this.target.message)))
       .when(trash, el => el.child(files))
-      .when(!trash, el => el.child(div().flex_1().min_h(0).text_size(11.5).text_color(t.dim).child(status)))
-      .when(Boolean(this.error), el => el.child(div().flex_none().max_h(54).overflow_y_scrollbar().text_size(12).text_color(t.blocked).child(this.error)))
+      .when(!trash, el => el.child(div().flex_1().min_h(0).text_size(TYPE.sm).text_color(t.dim).child(status)))
+      .when(Boolean(this.error), el => el.child(div().flex_none().max_h(54).overflow_y_scrollbar().text_size(TYPE.md).text_color(t.blocked).child(this.error)))
       .child(h_flex().flex_none().gap(8).justify_end()
         .child(button("session-trash-cancel", "Cancel", false, () => { if (!this.busy) closeOverlay(this.p.overlay); }))
         .child(button("session-trash-confirm", label, true, (_event, cx) => this.submit(cx))));

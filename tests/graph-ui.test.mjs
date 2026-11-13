@@ -1,3 +1,4 @@
+import { uiFunction } from "./helpers/ui-function.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
@@ -14,7 +15,7 @@ function fixture() {
     projectContext: () => ({ cwd: "/unrelated", on: "elsewhere" }), exec() {}, appHome: () => "/fixture", createGraphClient: () => (context, selection) => new Promise((resolve, reject) => requests.push({ context, selection, resolve, reject })),
     theme: () => ({}), settings: () => ({}), openOverlay: value => overlays.push(value), closeOverlay() {} };
   const source = readFileSync(new URL("../mods/files-plus/graph.js", import.meta.url), "utf8").replace(/^import .*;\n/gm, "").replace("export default class", "return class");
-  const Graph = new Function(...Object.keys(deps), source)(...Object.values(deps));
+  const Graph = uiFunction(...Object.keys(deps), source)(...Object.values(deps));
   const cx = { focus_handle: () => ({ focus() {} }), notify() { assert(!rendering); assert(!drawing); }, spawn: action => tasks.push(action(cx)) }, view = new Graph();
   globalThis.window = { paint_path: element, viewport_size: () => ({ width: 1200, height: 900 }) }; view.init({ root: "/captured", on: "server" }, cx);
   return { view, cx, requests, overlays, tasks, lists, render() { rendering = true; try { return view.render(); } finally { rendering = false; } }, draw(list) { drawing = true; try { return list.spec.draw({ start: 0, end: list.spec.count }); } finally { drawing = false; } } };
@@ -28,4 +29,9 @@ test("production graph virtual rows draw native geometry without handlers and st
   const f = fixture(); f.requests[0].resolve(data("selected")); await f.tasks[0]; f.render(); const list = f.lists.at(-1); assert.equal(f.draw(list).length, 1);
   list.events.on_item_click(list.spec.key(0), f.cx); assert.equal(f.view.selected.hash, hash(1)); f.view.diff(); assert.equal(f.overlays[0].props.source.on, "server"); assert.equal(f.overlays[0].props.source.cwd, "/captured"); assert.equal(f.overlays[0].props.selection.commit, hash(1));
   f.view.refresh(f.cx); list.events.on_item_click(list.spec.key(0), f.cx); f.requests[1].reject(new Error("offline")); await f.tasks[1]; assert(f.view.stale); f.view.diff(); assert.equal(f.overlays.length, 1); assert.match(f.view.error, /offline/);
+});
+
+test('graph keeps commit counts but moves permanent read-only and fetch guidance into tooltips',async()=>{
+ const f=fixture();f.requests[0].resolve(data('selected'));await f.tasks[0];const tree=f.render(),children=node=>node&&typeof node==='object'?Object.getOwnPropertyDescriptor(node,'children')?.value||[]:[],nodes=node=>!node||typeof node!=='object'?[]:[node,...children(node).flatMap(nodes)],text=node=>typeof node==='string'?node:children(node).map(text).join(' ');
+ assert.match(text(tree),/1 commits/);assert.doesNotMatch(text(tree),/Read only|last fetch/);assert.match(nodes(tree).find(node=>node.attrs.id==='graph-refresh').attrs.tooltip,/Read only.*last fetch/);
 });

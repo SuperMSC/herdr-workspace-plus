@@ -136,8 +136,12 @@ function nodeRow(node, depth, s, options, group = null, source = null, merged = 
   const tabTitle = merged && ctx.tab?.named && candidate && !/^\d+$/.test(candidate) && !genericNames.includes(candidate.toLocaleLowerCase()) ? candidate : "", title = text(alias || tabTitle || node.title,120), row = baseRow(node.agent ? "agent" : "terminal", rowId("agent",node.address),title,depth,g,r);
   const contextNames = [...new Set([g?.name,ctx.w?.name,ctx.tab?.name].filter(Boolean))];
   const info = [...contextNames,node.on ? `@${node.on}` : "local",node.program?.name,...node.issues].filter(Boolean);
+  // Only a verified single-terminal tab can attribute its existing timestamps to this task.
+  const timing = node.agent && merged && node.own?.tab === ctx.tab?.id ? ctx.tab : null;
+  const workingSince = node.status === "working" && Number.isFinite(timing?.working_since) && timing.working_since > 0 ? timing.working_since : null;
+  const activityAt = workingSince || (Number.isFinite(timing?.changed_at) && timing.changed_at > 0 ? timing.changed_at : null);
   return { ...row,address:node.address,spaceId:node.own?.space || row.spaceId,tabId:node.own?.tab || null,parentId:node.rawParent,agent:node.agent,child:node.child,pinned:node.pinned,focused:node.focused,status:node.status,actualStatus:node.actualStatus,branchStatus:node.branchStatus,program:node.program,
-    inlineMetadata:group && source ? text([node.program?.name !== title ? node.program?.name : "",...node.issues].filter(Boolean).join(" · "),500) : undefined,
+    inlineMetadata:"",activityAt,activityKind:activityAt ? workingSince ? "working" : "changed" : null,
     taskTitle:text(node.title,2048),metadata:text(info.join(" · "),500),tooltip:text([node.title,node.address,node.core?.cwd,node.presentationDetached&&node.rawParent?`Parent: ${node.rawParent}`:"",...node.issues].filter(Boolean).join("\n"),3000),on:node.on,target:node.target,
     merged,cycle:node.cycle,missingParent:node.missingParent,foldable:node.children.length>0,childCount:node.children.length,rawAgent:node.api || null };
 }
@@ -211,7 +215,7 @@ export function unifiedRows(input = {}, supplied = {}) {
   const promotedNodes=new Set();for(const node of forest.nodes.values()){const root=rootOf.get(node.address);if(kept.has(node.address)&&root&&bucketOf(root)&&!node.target.disabled)promotedNodes.add(node.address);}
   const coveredTab=(w,tab)=>mode==="project"&&completeTab(w,tab,null)&&(directNodes.get(tab.id)||[]).every(node=>promotedNodes.has(node.address))&&(paneMembers.get(tab.id)||[]).every(p=>promotedNodes.has(p.terminal));
   const rows=[],push=row=>{row.folded=!openRow(row,options,filtering);rows.push(row);return !row.folded;};
-  const drawBranch=(root,depth,group=null,source=null,merged=false)=>{const stack=[{node:root,depth,merged}];while(stack.length){const item=stack.pop(),node=item.node;if(!kept.has(node.address))continue;const row=nodeRow(node,item.depth,s,options,group,source,item.merged);row.contextOnly=!matched.has(node.address);row.childCount=node.children.filter(n=>kept.has(n.address)).length;row.foldable=row.childCount>0;if(push(row))for(let i=node.children.length-1;i>=0;i--)stack.push({node:node.children[i],depth:item.depth+1,merged:false});}};
+  const drawBranch=(root,depth,group=null,source=null,merged=false,section=null)=>{const stack=[{node:root,depth,merged}];while(stack.length){const item=stack.pop(),node=item.node;if(!kept.has(node.address))continue;const row=nodeRow(node,item.depth,s,options,group,source,item.merged);row.section=section;row.contextOnly=!matched.has(node.address);row.childCount=node.children.filter(n=>kept.has(n.address)).length;row.foldable=row.childCount>0;if(push(row))for(let i=node.children.length-1;i>=0;i--)stack.push({node:node.children[i],depth:item.depth+1,merged:false});}};
   const itemIndexes=new Map();
   const itemIndex=items=>{if(itemIndexes.has(items))return itemIndexes.get(items);const index={spaces:new Map(),tabs:new Map(),roots:new Set(items)};for(const root of items){for(const[key,value]of [["spaces",root.owner?.space],["tabs",root.owner?.tab]]){if(!index[key].has(value))index[key].set(value,[]);index[key].get(value).push(root);}}itemIndexes.set(items,index);return index;};
   const spaceItems=(items,id)=>itemIndex(items).spaces.get(id)||[];
@@ -226,29 +230,35 @@ export function unifiedRows(input = {}, supplied = {}) {
     const tabIds=new Set(tabs.map(tab=>tab.id)),loose=items.filter(node=>!tabIds.has(node.owner?.tab));
     const row=baseRow("space",rowId("space",w.id),w.name,depth,group,source);Object.assign(row,{section,directoryPinned:directoryPins.spaces.includes(w.id),directoryInheritedPin:explicitSpaces.has(w.id)&&!directoryPins.spaces.includes(w.id),active:Boolean(w.active),on:w.machine??null,status:w.status,metadata:text(source.place||w.folder,300),spaceId:w.id,target:{kind:"space",space:w.id,on:w.machine??null,disabled:s.duplicateSpaces.has(w.id)},foldable:tabs.length>0||loose.length>0,childCount:tabs.length+loose.length,empty:!tabs.length&&!loose.length,newTabTarget:{space:w.id,on:w.machine??null}});if(!push(row))return;
     for(const tab of tabs){const tabItems=index.tabs.get(tab.id)||[],ps=paneMembers.get(tab.id)||[],direct=directNodes.get(tab.id)||[];
-      if(tabItems.length===1&&!tabItems[0].target.disabled&&tabItems[0].target.space===w.id&&tabItems[0].target.tab===tab.id&&direct.length===1&&ps.length<=1&&!ps.some(p=>!p.terminal)){drawBranch(tabItems[0],depth+1,group,source,true);continue;}
-      const tr=baseRow("tab",rowId("tab",JSON.stringify([w.id,tab.id])),tab.name||"Tab",depth+1,group,source);Object.assign(tr,{section,tabId:tab.id,on:w.machine??null,status:tab.status||null,metadata:ps.some(p=>!p.terminal)?"Includes a preview/mod pane":"",target:{kind:"tab",space:w.id,tab:tab.id,on:w.machine??null,disabled:s.duplicateSpaces.has(w.id)||s.duplicateTabs.has(tab.id)},foldable:tabItems.length>0,childCount:tabItems.length,empty:!tabItems.length});if(push(tr))for(const node of tabItems)drawBranch(node,depth+2,group,source);
+      if(tabItems.length===1&&!tabItems[0].target.disabled&&tabItems[0].target.space===w.id&&tabItems[0].target.tab===tab.id&&direct.length===1&&ps.length<=1&&!ps.some(p=>!p.terminal)){drawBranch(tabItems[0],depth+1,group,source,true,section);continue;}
+      const tr=baseRow("tab",rowId("tab",JSON.stringify([w.id,tab.id])),tab.name||"Tab",depth+1,group,source);Object.assign(tr,{section,tabId:tab.id,on:w.machine??null,status:tab.status||null,metadata:ps.some(p=>!p.terminal)?"Includes a preview/mod pane":"",target:{kind:"tab",space:w.id,tab:tab.id,on:w.machine??null,disabled:s.duplicateSpaces.has(w.id)||s.duplicateTabs.has(tab.id)},foldable:tabItems.length>0,childCount:tabItems.length,empty:!tabItems.length});if(push(tr))for(const node of tabItems)drawBranch(node,depth+2,group,source,false,section);
     }
-    for(const node of loose)drawBranch(node,depth+1,group,source);
+    for(const node of loose)drawBranch(node,depth+1,group,source,false,section);
   };
+  const groupHeading=group=>list(group.rows).length!==1||group.custom||group.manual||explicitGroups.has(group.key);
   const drawGroup=(entry,members,offset,items,section=null)=>{
-    if(!members.length)return;const group=entry.group,solo=list(group.rows).length===1&&!group.custom&&!group.manual&&!explicitGroups.has(group.key),depth=offset+(solo?0:1);
+    if(!members.length)return;const group=entry.group,solo=!groupHeading(group),depth=offset+(solo?0:1);
     if(!solo){const row=baseRow("group",rowId("group",group.key),group.name,offset,group);Object.assign(row,{section,directoryPinned:explicitGroups.has(group.key),status:group.status,foldable:true,childCount:members.length,count:members.length});if(!push(row))return;}
     for(const source of members)drawSpace(source,group,depth,spaceItems(items,source.w.id),section);
   };
   const wholeGroupBucket=entry=>fullGroupBucket.get(entry.group.key)||null;
   const sectionOrder=mode==="project"?["pinned","attention"]:["pinned",...STATUS.map(status=>`status-${status}`)];
   const sectionName=bucket=>bucket==="pinned"?"Pinned":bucket==="attention"?"Needs attention":{blocked:"Needs you",done:"Done",working:"Working",idle:"Idle",unknown:"Unknown status"}[bucket.slice(7)];
-  for(const bucket of sectionOrder){const items=bucketRoots.get(bucket)||[],hasDirectories=visibleGroups.some(entry=>entry.wanted.some(r=>movedSpaces.get(r.w.id)===bucket));if(!items.length&&!hasDirectories)continue;const header=baseRow("section",`section:${bucket}`,sectionName(bucket),0);Object.assign(header,{status:bucket.startsWith("status-")?bucket.slice(7):null,foldable:true,childCount:items.length,count:items.filter(root=>bucketOf(root)===bucket||bucket==="pinned"&&explicitSpaces.has(container(root))).length});if(!push(header))continue;
-    for(const entry of visibleGroups){const members=entry.wanted.filter(r=>movedSpaces.get(r.w.id)===bucket);if(!members.length)continue;if(wholeGroupBucket(entry)===bucket)drawGroup(entry,members,1,items,bucket);else for(const source of members)drawSpace(source,entry.group,1,spaceItems(items,source.w.id),bucket);}
-    for(const root of items.filter(root=>movedSpaces.get(container(root))!==bucket).sort(priority))drawBranch(root,1);
+  for(const bucket of sectionOrder){
+    const items=bucketRoots.get(bucket)||[],directories=visibleGroups.map(entry=>({entry,members:entry.wanted.filter(r=>movedSpaces.get(r.w.id)===bucket)})).filter(item=>item.members.length),standalone=items.filter(root=>movedSpaces.get(container(root))!==bucket).sort(priority);
+    if(!items.length&&!directories.length)continue;
+    const topCount=directories.reduce((count,{entry,members})=>count+(wholeGroupBucket(entry)===bucket&&groupHeading(entry.group)?1:members.length),standalone.length);
+    const header=baseRow("section",`section:${bucket}`,sectionName(bucket),0);Object.assign(header,{status:bucket.startsWith("status-")?bucket.slice(7):null,foldable:true,childCount:bucket==="pinned"?topCount:items.length,count:bucket==="pinned"?topCount:items.filter(root=>bucketOf(root)===bucket).length});if(!push(header))continue;
+    // Sections separate the list visually; only project/tab/parent relationships add depth.
+    for(const {entry,members}of directories){if(wholeGroupBucket(entry)===bucket)drawGroup(entry,members,0,items,bucket);else for(const source of members)drawSpace(source,entry.group,0,spaceItems(items,source.w.id),bucket);}
+    for(const root of standalone)drawBranch(root,0,null,null,false,bucket);
   }
   const mainGroups=visibleGroups.map(entry=>({...entry,remaining:entry.wanted.filter(r=>!movedSpaces.has(r.w.id))})).filter(entry=>entry.remaining.length);
   let navigationOpen=mode!=="status"||filter==="all";
   if(mode==="status"&&filter==="all"&&mainGroups.length){const nav=baseRow("section","section:navigation","Other workspaces",0);Object.assign(nav,{foldable:true,childCount:mainGroups.reduce((n,entry)=>n+entry.remaining.length,0)});navigationOpen=push(nav);}
-  if(navigationOpen)for(const entry of mainGroups)drawGroup(entry,entry.remaining,mode==="status"?1:0,mode==="project"?rest:[]);
+  if(navigationOpen)for(const entry of mainGroups)drawGroup(entry,entry.remaining,0,mode==="project"?rest:[]);
   const unplaced=mode==="project"?rest.filter(node=>!node.owner||!s.spaces.has(node.owner.space)):[];
-  if(unplaced.length){const header=baseRow("section","section:unplaced","Other live terminals",0);Object.assign(header,{foldable:true,childCount:unplaced.length,count:unplaced.length});if(push(header))for(const node of unplaced.sort(priority))drawBranch(node,1);}
+  if(unplaced.length){const header=baseRow("section","section:unplaced","Other live terminals",0);Object.assign(header,{foldable:true,childCount:unplaced.length,count:unplaced.length});if(push(header))for(const node of unplaced.sort(priority))drawBranch(node,0,null,null,false,"unplaced");}
   const agentOrder=rows.filter(r=>r.agent).map(r=>r.address),size=Math.max(1,Math.min(UNIFIED_PAGE_SIZE,Number.isInteger(options.pageSize)?options.pageSize:UNIFIED_PAGE_SIZE)),pages=Math.max(1,Math.ceil(rows.length/size)),page=Math.max(0,Math.min(pages-1,Number.isInteger(options.page)?options.page:0));
   const counts={spaces:s.spaces.size,tabs:s.tabs.size,agents:[...forest.nodes.values()].filter(n=>n.agent).length,terminals:forest.nodes.size,pinned:[...forest.nodes.values()].filter(n=>n.pinned).length,blocked:[...forest.nodes.values()].filter(n=>n.agent&&n.status==="blocked").length,done:[...forest.nodes.values()].filter(n=>n.agent&&n.status==="done").length,working:[...forest.nodes.values()].filter(n=>n.agent&&n.status==="working").length,matchingAgents:[...matched].filter(id=>forest.nodes.get(id)?.agent).length,rows:rows.length};counts.attention=counts.blocked+counts.done;
   const warnings=[];if(s.duplicateCores.size||s.duplicateAgents.size||s.duplicateSpaces.size||s.duplicateTabs.size)warnings.push("Conflicting explicit identities remain visible; their actions are disabled.");if([...forest.nodes.values()].some(n=>n.missingParent||n.cycle||n.issues.length))warnings.push("Some terminals have incomplete or conflicting parent/ownership metadata; inspect their row details.");

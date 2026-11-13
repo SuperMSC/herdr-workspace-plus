@@ -1,3 +1,4 @@
+import { uiFunction } from "./helpers/ui-function.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
@@ -120,7 +121,7 @@ function harness({ state = initial(), holdStart = false, store = { value: state 
     setShared(_key, next) { assert(!rendering); store.value = next; }, closeOverlay() {}, run(...args) { controls.push(args); },
     exec: async (program, argv) => { controls.push([program, argv]); if (argv[0] === "run") { if (holdStart) await new Promise(() => {}); const current = record(store.value); return reply({ address: "t5", agent: "echo", cwd: current.cwd, state: "live", turn: 0 }); } if (argv[0] === "get") { const current = record(store.value); return reply(terminal(current, { state: "finished", exit_code: 0, reason: "exited" })); } return reply([]); } };
   const source = readFileSync(new URL("../mods/sessions-plus/commands.js", import.meta.url), "utf8").replace(/^import .*;\n/gm, "").replace("export default class", "return class");
-  const Commands = new Function(...Object.keys(deps), source)(...Object.values(deps)), view = new Commands(); view.init({ context }, cx);
+  const Commands = uiFunction(...Object.keys(deps), source)(...Object.values(deps)), view = new Commands(); view.init({ context }, cx);
   return { view, cx, store, inputs, controls, tasks, timers, state: () => store.value, render() { rendering = true; try { return view.render(cx); } finally { rendering = false; } }, click(id) { const item = find(this.render(), id); assert(item, id); item.events.on_click({}, cx); }, async settle() { for (let i = 0; i < 10 && tasks.length; i++) await Promise.all(tasks.splice(0)); } };
 }
 

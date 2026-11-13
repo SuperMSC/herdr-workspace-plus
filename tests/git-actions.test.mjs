@@ -1,3 +1,4 @@
+import { uiFunction } from "./helpers/ui-function.mjs";
 import * as reviewModel from "../mods/files-plus/review-model.js";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
@@ -172,7 +173,7 @@ async function changesClass(overrides = {}) {
     targetFor: (root, relative, dir, on, platform) => ({ root, relative, dir, on, platform }), menuHeight: () => 400, CHANGE_KEY: "files-plus.change",
     ...overrides,
   };
-  return new Function(...Object.keys(values), source)(...Object.values(values));
+  return uiFunction(...Object.keys(values), source)(...Object.values(values));
 }
 
 function context() {

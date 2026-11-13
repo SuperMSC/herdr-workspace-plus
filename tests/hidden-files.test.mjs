@@ -1,3 +1,4 @@
+import { uiFunction } from "./helpers/ui-function.mjs";
 import * as libraryModel from "../mods/files-plus/library-model.js";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -31,7 +32,7 @@ function view(file, dependencies) {
   dependencies = { ...libraryModel, fileIcon: element, iconButton: (id, icon, label, click) => element().id(id).on_click(click), ...dependencies };
   const source = readFileSync(new URL(`../mods/files-plus/${file}.js`, import.meta.url), "utf8")
     .replace(/^import .*;\n/gm, "").replace("export function changed", "function changed").replace("export default class", "return class");
-  return new Function(...Object.keys(dependencies), source)(...Object.values(dependencies));
+  return uiFunction(...Object.keys(dependencies), source)(...Object.values(dependencies));
 }
 
 function fixture(t) {

@@ -1,3 +1,4 @@
+import { uiFunction } from "./helpers/ui-function.mjs";
 import * as reviewModel from "../mods/files-plus/review-model.js";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
@@ -148,7 +149,7 @@ async function changesHarness() {
     openOverlay: spec => overlays.push(spec), watchFolder: () => new Promise(() => {}), readTextFile: async () => "",
     exec: async (_command, args, options) => { calls.push({ args, options }); return { code: 0, stdout: args.includes("--show-toplevel") ? `${options.cwd}\n` : "", stderr: "" }; },
   };
-  const Changes = new Function(...Object.keys(dependencies), source)(...Object.values(dependencies));
+  const Changes = uiFunction(...Object.keys(dependencies), source)(...Object.values(dependencies));
   const view = new Changes(); view.watch = () => {};
   return { view, cx, pending, timers, overlays, calls, setActive: value => { active = value; }, setChange: value => { change = value; }, notifications: () => notifications, async drain() { while (pending.length) await pending.shift(); } };
 }
@@ -244,6 +245,7 @@ test("compact Changes menus retain every mode and repository tool at the capture
   const f = await changesHarness(); f.view.init({ source: { cwd: "/repo/subdir", on: "remote-one" } }, f.cx); await f.drain();
   f.view.root = "/repo"; f.view.on = "remote-one";
   assert.deepEqual(f.view.headerItems("mode").map(item => item.id), ["git-changes-tab", "git-history-tab"]);
+  assert.match(f.view.headerItems("mode").find(item=>item.id==='git-history-tab').tooltip,/History is read-only/);
   const items = f.view.headerItems("more");
   assert.deepEqual(items.map(item => item.id), ["git-tree", "git-flat", "git-graph-open", "git-github-open", "git-header-review", "git-header-expand"]);
   f.view.headerTarget = { key: f.view.contextKey(), root: f.view.root, on: f.view.on }; f.view.headerMenu = "more";
@@ -253,6 +255,14 @@ test("compact Changes menus retain every mode and repository tool at the capture
   const previousWindow = globalThis.window; globalThis.window = { viewport_size: () => ({ width: 1200, height: 900 }) };
   try { f.view.chooseHeader(selected, f.cx); } finally { if (previousWindow === undefined) delete globalThis.window; else globalThis.window = previousWindow; }
   assert.equal(f.overlays.at(-1).props.role, "github"); assert.equal(f.overlays.at(-1).props.root, "/repo"); assert.equal(f.overlays.at(-1).props.on, "remote-one");
+});
+
+test('Changes puts History and commit guidance in tooltips while keeping status notes visible',async()=>{
+ const f=await changesHarness();f.view.init({source:{cwd:'/repo',on:null}},f.cx);await f.drain();
+ const children=node=>node&&typeof node==='object'?Object.getOwnPropertyDescriptor(node,'children')?.value||[]:[],nodes=node=>!node||typeof node!=='object'?[]:[node,...children(node).flatMap(nodes),...[node.attributes?.trigger,node.attributes?.content].filter(Boolean).flatMap(nodes)],text=node=>typeof node==='string'?node:children(node).map(text).join(' ');
+ f.view.page='history';assert.equal(text(f.view.footer({})).trim(),'');const mode=f.view.headerPopover('mode',{});assert(nodes(mode).some(node=>node.attributes.id==='git-header-mode'&&/History is read-only/.test(node.attributes.tooltip)));
+ f.view.page='changes';let footer=f.view.footer({});assert.doesNotMatch(text(footer),/Commit uses staged changes/);assert.match(nodes(footer).find(node=>node.attributes.id==='commit').attributes.tooltip,/Commit uses staged changes/);
+ f.view.on='server';footer=f.view.footer({});assert.match(nodes(footer).find(node=>node.attributes.id==='commit').attributes.tooltip,/require local macOS/);f.view.note='Fixture status';assert.match(text(f.view.footer({})),/Fixture status/);
 });
 
 test("a delayed Changes menu cannot follow focus into another repository or act after close", async () => {

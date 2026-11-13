@@ -2,218 +2,32 @@
 
 [中文使用说明](使用说明.md)
 
-A workspace enhancement pack for Herdr: Files and Changes context menus, plus Sessions and Status views for Claude Code, Codex, and agy. Copy paths, manage local files, stage individual Git changes, return to saved agent sessions, and check remaining or used account quota.
+Native Herdr mods for files, Git changes, saved agent sessions, project navigation and account quota. The personal layout is named **Agent-Workspace**; runtime mod IDs remain `files-plus`, `sessions-plus`, `project-spaces` and `agents-plus`.
 
-![Files Plus context menu](preview.png)
+## 0.13.0
 
-*Native component preview with sample data. Menus are displayed inline and actions are disabled; this is a rendering preview, not an end-to-end interaction capture.*
+- Sidebar: single-line task titles with full tooltips, useful activity times, relative folder paths, quieter project colors, consistent indentation and pin counts. Idle badges are hidden and unused status columns release their space; pin slots remain stable.
+- Typography: four shared TYPE sizes across all four mods, with native tab parity for the 12px Sessions button.
+- Files and window chrome: root names share the Files title, filtering opens on demand, LICENSE/NOTICE/COPYING use document icons, Sessions matches the adjacent native tabs, and footer controls share a vertical center. The status-bar Privacy button is removed; Screenshot mode remains under Sessions → Tools. Quota retains its full Remaining/Used labels and reset countdowns.
+- Consolidation: removed Inbox, Lineage and Services. The footer agent count opens the unified sidebar's Needs attention filter. References now become editable drafts directly in Pending prompts, where you choose an agent and send explicitly.
 
-Agent Workspace is an independent mod pack. It does not modify Herdr's shipped Files or Changes mods or require a change to Herdr's core.
+![Native Files context menu preview](preview.png)
 
-Previously released as **Files Plus** and **Herdr Workspace Plus**. The workspace is now **Agent Workspace**; Herdr uses the layout identifier **Agent-Workspace** because layout names cannot contain spaces. The `files-plus` / `sessions-plus` mod identifiers and shared-state keys remain compatible; the updater recognizes both the new layout name and an existing `files-plus` layout. Preview images below show earlier versions of the interface.
+Preview images use sample data and may show an earlier interface. Dialogs close with **Esc** or a click outside; menus support **↑ / ↓**, **Enter** and **Esc**.
 
-## Workspace additions
+## Install, update and remove
 
-- **Files:** Markdown preview/source, expandable JSON, CSV/TSV tables and local images with zoom. The search icon opens filename/content search with case/word/regex switches and include/exclude globs. Selecting a match highlights its line with surrounding context. Local previews use Node. Local search discovers an existing `rg` in PATH, common installation folders, or the Codex standalone bundle; the Search view also accepts an executable path in `props.rg`. No packages or extensions are installed.
-- **Changes:** separate Staged/Unstaged groups, Tree/Flat lists, Inline/Side-by-side diffs and an expanded diff dialog. **History** pages through 50 commits at a time and shows changed files and diffs. The branch header shows ahead/behind when an upstream is configured; it does not fetch.
-- **Sessions:** source filters for Main, Auto review, Subagent and Unknown; date groups, short IDs and update times. **Preview** reads the latest user/assistant text on demand for Claude and Codex. Antigravity shows an explicit unsupported-message-preview notice. No persistent body index is created.
-- **Agent inbox:** the footer inbox icon opens Needs you, Finished and Working groups. Click an entry to jump to its agent. **Dismiss** hides the current update; **Show dismissed** exposes hidden entries and **Show** restores one. New activity returns automatically. Without an activity sequence, **Snooze 1m** hides the update for one minute. These actions do not stop agents.
-
-Local text previews are bounded to 400 KB; image previews to 16 MiB, with an app-owned cache limited to 64 MiB/24 hours. Local search stops at 500 matches, 2 MiB output or 8 seconds; remote search uses Herdr’s command limits. PDF previews, automatic AI recaps, and hook-based session details are not included.
-
-Inside an open text preview, click **Find** or press **Cmd+F** (**Ctrl+F** on other platforms). Matches are highlighted in the file's source; **Enter / ↓** advances, **Shift+Enter / ↑** goes back, **Aa** toggles case matching, and **Esc / ×** restores the original preview. This searches the loaded text only (up to 400 KB and 1,000 matches), with an explicit notice at either limit. Dialogs have no title close button: click outside a dialog or press Escape to close it.
-
-Text previews default to **12px**. Use **A− / A+** in the preview toolbar to choose **10–24px**, or click the displayed size to reset to 12px. The choice is remembered across files and restarts and applies to source, search results, Markdown, JSON and tables.
-
-## Services, project presets and lineage
-
-Sessions adds **Services**, **Projects** and **Lineage** below its header. These open bounded native dialogs and keep the existing layout.
-
-- **Services:** read containers on the captured machine, grouped by Compose project (`database`, `gts`, `ai`, other), with unhealthy/stopped containers first, published ports and on-demand logs. **Restart…** requires a second confirmation and rechecks the Docker engine, complete container ID and creation time. TCP listeners show bind address, process and PID where permissions allow; selected local loopback URLs can be copied or opened after rechecking the listener. Containers follow that machine's Docker CLI context; listeners describe the machine itself. Missing Docker or port tools produce partial results. Refresh is explicit, with no polling, daemon startup, process killing or tunnel creation. Limits: 120 containers (40 per page), 2,000 listeners (100 per page), 300 log lines / 120,000 characters. Search covers the whole snapshot.
-- **Projects:** manually save, duplicate, edit, favorite and remove workspace presets. A preset captures a machine, existing checkout, up to eight file roots, an agent argv and one to three terminal argv entries. Review the full launch plan, then explicitly **Launch** to create a new space and tabs. Setup uses the exact IDs returned by Herdr, with machine, folder, terminal identity and app labels checked before later steps. A partial or uncertain launch remains visible for inspection; it never retries automatically or deletes what was opened. Created terminals are interactive shell sessions; their existence does not prove the child command succeeded. Presets do not create worktrees, install packages or send prompts.
-- **Lineage:** live core parent links form a searchable, foldable tree of agents and commands, across connected machines. Working/blocked filtering retains parent context. Missing parents and cycles are explicit; folders and titles never imply a relationship. Click a row to peek at its freshly verified terminal. Up to 200 live terminals are considered, with 50 rows per page and search over the full bounded snapshot; no provider transcript is read.
-
-## Pull requests and Git graph
-
-Changes adds **PR / CI** and **Graph** beside History.
-
-**PR / CI** uses an existing authenticated `gh` on the captured machine. It shows at most 40 PRs, branch-name matches first, check states, review status, unresolved threads and on-demand failed Actions logs. Copy or explicitly add a PR summary to the existing pending-prompt preview. Reads happen on opening and Refresh; failed reads retain the previous snapshot as stale. There is no approve, comment, rerun or merge action. This installation has no `gh`; it was intentionally left uninstalled, and the panel reports it as unavailable. Real GitHub connectivity has not been validated. Details are bounded to 150 checks and the first 50 review threads, with a notice when more may exist. Logs display at most 64,000 characters (local processes are additionally capped at 64,000 bytes); remote transport is subject to Herdr's 8 MiB output bound and can reject a larger read. Remote PR reads require POSIX `env -u`; remote preset and service probes require POSIX tools.
-
-**Graph** draws native branch lanes and merge connections for up to 200 topological commits, with HEAD, branch and tag labels. Filter by current HEAD or a captured branch, copy a SHA, or open the commit in the existing full diff view. The graph is read-only and does not fetch. The picker holds up to 500 refs; histories wider than 32 lanes ask for a narrower branch view.
-
-## Review drafts and viewed files
-
-Changes keeps review comments alongside the existing diff. Select a line (Shift-click for a range), use Comment selection or Comment file, then open Review to inspect the combined feedback, edit its message and explicitly choose a live agent. Nothing is sent merely by writing a comment. Comments retain the original comparison and code excerpt; changed or unverified sources are marked outdated. Viewed is tied to the file's content version, so a later change clears its effective viewed state.
-
-Review drafts stay in local Herdr state, scoped to their machine and checkout. A delivery failure or uncertain result retains the draft and requires an explicit decision before another send. Review never stages, commits, fetches, or changes working files.
-
-## Prompt queue
-
-The Pending prompts icon in the Sessions header and live-agent rows opens a queue that holds instructions you want to give a live agent next. Add or edit items while it works, then explicitly send one item or combine pending items into one numbered message. The queue shows its captured recipient and retains sent items as a record. A changed or exited agent cannot silently inherit an open sender. Queue identity uses an exact recorded session where available, with an isolated terminal incarnation otherwise; matching folders never merge queues.
-
-Prompts are stored locally in bounded Herdr shared state. Closing the queue does not send anything. A failed or uncertain delivery keeps its items for inspection instead of automatically retrying.
-
-## References, notes and project commands
-
-File and folder menus in Files and Changes offer **Add reference to pending prompts…**. In Search, select a result and use **Add reference** to include its file and line. Choose a supported live agent on the same machine, edit the text and click **Add to pending prompts**. This adds a pending queue item and opens its queue; sending remains a separate action. Existing queue items and its unfinished composer are preserved. Notes also offers **Add to pending prompts…**.
-
-Open **Notes** from the Sessions header, a session row, or **Project notes** in an optional Project Spaces context menu. Switch between Project, Session and Global; **All notes** searches saved notes and recovery drafts, including closed contexts. Notes save after typing pauses, with **Save / Cmd+S** also available. They live locally in `data/workspace-notes/notes.json` under the Herdr app home, outside installed mod directories. Unsaved text is retained per view as a recovery draft; reopening offers **Restore draft**. A concurrent edit retains your text and asks you to copy or reload instead of overwriting the saved note. **Versions** retains three previous saved versions. Archive/unarchive is reversible; confirmed clearing of old versions or removal of an archived note frees space, with the removed note's latest text kept as a recovery draft. Copy needed text before removing recovery data or uninstalling.
-
-The Sessions header's **Project commands** icon, or **Project commands** in a Project Spaces context menu, opens manually saved templates for the captured project and machine. Give each template a title, an absolute working folder and a JSON array of literal executable arguments. Save, favorite, reorder and edit templates without running them; unfinished forms remain as drafts. Only **Run** starts a detached task. **Console** opens its live terminal or retained finished output. **Cancel run** asks for confirmation and checks the exact task identity before stopping it. Closing the panel leaves tasks running. Commands are never discovered from project files or started automatically; shell syntax requires an explicit shell executable.
-
-## Multiple workspace folders
-
-Use **Workspace folders** in the Files header to add, remove or reorder up to eight folders on the workspace's machine, then choose **Save folders**. Root headers fold independently; Files, Recent and Pinned keep each root's path and machine identity. The header Search searches every configured root, while the search icon on a root searches only that folder. Same-name results remain separate and show their root. Removing a root or **Reset to current folder** changes the mapping only and never deletes files.
-
-## Stage or unstage a hunk
-
-In Changes, select an **Unstaged** or **Staged** modified text file, click a `@@` header or use the hunk arrows, then choose **Stage hunk** or **Unstage hunk**. These actions require local macOS and a regular tracked text file with status **M**, without conflicts or mode changes. Binary, added, deleted, renamed, oversized or incomplete diffs do not offer hunk actions. The selected hunk updates only the Git index; working files and other staged changes stay intact. A changed source version or another Git index lock rejects the operation and asks you to refresh. The file context menu retains **Stage File / Unstage File** for whole-file actions.
-
-## Markdown navigation and diagrams
-
-Markdown previews add Contents for the first 200 top-level headings, links to headings in the current or another Markdown file, Back and Whole document. Selecting a heading shows the document from that section; it does not promise arbitrary scroll positioning. Navigation preserves unsaved source drafts and does not save them implicitly. Find continues to search the loaded source.
-
-Supported Mermaid fences render as native diagrams with a bundled renderer. Invalid, unsupported or oversized diagrams keep an explicit error and their source available. An existing local Node executable performs one batch per document, keeping graph layout off the UI thread. Supported families are flowchart, sequence, state, class and ER. A document renders up to 24 diagrams, with a 15-second batch limit; individual diagrams are limited to 24,000 characters, 300 lines, 1 MiB SVG and 32,768 pixels per dimension. Generated SVGs are retained for at most 24 hours/48 files. Rendering uses no browser, network request, model call or background service. PDF preview is still outside this release. See [renderer notices](mods/files-plus/MERMAID-NOTICES.md) and rebuild with `npm run build:mermaid` after installing the pinned build-only dependencies in `tools/mermaid`.
-
-## Sessions
-
-In the standard Herdr layout, **Sessions** appears immediately after **Changes** in the top bar. Click it to use the full right panel for sessions; click it again to close the panel. Files, Changes, and Sessions share that panel. Use the **This folder / All folders** dropdown for scope. The filter button holds Agent and Source filters, with clearable labels for active filters. Search by title, directory, provider, or session ID. The panel’s **…** menu retains Notes, Commands, Pending prompts, Inbox, Trash and workspace tools. Row-specific actions stay in each row’s **…** menu.
-
-- A running Herdr agent offers **Switch**. A saved conversation offers **Resume**, opening the original directory in a local Herdr tab. If that directory has no local space, a new local space is created. Missing directories and unavailable CLIs produce an error.
-- Right-click a row, or click **⋯**, and choose **Rename** to set a local display name. Names belong to Sessions Plus and are saved in Herdr's local shared state, keyed by provider, data directory, and session ID. Resuming that history entry preserves its name. An empty name restores its original title. Renaming leaves provider transcripts and provider-native names unchanged.
-- History uses `claude --resume <id>`, `codex resume <id>`, and `agy --conversation <id>`. No prompt is automatically sent and no permission-bypass flags are added. The CLI's normal configuration, trust checks, and hooks still apply when you explicitly resume it.
-- Claude and Codex history comes from their local JSONL records and title index. agy history comes from a temporary snapshot of `conversation_summaries.db`, including its WAL; only summary metadata is queried. The snapshot and any SQLite sidecars are removed in `finally`. The original database and conversation bodies are not written.
-- History refreshes every 30 seconds and on Refresh. The history reader has no persistent transcript cache, hook installation, telemetry, or network requests. The scan is bounded to 6,000 directory entries and 500 recent records per provider; the panel reports when it reaches a limit. Large JSONL files are read at their beginning and end, so metadata stored only in the middle can be missed. Codex archived sessions and Claude files nested under `subagents/` are excluded. Top-level Claude session files with explicit `isSidechain` metadata are classified as Main or Subagent; missing source metadata remains Unknown source.
-- A live session is associated with history only when its launch/foreground arguments identify the provider and exact resume ID. Ordinary manually started agents without a visible ID remain separate live rows; folder similarity is never used to guess. Their local names are terminal-specific. This version does not attach to agents running in another application or resume remote history.
-
-![Sessions Plus native preview](sessions-preview.png)
-
-*Native components with fictional sessions, captured before the session Trash controls were added. This preview does not open a real agent conversation.*
-
-### Move a session to Trash and restore it
-
-For a local history row, choose **Move to Trash…** from its context menu and review the confirmation. The operation moves the session's history and recognized session-specific attachments into one recovery bundle in the macOS Trash. It never deletes the working project or empties the Trash. Running Herdr sessions and sessions currently opening cannot be removed. The helper checks the selected session identity, Claude active-session records, and open files. Other sessions using the same CLI do not block deletion; close the selected session if it is still running or its files are in use. If its history was already removed, the stale dialog closes and the list refreshes.
-
-Open **… → Session Trash** in Sessions to see this plugin's recovery records. Choose **Restore…** to return a session's files to their original locations. Existing destination files are never overwritten. Local display names and shared provider indexes are retained, so a successful restore can reuse them. These shared indexes may still show an old entry in the provider's own interface while its history is in the Trash; this plugin removes the history row immediately after refreshing.
-
-Session Trash currently requires macOS and a data directory on the same volume as the user's home. Symbolic links and ambiguous session identities are rejected. The bundle contains the recognized Claude session transcript and its adjacent session folder, the Codex rollout, or the agy database with its WAL/SHM files and session brain folder. Shared logs, credentials, quota settings, and unrelated sessions are not part of the operation.
-
-Recovery records live in `session-trash/` inside the Herdr app home, outside the installed mod directories. Preserve this directory when upgrading or uninstalling while recoverable sessions remain. Use the plugin's **Restore** action to unpack a recovery bundle; Finder's **Put Back** alone only returns the bundle. Emptying the macOS Trash permanently removes the bundled history. Refreshing Session Trash prunes completed recovery records whose bundles no longer exist; damaged or interrupted recovery records remain visible. A failed move attempts rollback; if a conflicting path prevents rollback, the retained recovery record lets you retry restoration after resolving the conflict.
-
-## Project Spaces (optional)
-
-Groups the Spaces sidebar by project, in the manner of Orca's Projects sidebar. It is opt-in: run `node update.mjs --project-spaces` (or `node install.mjs --project-spaces` for a first installation) to point the layout's Spaces block at `project-spaces`; `node update.mjs --native-spaces` switches back and keeps its state.
-
-- A project is a Git repository, with its main checkout and linked worktrees together; a space outside a repository groups by its folder. The first terminal's live folder decides, as Herdr's space names do.
-- A project that holds one space on its own is drawn as that space's row. Projects with several spaces, moved-in spaces, or a manual origin get a header: fold chevron, color, name, space count, and on hover **+** for a new space in the project's folder.
-- Drag a space onto another project's header or rows, or right-click it and choose **Move to project**, to move it there. **New project…** creates a manual project for it; **Back to …** returns it to its automatic project.
-- Right-click a header to rename the project, pick its color, move it up or down, or release spaces moved into it. Drag a header to reorder projects. A manual project disappears with its last space.
-- The header's layers button switches **Group by** (Project / Status / None) and **Sort** (Manual / Recent), and folds or unfolds every group.
-- In Project + Manual, Herdr's own space order is kept grouped, so `space.next`/`space.prev` and numbered selection follow the list. Other modes leave Herdr's order alone.
-- Folds, names, colors, order, and manual moves are kept in shared state under `project-spaces.v1`.
-- Unlike Herdr's Spaces, it draws no per-machine headers or reconnect action; remote spaces group by their own repositories, with the machine named on the header.
-
-## Agents Plus (optional)
-
-Herdr's Agents list with a choice of where pinned agents go. It is opt-in: run `node update.mjs --agents-plus` (or `node install.mjs --agents-plus`) to point the layout's Agents block at `agents-plus`; `node update.mjs --native-agents` switches back.
-
-- The header's layers button keeps Herdr's **Sort agents** (Priority / Grouped by space) and adds **Pinned agents**: **Together at top** (Herdr's single Pinned group, the default), **Split by space** (one pinned group per space at the top, each header marked with a pin), or **Inside groups** (pinned agents first in their own space or priority group, each row marked with a pin).
-- Pins are Herdr's own `terminal.pin` labels, so they carry over to and from the shipped mod. `agent.next` / `agent.prev` follow the order shown. The sort is shared with Herdr's mod (`agents.sort`); the pinned setting is kept in shared state under `agents-plus.pinned`.
-
-## Changes and History views
-
-In Files, the button left of Search collapses every open folder, or, when none is open, opens four levels (at most 80 folders, skipping node_modules, .git, virtual environments and build folders); in grouped Recent / Pinned it folds or unfolds every group. In Tree mode, the button right of the file count collapses or expands every folder. In the sidebar, **History** lists commits only; selecting one shows that commit's whole diff below, file by file, and ↗ opens it in the larger view with its file list. Changes and History share one divider, so switching keeps the diff at the same height. Both diff modes follow VS Code's weights: changed lines carry a tint and an edge bar, the gutter a stronger tint, and the changed characters of a paired line are highlighted. Each hunk's common indentation is hidden; **Side by side** splits the view into two equal halves aligned with its Before/After header (with removed/added counts), truncating long lines with the full line on hover.
-
-## Resource use
-
-At the right of the status bar, before the command hint, a memory badge shows Herdr's own resident memory and a terminal icon shows how many terminals it runs, in the manner of Orca's resource manager. Hover for CPU and memory totals; click for **Resources**: total CPU and resident memory with a short CPU history, then **Herdr** (the app and herdr-core) and **Terminals** (each terminal's whole process tree, named by its biggest program, with its process count), each with CPU and memory. Readings come from `ps` every 5 seconds, every 2 seconds while the panel is open; CPU is ps's recent average, where 100% is one core. The badge turns amber when Herdr itself passes 1.5 GB or 80% CPU. Local machine only; not shown on Windows.
-
-## Status quota
-
-The bottom quota strip follows the device, optional branch, and agent count on the left—for example, **This computer · 0 agents** followed by **Remaining** and the account readings. The command-palette shortcut stays at the far right. Mode labels, settings, and tooltips are in English. Claude Code, Codex, and agy each show a slim progress bar and up to two quota windows with explicit duration labels (such as 5h and 7d), percentages, and a separate reset countdown for each window, matching the compact Orca-style strip. A five-hour window without a reset time displays a fixed default of 5h; its tooltip identifies the default. Other missing reset times appear as —. The bar represents the lowest remaining window; hover for all windows, or click the readings for the full quota panel. A curved-arrow refresh icon sits at the end; the Sessions, Trash, and quota-panel headers also use icons with tooltips and loading animation. It spins while querying and dims during the 60-second cooldown; its tooltip shows the wait, last successful update time, or failure reason. Open the readings and choose **Agents** in the full quota panel to control which accounts appear. As space narrows, the strip hides progress bars first, then percentages while retaining both labeled countdowns, then keeps agent icons and their warnings when only icons fit. At the smallest widths it collapses to **Quota** with a combined warning; the mode and refresh button remain available. **Remaining** and **Used** switch the same quota data between complementary percentages. Each supplied quota window or model pool keeps its own label, progress bar, reset countdown, local reset time, and last-update time. Missing CLIs and signed-out accounts have no card. Query failures show a warning triangle after each affected agent in the strip and beside its update time in details; hover for the reason. Unknown values are not invented. A past reset does not automatically restore 100% quota. Failed refreshes mark any previous reading **Stale**.
-
-The status bar queries visible local logged-in accounts on loading and every five minutes. Its popup reuses the same in-memory readings, so opening it does not start duplicate queries. Manual refresh has a one-minute cooldown. This is account quota, not per-project token counts or estimated monetary cost. Remote workspace selection does not change which local accounts are queried.
-
-Click the quota readings, or the **Quota** entry when no readings are shown, then use **Agents** in the full quota panel to show or hide Claude, Codex, and agy individually. A check mark means shown. The selection is saved locally and applies after reopening Herdr. Hidden tools are skipped on initial load, manual refresh, and automatic polling; a query already in progress may finish. Showing a tool again refreshes it subject to the normal cooldown. When every tool is hidden or no usable quota data is available, the **Quota** entry remains accessible so you can reopen **Agents** and restore the selection. This preference affects quota cards; the Sessions list has its own filters. After installing a CLI or signing in, use Refresh to check it again.
-
-- Claude reads the existing OAuth login from its scoped macOS Keychain item or credentials file and sends it only to `https://api.anthropic.com/api/oauth/usage`. Redirects are rejected. The helper never prints or stores tokens, emails, account IDs, raw error bodies, or credential-bearing subprocess output. API-key-only setups may have no subscription quota to report. Expired access is handled by reopening Claude Code; the mod does not refresh or rewrite its credentials.
-- Codex uses the official [`account/rateLimits/read` app-server method](https://learn.chatgpt.com/docs/app-server#6-rate-limits-chatgpt). Codex handles its own authentication. The client only initializes and requests quota; it never starts a thread or sends a turn. Its temporary app-server and log directory are closed and removed after the query.
-- agy uses its built-in `-p /usage --output-format json` command, with auto-updates disabled for that process. A version gate requires **1.1.11+** before the print command can run. The helper verifies a structured usage response; if it unexpectedly reports a model turn, further queries for that version are paused. The CLI may write its normal diagnostic logs. It uses the existing macOS login; without a usable login, its quota card is omitted.
-
-Quota results stay in memory. The Remaining/Used preference, hidden-agent selection, and any agy unsupported-version guard are stored in Herdr shared state. Missing CLIs and signed-out accounts are omitted from the cards. Transient failures may retain an earlier valid reading marked **Stale**; if there is no reading, the affected agent shows its warning without a percentage or successful-update time. The Claude usage endpoint is also used by Orca, but it is not a guaranteed public API; provider updates may require an adapter update.
-
-![Sessions and Status with fictional values](status-preview.png)
-
-*Native preview captured before the Agents visibility control was added, with fictional sessions and quota values. No account credentials or real usage statistics are included.*
-
-## Features
-
-| Action | Local macOS | Remote spaces / other platforms |
-| --- | --- | --- |
-| Browse folders and read-only text previews | Yes | Uses Herdr's existing file-browser support |
-| File type icons, recent files and pinned files | Yes | Yes; state is scoped to machine and project |
-| Breadcrumb navigation and center file-preview tabs | Yes | Yes |
-| Copy absolute path, relative path, or name | Yes | Yes; copies the selected machine's path |
-| Refresh the file tree | Yes | Yes |
-| Reveal in Finder / open with the default app | Yes | Not offered |
-| New file, new folder, rename | Yes | Not offered |
-| Move to Trash, with confirmation | Yes | Not offered |
-| Changes row: stage / unstage this file | Yes | Not offered |
-| Commit the repository's staged changes | Yes | Not offered |
-| Move a stopped session to Trash / restore it | Yes; data must be on the home volume | Not offered |
-
-Right-click a file or folder to act on that item. Right-click empty tree space to act on the current folder. The header's **⋯** button opens the menu for the previewed file, or for the current folder while the tree is shown.
-
-The **Files** header offers tree, recent, pinned, search and action icons. Click the pin beside an open file’s breadcrumb path to keep it in Pinned. Recent files (20 per project) and pins (40) persist in Herdr shared state, separately for each machine and project; the 40 most recently used projects are retained. Search previews also appear in Recent. Removing a recent entry or pin never deletes the file. File, search and Changes rows share one bundled set of original full-color icons on a 16px grid, in the style of editor icon themes: solid folders with an open variant, colored special folders (source, docs, tests, Git, config, scripts, data, assets) and a colored icon per file type. Rows show indent guides; file and folder names take their Git color (added green, modified yellow, deleted or conflicted red), and folders that contain changes show a dot. Header and action icons are monochrome and follow the theme.
-
-Recent and Pinned can be listed **flat** (in their own order, with the folder dimmed after each name) or **by folder** (compact folder rows that fold, with a file count); the choice is remembered. In Recent, a folder row's × forgets every file inside it, and **Clear** forgets the whole list after a second click within three seconds. Forgetting never deletes files or pins.
-
-Breadcrumb directories navigate inside the current root. Clicking a file in the tree, Recent or Pinned opens a read-only preview tab in the center workspace, alongside existing terminal tabs. The workspace layout frames panes with the Files Plus pane header: terminal panes show what Herdr’s header shows, and a preview shows its file icon, name, folder, pin and actions there, so it needs no second toolbar row. New installs and `update.mjs --integrate-layout` set this up; it replaces only Herdr’s own `pane` header. The right sidebar keeps its file list at any width. Reopening the same project/machine/path in a space focuses its existing live preview pane. Captured project context keeps Files, Changes and Sessions on the correct folder while a preview tab is active.
-
-**Editing.** A preview tab of a local text file (up to 400 KB) has an **Edit** button. Edits start from the file as it is on disk, **Save** or Cmd+S (Ctrl+S) writes it only if nobody changed it since: Herdr refuses a save over another writer's change, and the preview then offers **Copy my edits**, **Reload from disk** or **Overwrite** (a second click confirms). An unchanged editor follows outside changes; an edited one shows a notice instead of replacing your text. CRLF files keep their line endings. A dot beside the file name marks unsaved changes. Herdr cannot stop a tab from closing, so unsaved edits are kept as a draft under `~/.config/herdr-app/data/files-plus-drafts/` and offered back (**Restore** or **Discard**) when the file opens again. Search previews, remote files and larger files stay read only.
-
-Successful rename and Trash update recent/pinned paths and refresh the tree.
-
- Open **⋯ → Show Hidden Files** to include dot-prefixed names, including `.git`; they are hidden by default. The preference persists across spaces and applies to nested folders before listing limits. It is based on names, not Windows hidden-file attributes.
-
-New items go inside the selected folder, or beside the selected file. **Copy Relative Path** is relative to the file browser's current folder; the folder itself copies as `.`. The browser root cannot be renamed or trashed. Existing destinations are never overwritten.
-
-The menu captures the clicked path and machine before it opens. Changing focus does not redirect a pending operation to a different folder. Successful changes refresh matching file trees, including renamed expanded folders.
-
-In **Changes**, right-click a changed file to copy its absolute path, repository-relative path, or name. Local macOS items also offer default-app opening, Finder reveal, and **Stage** or **Unstage** according to their Git status. A partially staged file can offer both actions. Selecting Stage or Unstage opens a progress dialog and starts the operation immediately. It closes on success; failures offer **Retry**, and a click outside or Escape closes it. While working, Escape and the buttons do not dismiss the dialog; a click outside closes only the dialog, and the operation still finishes. Stage updates the selected file's index entry from its current working-tree contents; Unstage leaves its working-tree contents intact. Deleted files cannot be opened; Finder reveal goes to their containing folder.
-
-The Changes footer uses **Commit Staged**. It commits all currently staged changes in that repository, including changes staged elsewhere, and never implicitly stages other files. A commit message and staged changes are required. Git uses the repository's normal configuration and hooks.
-
-## Requirements and access
-
-- Herdr with the mod APIs available in version **0.1.12**.
-- Local file actions require macOS and its built-in `/usr/bin/open` and `/usr/bin/osascript`.
-- The installer requires **Node.js 22 or newer**; the SQLite WAL test requires **Node.js 22.13+**. Sessions history also uses Node.js at runtime; agy history uses macOS's `/usr/bin/sqlite3`. No npm packages are required. Typed local previews, project search, notes storage and hunk actions also use Node.js; project search additionally uses `rg`. Project commands use the existing `hc` executable. Basic browsing and Git views retain Herdr’s built-in APIs.
-- Folder listing uses `sh`, or PowerShell on Windows. Git status, diffs, staging, unstaging, and commits use `git`.
-
-Herdr mods are trusted code. Review `mods/files-plus/` and `mods/sessions-plus/` before installing. This mod reads the current folder and file previews outside its own directory. It runs the programs listed above through Herdr's `exec` API. Its macOS helper uses Foundation filesystem APIs and an exclusive native rename; it does not script Finder or System Events. **Reveal in Finder** and **Open with Default App** invoke `open`.
-
-Creation, rename, copy, move and Trash operations write to the item you explicitly select. Stage and Unstage update the selected path in the local repository's Git index. Commit Staged writes a commit only when explicitly invoked. The mod records changes in Herdr's shared state to refresh its views. Files / Changes make no direct network requests; browsing a remote space uses Herdr's remote file and command transport. Filesystem and Git mutations are disabled for remote spaces.
-
-## Install
-
-Start Herdr at least once so that its home contains `mods/` and `layouts/`. Open this repository, or the `workspace-plus/` folder from the installation archive, and run:
+Open Herdr once, keep it running, then run these commands from this repository or the archive's `workspace-plus/` directory. Requirements: Herdr mod APIs from **0.1.12+**, **Node.js 22+** (22.13+ for the SQLite WAL tests), Git, and the existing `hc` for project commands. Search uses an existing `rg`; PR / CI uses an authenticated `gh` on the selected machine. Local filesystem actions, session history and quota require macOS; folder listing also supports POSIX sh and Windows PowerShell.
 
 ```sh
 node install.mjs
+# Optional shared project/agent sidebar:
+node install.mjs --unified-sidebar
+# An existing installation:
+node update.mjs
 ```
 
-The installer reads `HERDR_APP_HOME`, or defaults to `~/.config/herdr-app`. It copies `mods/files-plus/` and `mods/sessions-plus/`, places Sessions in the top bar and quota in the bottom status bar for the standard layout, and makes `layouts/Agent-Workspace.json` from your `main` layout. The copy replaces Files and Changes mod references while preserving other node properties. It initially reveals Files, or Changes if the source layout only contains Changes. It does not change your original layout, keybindings, shared state, or selected layout.
-
-For another Herdr home or personal source layout:
-
-```sh
-node install.mjs --home /path/to/herdr-home --layout my-layout
-```
-
-If any destination already exists, installation stops without replacing it. Use `node update.mjs` to update installed mods without backups. The installer does not download dependencies or create a missing Herdr home.
-
-Validate the installed mod, then select the personal layout:
+The home is `HERDR_APP_HOME`, defaulting to `~/.config/herdr-app`. Installation copies the mods and creates `layouts/Agent-Workspace.json` from `main`; existing destinations require the updater. To choose another home or source layout, use `--home /path/to/herdr-home --layout my-layout`. `--layout` affects creation of a missing plugin layout. Select the layout after checking:
 
 ```sh
 app_home="${HERDR_APP_HOME:-$HOME/.config/herdr-app}"
@@ -222,109 +36,105 @@ HERDR_APP_HOME="$app_home" herdr-app check "$app_home/mods/sessions-plus"
 HERDR_APP_HOME="$app_home" herdr-app do layout.switch '{"name":"Agent-Workspace"}'
 ```
 
-If you used `--home`, use that same path for `app_home`. Click Herdr's **Files** or **Changes** button if the panel is hidden: the shipped tabs mod remembers panel visibility separately for each space. If a panel was disabled during Herdr's setup, enable it in your workspace settings first.
+Use the same `app_home` when installing with `--home`. If the right panel is hidden, click Files, Changes or Sessions; Herdr remembers visibility per space. Enable disabled native panels in workspace settings first.
 
-You can also install manually: copy `mods/files-plus/` to your Herdr home without overwriting an existing name and duplicate your layout. For Files, change `"mod": "files"` to `"mod": "files-plus"` and remove any old `content.props.role` so that the default browser role is used. For Changes, change `"mod": "changes"` to `"mod": "files-plus"` and merge `"role": "changes"` into its `content.props`. Check the mod before selecting the copied layout. The recipe and screenshot stay in this repository.
+The updater installs the current local source, replaces edits inside installed mod directories and removes obsolete files; **it creates no backups**. To obtain upstream source first, run `git pull --ff-only`. Existing layouts, shared state, notes and recovery data are retained. Options:
 
-To remove it, switch back to your previous layout and delete only the installed `mods/files-plus/`, `mods/sessions-plus/`, and `layouts/Agent-Workspace.json` after preserving any edits you made there. Your original Files and Changes mods and layout are unchanged.
+| Option | Use |
+| --- | --- |
+| `--files-only` | Install/update Files and Changes; leave existing Sessions untouched. |
+| `--integrate-layout` | Explicitly migrate a supported older split-panel layout to top-bar Sessions, footer status and the file-preview pane header. |
+| `--project-spaces` / `--native-spaces` | Enable project grouping or return to native Spaces. |
+| `--agents-plus` / `--native-agents` | Enable configurable agent pin groups or return to native Agents. |
+| `--unified-sidebar` / `--separate-sidebar` | Merge the two supported sidebar blocks or restore their recorded original structure. |
 
-## Update
+Ordinary updates preserve the selected layout structure and installed custom theme. Resolve an interrupted replacement error, then rerun the updater. A conflicting custom layout needs manual review before explicit migration. An existing Files-only layout is not automatically extended with Sessions.
 
-From this package directory, run:
+For manual Files/Changes installation, copy `mods/files-plus/` into the Herdr home and duplicate a layout. Change the Files block to `"mod":"files-plus"` with no `role`; change Changes to that mod with `"role":"changes"`. Check before selecting the copy. To remove the pack, switch to the original layout and remove the installed owned mod directories and personal layout after preserving local edits, notes, drafts and any `session-trash/` recovery records. Herdr upgrades normally retain personal mods and layouts; use check to diagnose API compatibility.
+
+## Files and previews
+
+The **root-name ▾** title selects **Explorer / Recent / Pinned**; multiple roots use **Workspace**. Click the filter icon or **Cmd+F** while Files has focus to reveal **Filter files…**. It filters loaded entries; Esc clears and closes it, empty blur closes it, and a nonempty query stays open. The separate search icon searches filenames/content across the workspace. Use case/word/regex switches and include/exclude globs, then select a result for its source context or **Add reference**. Local search finds `rg` through PATH, common installation directories or the Codex standalone bundle; Search `props.rg` accepts an explicit executable. Limits: 500 matches, 30 per file, files up to 2 MiB, 2 MiB output and an 8-second local query.
+
+Click a file in Explorer, Recent or Pinned to open a center preview tab. Reopening the same machine/root/path in one space focuses its existing preview. Breadcrumb directories navigate within the root; the pin beside a preview path toggles Pinned. Recent retains 20 entries per project, pins 40, and the last 40 projects, separately by machine. Choose flat or grouped-by-folder lists; folder × forgets that folder's recent entries, and **Clear** requires a second click within three seconds. The expand/collapse control opens four levels, at most 80 folders, or folds existing groups.
+
+Right-click a file/folder, the blank tree area for the current directory, or the header **⋯** for the current selection. Copy absolute/relative paths or names, refresh, open with the default app, reveal in Finder, create, rename or move to Trash. New items go inside a selected folder or beside a selected file. **⋯ → Show Hidden Files** toggles dot names including `.git`. Mutations, system opening and Finder actions are local macOS features; remote views retain browsing and path copying. New destinations must be unused; Trash asks for confirmation. The root itself cannot be renamed or trashed. The tree shows up to 500 entries per folder and 5,000 total, with filesystem watching and a 10-second refresh.
+
+Previews provide Markdown/source, expandable JSON, CSV/TSV tables and local image zoom. Text is limited to 400 KB; images to 16 MiB, with a 64 MiB/24-hour cache. **A− / A+** sets the remembered preview font from 10–24px; click its size to reset to 12px. Inside a preview, **Find / Cmd+F** (Ctrl+F elsewhere), **Enter / ↓**, **Shift+Enter / ↑**, **Aa**, and **Esc / ×** search source text, move through matches, toggle case and return to the prior view. Source Find supports up to 1,000 matches. Search and remote previews stay read only.
+
+For a local text preview, **Edit**, then **Save / Cmd+S** writes against its captured disk version. A conflict offers **Copy my edits**, **Reload from disk**, or **Overwrite** with a second confirmation. A filename dot marks unsaved text; reopening offers **Restore / Discard** for drafts in `data/files-plus-drafts/`. CRLF line endings are retained. The preview pane header includes file name, folder, pin and actions; new installs and `--integrate-layout` configure it. Files, Changes and Sessions follow the preview's captured project context.
+
+**Workspace folders** adds, removes and reorders up to eight roots on the same machine; click **Save folders**. Root headers fold independently. Header search covers all roots; a root's search is scoped to it. Results retain their root identity. **Remove / Reset to current folder** changes the mapping.
+
+Markdown **Contents** lists up to 200 top-level headings; heading links, **Back** and **Whole document** navigate sections while preserving source drafts. Mermaid flowchart, sequence, state, class and ER fences render natively; errors retain source. Limits include 24 diagrams/document, 24,000 characters and 300 lines/diagram, and 15 seconds/batch. The bundled renderer uses Node. See [renderer notices](mods/files-plus/MERMAID-NOTICES.md); maintainers rebuild with `npm run build:mermaid` using the pinned build dependencies in `tools/mermaid`.
+
+## Changes, History and review
+
+Use **Changes / History ▾** and the **…** actions for **Tree / Flat**, **Graph**, **PR / CI**, **Review notes** and larger diffs. Changes separates **Staged / Unstaged** and supports **Inline / Side by side**. Drag the horizontal divider to resize the file list and diff; Changes, History and expanded previews remember their heights. History loads 50 commits/page; select one for the whole commit diff, or **↗** for the larger view and its **Files** list. Ahead/behind reflects the last fetched refs. Preview limits are 1,000 changed files and 2,500 tracked diff lines (1,500 untracked).
+
+Right-click a changed file for paths, system opening, Finder reveal, **Stage / Unstage** and references. Partially staged files can offer both actions. Stage/Unstage starts immediately with progress, closes on success and offers Retry on failure. **Commit Staged** uses all staged changes plus the entered message, with the repository's usual Git hooks. In a local macOS regular tracked **M** text file, select a `@@` header or hunk arrows, then **Stage hunk / Unstage hunk**. Hunk actions update the index while retaining working files; conflicts, changed source versions, index locks and incomplete/binary diffs require refresh or whole-file actions.
+
+Select a diff line, **Shift-click** a range, then **Comment selection / Comment file**. Open **Review** to edit the combined feedback and choose a live agent before sending. Comments retain their original code context and can become outdated; **Viewed** follows the content version. Review drafts are stored per machine/checkout, and uncertain delivery remains available for manual checking.
+
+**PR / CI** uses the selected machine's authenticated `gh`: up to 40 PRs, 150 checks/PR, 50 initial review threads and 64,000 displayed log characters. Refresh, read failed logs, copy summaries or add them to Pending prompts. **Graph** draws up to 200 topological commits; filter by HEAD/branch, copy a SHA or open the commit diff. The ref picker supports 500 refs and 32 graph lanes. Both tools are read only; fetching remains a separate Git action.
+
+## Sessions
+
+Click **Sessions** after Changes to use the full right panel; click again to close it. **This folder / All folders**, the Agent/Source filter menu and search by title, path, provider or ID narrow the list. Source options include Main, Auto review, Subagent and Unknown. The **…** menu holds Notes, Project commands, Pending prompts, Session Trash, Projects and Tools; row **⋯** actions apply to that captured session.
+
+Use **Switch** for a running Herdr session or **Resume** for local history in its original directory. Resume invokes `claude --resume <id>`, `codex resume <id>` or `agy --conversation <id>` with normal CLI configuration. **Rename** sets a local display name; empty restores the original. **Preview** reads the latest user/assistant text for local Claude/Codex on demand. History refreshes every 30 seconds, scanning up to 6,000 entries and 500 recent records/provider; large JSONL metadata is read from the ends. Codex archived records and nested Claude subagent files are excluded. Exact visible session IDs merge live/history entries; other live terminals remain separate.
+
+History and agy summary metadata require local macOS; remote live sessions remain reachable in All folders. Set Sessions `content.props.node` if Node is outside Herdr's PATH, and `stores.claude` / `stores.codex` for custom stores; defaults follow `CLAUDE_CONFIG_DIR` / `CODEX_HOME`. agy resume uses its default store.
+
+For stopped local history, **⋯ → Move to Trash…** shows the captured session and file list before confirmation. Use **Sessions … → Session Trash → Restore…** to unpack recognized transcripts/attachments to their original locations. The data directory must share the home volume; running, occupied, ambiguous or symbolic-link targets are rejected. Resolve existing destination conflicts before Restore. Keep Herdr's `session-trash/` records until recovery is complete; Finder Put Back restores only the bundle, and emptying macOS Trash removes its contents permanently. Failed moves retain recoverable records when rollback needs attention. Project files and shared provider indexes are retained.
+
+## Pending prompts and notes
+
+**Sessions … → Pending prompts**, a live row's prompt action, or **Add reference to pending prompts…** in Files/Changes opens the queue. Search **Add reference**, Notes, PR summaries, Timeline, Images and Screen picker open a new, prefilled **draft inside that queue**. Edit it and choose a live agent on its captured machine to append a pending item. Unassigned drafts persist and can be reopened, kept or removed; existing recipient items and composer text are retained. Select **Edit / Remove**, **Preview send…**, or **Preview send all…**, inspect the message, then **Send**. Sent items remain records; editing one makes it pending again. For uncertain delivery use **Check delivery…** and mark arrived or allow retry. Limits: 40 queues, 40 items/queue, 40 unassigned drafts, 12,000 characters/instruction and 48,000/send; larger captured drafts can be shortened before assignment. Closing the panel keeps drafts.
+
+Open **Notes** from Sessions **…**, a session row, or a Project Spaces **Project notes** menu. **Project / Session / Global**, **All notes** and search cover saved and closed contexts. Typing pauses save automatically; **Save / Cmd+S** saves explicitly. **Restore draft** recovers unsaved text; conflicts retain the current text for copy or reload. **Versions** keeps three prior versions. Archive/unarchive, confirmed old-version clearing, and archived-note removal manage storage; a removed note's latest text remains in recovery. Notes live in `data/workspace-notes/notes.json` under the Herdr home. **Add to pending prompts…** uses the queue draft flow above.
+
+## Project commands, presets and workspace tools
+
+**Sessions … → Project commands**, or the matching Project Spaces context action, saves templates per captured machine/project. Enter title, absolute cwd and literal JSON argv, for example `["/bin/echo","hello world"]`; shell syntax requires an explicit shell executable. Save, favorite, reorder, edit and recover unfinished forms. **Run** starts a detached task; **Console** opens live or retained output; **Cancel run** confirms and rechecks its identity. Closing the panel leaves tasks running.
+
+**Sessions … → Projects**, also under **Tools**, manages workspace presets: save, duplicate, edit, favorite or remove. Specify an existing checkout, machine, up to eight file roots, agent argv and one to three terminal entries. Review the launch plan, then **Launch** creates a new space/tabs. Inspect partial or uncertain results before another attempt; incomplete forms remain drafts.
+
+**Session ⋯ → Work timeline / Session images** opens captured local Claude/Codex evidence. Use newer/older pages, Details, Copy evidence or Add to pending prompts; Timeline shows recorded times/durations, while images support zoom and Copy path. Pagination stops at 20 pages; images show 12/page and use a 24-hour/32 MiB/96-item cache. agy and remote history remain summary/live-session features.
+
+**Sessions → Tools → Deliverables** stores project/machine file and HTTP(S) link records. Add or drop files, mark read/unread, search/filter, archive/restore, then open the selected file/link. Records live in `data/workspace-deliverables/store.json`. Explicit CLI registration:
 
 ```sh
-node update.mjs
+node ~/.config/herdr-app/mods/sessions-plus/deliverables-helper.mjs add \
+  --root /path/to/project --file reports/result.md --title 'Analysis result'
 ```
 
-The updater copies the current local source into the installed `files-plus` and `sessions-plus` mods. It replaces their contents, including local edits, and removes obsolete files. **No backups are created.** Existing layouts, shared state (session names, quota preferences, and hidden agents), and `session-trash/` recovery records are preserved. It also supports a first installation: when `layouts/Agent-Workspace.json` is absent, it creates it from `main`.
+**Sessions → Tools → Screen picker**, also on live-session **⋯**, reads the captured terminal's screen and up to 200 history lines. **a–t** selects the current page; **Enter** copies. Preview paths, open HTTP(S) links, copy or add evidence to queue drafts. A replaced terminal or changed folder requires reopening.
 
-It does not fetch code. To update this plugin repository from GitHub first, run `git pull --ff-only`, then `node update.mjs`. For local development, just run `node update.mjs` after editing. Herdr's own source checkout is not required.
+**Sessions → Tools → Screenshot mode** hides all four owned mods and their dialogs; **Reveal** restores them. Terminal output, Herdr's own tabs/notifications and unrelated mods remain visible.
 
-```sh
-node update.mjs --home /path/to/herdr-home --layout my-layout
-node update.mjs --files-only
-```
+## Project and agent sidebar
 
-For an older split-panel installation, run `node update.mjs --integrate-layout` once to move Sessions into the top bar, Status into the footer, and restore native Spaces if the retired grouping addon was used. This explicitly updates a supported personal layout while preserving its other settings. Ordinary updates leave the layout unchanged. Unsupported custom layouts keep their existing split-panel interface; the explicit integration flag reports an error before replacing anything.
+Enable **`--unified-sidebar`** for one project/space/tab/task tree, or use `--project-spaces` and `--agents-plus` independently. **Projects / Status ▾**, search, **All / Active / Needs attention**, and **Expand all / Collapse all** navigate the shared tree. Active includes working/blocked/done; Needs attention includes blocked/done. The footer **N agents · N needs you** switches to Needs attention and expands a collapsed unified sidebar. Without that sidebar it explains how to enable it. Click a task to focus/peek its freshly verified agent; explicit child links fold within the tree.
 
-The home default is the same as the installer. `--layout` is used only when creating a missing plugin layout; an existing layout is preserved byte for byte. `--files-only` leaves the installed Sessions mod untouched. An existing Files-only layout is not automatically extended with a Sessions panel.
+Projects group a Git checkout and its worktrees, or a non-Git working folder. Drag spaces onto a project or use **Move to project**, **New project…**, **Back to…** and **Release moved spaces**; rename/color/reorder headers and use **+** for a new space. **Group by Project / Status / None**, **Sort Manual / Recent** and group folding remain available. Project + Manual keeps native space navigation in displayed order. State is kept in `project-spaces.v1`; the filter uses `project-spaces.filter.v1`.
 
-The updater validates and prepares all new mod files before removing old ones. Its temporary new-file staging directory is removed on completion or a handled error. No old version is retained; if replacement fails after it begins, the error reports that some mods may already have been updated. Resolve the error and rerun the updater. It rejects overlapping source/target directories and symbolic links at the source or target roots.
+Use **Display → Detailed / Compact** for row density, shared with Files/Changes/Sessions. Titles stay on one line with full tooltips; Detailed adds available activity context. Folders show relative paths, omit main/master branch decoration and retain full paths in tooltips. Idle status is hidden; other reported states remain visible. Right-click **Pin directory / Pin project**, or pin a task; hover the reserved pin control to unpin. Pinned/attention entries appear once, with their containing directories when appropriate. Search temporarily expands matches and clearing it restores folds.
 
-Temporary quota failures are retried automatically; absent CLIs, signed-out accounts, and explicitly blocked agy versions remain paused until a manual refresh or relevant setting change.
+Separate **Agents Plus** offers native Priority / Grouped by space sorting and pin placement **Together at top / Split by space / Inside groups**. Pins use Herdr `terminal.pin`, and next/previous-agent navigation follows the display. `--separate-sidebar` restores the recorded two-block structure; ordinary updates retain your selection.
 
-Run the `herdr-app check` commands above after updating. The script does not start Herdr or switch layouts. Select **Agent-Workspace** after a first installation. Legacy installations keep the layout name printed by the script.
+## Footer quota, resources and theme
 
-## Behavior and limits
+The quota strip follows device, branch and agent count. **Remaining / Used** switches the same readings; each provider shows up to two labeled percentage/reset windows such as `5h 71% 4h 1m · 7d 94% 6d 10h`. A 32px bar uses the lowest remaining window; click for all windows with their separate detail bars, reset times and update times. Missing five-hour resets use the documented 5h default; other unknown resets use —. Narrow layouts progressively hide bars, percentages and labels while retaining access through Quota. **Refresh** spins during reads and has a 60-second cooldown; hover for time/update/error information. **Quota → Agents** selects visible providers and retains access when all are hidden. Reads use local logged-in accounts on load and every five minutes; popup data is shared. Failed readings show warnings and may retain a **Stale** snapshot. After installing/signing into a CLI, Refresh checks it again.
 
-- Menu: **↑ / ↓** selects, **Enter** runs, **Esc** closes. Mouse hover selects a row. Menus fit within 85% of the viewport height after accounting for zoom; the action list scrolls when needed.
-- New file, new folder, and rename dialogs show their target path. Existing names produce an error instead of replacing data.
-- Trash requires confirmation. It uses the native macOS Trash, not permanent deletion.
-- New names are one component: empty names, `.`, `..`, separators, colons, and control characters are rejected. Spaces and Unicode are supported.
-- Renaming or trashing a symbolic link acts on the link itself. Creating inside an expanded directory link follows that directory, as ordinary folder navigation does.
-- The tree retains the shipped limits: 500 entries per folder, 5,000 entries total, a depth limit, and a bounded read-only text preview. `.git` is hidden by default and included when Show Hidden Files is enabled.
-- Local filesystem watching and a 10-second refresh supplement explicit refresh. Remote file actions remain read-only.
-- Changes preserves the bounded diff preview: up to 1,000 changed files and 2,500 displayed tracked diff lines (1,500 for untracked files). The file menu stages or unstages whole files; the hunk toolbar handles one verified modified-text hunk.
-- This is the first macOS-focused version. Linux/Windows OS file actions and remote mutations are not implemented.
+Claude quota uses existing OAuth credentials and the Anthropic usage endpoint; reopen Claude Code to renew expired login. Codex uses `account/rateLimits/read` from its app-server. agy requires 1.1.11+ and its built-in `/usage`; an unexpected model turn pauses queries for that version. These are local account quotas, including while viewing a remote workspace. Mode and visibility preferences persist; snapshots stay in memory.
 
-## Validate and share
+The memory/terminal badge before **commands** shows Herdr resident memory and terminal count. Hover for totals; click **Resources** for CPU history and Herdr/terminal process groups, fold groups or Refresh. Sampling uses local `ps` every five seconds, every two while open; 100% CPU is one core. Amber marks Herdr above 1.5 GB or 80% CPU. Windows hides the badge. Click **commands** for the command palette; its displayed shortcut follows the current binding.
 
-Validated on macOS with Herdr 0.1.15 and herdr-core 0.1.20; the automated test suite passed. Automated coverage includes separate staged/unstaged changes and Git history, project search and typed file previews, and session source filters, recent-message previews and the agent inbox. Existing coverage includes history parsing, WAL snapshots, exact session identities, rename persistence, duplicate-launch guards, quota visibility and refresh guards, and installer/update integration. Session Trash and Restore use isolated fixtures for all three providers, including WAL/SHM preservation, native macOS Trash, rollback, conflicts, damaged records and lock recovery.
+Copy `themes/workspace-frosted.json` into the Herdr home's `themes/`, then select **workspace-frosted**. This optional black palette uses alpha over the layout canvas and a warm-gold cursor. For matching pane outlines set `content.pane.border.color` to `terminal_border` and `content.pane.focus.color` to `terminal_focus`. Native macOS dialogs retain their system appearance. Project menus temporarily suppress source hover tooltips while open.
 
-Native mod checks cover the browser, Changes, menus and dialogs, with additional component checks for session menus, Trash/Restore, quota states and fictional Preview/Inbox data. Selected sample renders were inspected; the hidden-file toggle, session filters and quota footer were also checked interactively in Herdr. These checks do not constitute complete interactive coverage of every feature. Actual agent conversations were not resumed or deleted during testing. Read-only quota queries were verified against existing Claude, Codex and agy logins; only success states and window counts were recorded.
+## Validation and license
 
-No dependency installation is needed:
+Run `npm test` and `herdr-app check mods/<mod>` for all four mods. macOS filesystem tests use isolated temporary files and session fixtures. For visual inspection in a running development instance, use `herdr-app status` and `herdr-app shot /path/to/preview.png`. The packaged previews are sample renders; interactive coverage is described in each delivery report. Publish this directory with its preview and recipe under the **herdr-mod** topic if sharing a separate repository.
 
-```sh
-node --test tests/*.test.mjs
-```
-
-Validation includes menu event-callback unit tests, real temporary files and Git repositories, and installer tests that preserve existing configuration. Native checks and a sample-data component rendering were also exercised. Tests that invoke macOS filesystem APIs need to run on macOS; see the test output for any skipped cases.
-
-The included preview images use fictional component data. Finder/default applications were not launched for Open/Reveal validation. Further interaction checks can be performed in a running Herdr instance:
-
-```sh
-HERDR_APP_HOME=/path/to/herdr-home herdr-app check /path/to/herdr-home/mods/files-plus
-HERDR_APP_HOME=/path/to/herdr-home herdr-app status
-HERDR_APP_HOME=/path/to/herdr-home herdr-app shot /path/to/preview.png
-```
-
-Use an isolated Herdr home and core for development. Do not start a second test window on your real setup.
-
-For publication, use the contents of this directory as a separate public GitHub repository, include the actual `preview.png` and `RECIPE.md`, and add the topic **herdr-mod**. This follows [Herdr's mod-sharing guide](https://github.com/herdrdev/herdr-app/blob/master/defaults/AGENTS.md#layouts-and-mods-other-people-made); no feature PR to the shipped Files mod is needed. This repository's scripts do not create commits or publish anything.
-
-## License
-
-Apache-2.0. The browser, Changes panel, Spaces base and SVG assets derive from [Herdr's shipped mods](https://github.com/herdrdev/herdr-app/tree/816d2057d83f0cbd3705926c0231fb12963ae0fb/defaults/mods). Agent icons are loaded at runtime from Herdr's managed `icons/claude.svg`, `icons/codex.svg`, and `icons/antigravity.svg` assets. The legacy `sessions-preview.png` and `status-preview.png` images reproduce Herdr/LobeHub icons; their MIT notice is retained in `mods/sessions-plus/icons/LICENSE`. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
-
-### Activity, deliverables and screenshot mode (0.11)
-
-Session menus open Work timeline and Session images for an exact local Claude/Codex history identity. Evidence is bounded and paginated, read only on request, with timestamps and explicit duration fields rather than generated summaries. Local structured images can be enlarged, copied or referenced through the pending-prompt confirmation. Antigravity bodies and remote history remain unavailable.
-
-Sessions → Tools opens the project-and-machine scoped Deliverables list and a Screen picker for the captured live terminal. Delivery records use atomic local storage with stale-write checks, unread/archive filters and explicit file/URL opening; dropping files records metadata only. Screen picker uses bounded screen/history reads, letter selection and explicit copy/preview/reference actions, revalidating terminal creation identity and cwd. No discovered command is executed.
-
-Privacy in the bottom strip, also under Tools, hides the contents of all four owned mods and their dialogs until Reveal. It does not redact terminal output, Herdr's own tabs/notifications or unrelated mods. Stored targets and names are not changed. Screenshot previews contain sample data.
-
-Project Spaces now offers Detailed (default) and Compact display in its view menu. Detailed shows the verified project/working folder with a full-path tooltip; local home is shortened and remote machines remain explicit. Search and All / Active / Needs attention affect display only. Active means working/blocked/done; attention means blocked/done. Search temporarily expands matches without changing saved folds, assignments or ordering.
-
-## Shared project and agent sidebar (0.12)
-
-Use --unified-sidebar with install.mjs or update.mjs to combine the existing Project Spaces and Agents areas into one full-height tree. It preserves manual project assignments, paths, density and explicit parent links. The Projects / Status title dropdown switches the view; search includes tasks; pinned and attention branches appear once at the top. A tab containing one agent or ordinary terminal is merged into one row; meaningful manual tab names are preserved. Multiple terminal panes, previews and empty spaces remain reachable. Navigation and pin actions revalidate captured live identities.
-
-Right-click a directory for **Pin directory / Unpin directory**, or a project group for **Pin project / Unpin project**. Directory pins persist locally and carry all tasks, ordinary terminals, previews and empty tabs into Pinned. Manually pinned directories and projects show an accent pin in their fixed trailing controls; click it to unpin. Muted pins explain placement inherited from a project or its tasks. Unpinning restores automatic grouping. They remain independent of task pins and status; cross-directory child tasks retain their original parent identity while appearing in their own directory.
-
-Project headings and folder rows use transparent backgrounds with full-width hover feedback. Only the focused task keeps a selected background; tree guides preserve the hierarchy. Task status glyphs and semantic-colored text share one trailing line; muted context stays beneath the title. Directory branch information moves beside its relative path, while reserved pin slots keep hover from shifting titles. Counts and task status retain a common trailing edge. Task rows fit their content while retaining two-line long titles. Nested details omit repeated parent names; tooltips keep the full context. Pinned and attention tasks appear once. When all Agent tasks in a complete workspace belong to one section, its directory appears before its tasks there. Ordinary terminals with no reported task state follow their directory without changing their own state or adding to the attention count. A complete project group follows the same rule. Pinned, Needs attention and all Status sections share this behavior; mixed workspaces retain their remaining navigation. One toggle switches Expand all / Collapse all across every page; individual rows and search remain usable.
-
-Files / Changes / Sessions retain their original position in the window’s top-right toolbar. The unified sidebar starts with search, then a compact view dropdown and actions; its filter menu shows a clearable label only when active. Detailed / Compact remains in the display menu and also controls Files, Changes and Sessions row density. Actions are transparent at rest, with 24px targets, 14px glyphs and 4px corners. These package conventions use Herdr theme colors; they are not an official mandatory global size standard.
-
-Files uses the Explorer / Recent / Pinned dropdown. Filter files narrows the currently loaded tree without starting a disk scan; Search project still searches across the workspace. Changes / History share a mode dropdown, with Graph, PR / CI, list modes and larger previews in its actions menu. Existing diff, hunk, review, commit and resizable-preview behavior is retained.
-
-Use node update.mjs --separate-sidebar to restore the recorded original two blocks. Migration is explicit, conservative, idempotent and reversible, and refuses conflicting custom edits. The default updater preserves the chosen layout. Detailed uses a two-line task title and context; Compact reduces row height. No space or terminal is moved or stopped by layout migration.
-
-## Black surface theme
-
-`themes/workspace-frosted.json` is an optional dark palette for the existing workspace. It uses a plain canvas, neutral-black surfaces, soft borders and a quiet silver accent. Alpha surfaces blend over the layout canvas; with a plain background this is subtle and does not reveal the desktop. No wallpaper or background image is required. Owned menus, dropdowns and dialogs follow the same theme tokens, with a more opaque popover surface and a separate high-contrast danger-button pair. Native macOS file and permission windows keep their system appearance. The theme does not add desktop background blur or change the layout.
-
-Copy the theme file into Herdr’s `themes/` directory, then choose `workspace-frosted` in the theme picker. The terminal cursor uses the warm gold Working color. For matching translucent pane outlines, set `content.pane.border.color` to `terminal_border` and `content.pane.focus.color` to `terminal_focus` in the layout; other border geometry stays as configured. The normal mod updater preserves an already installed custom theme.
-
-Project and directory context menus temporarily suppress their source hover tooltips; closing a menu restores them. Menu dismissal and failed opening release the suppression state without changing project membership or scroll-container identity.
+Apache-2.0; see [LICENSE](LICENSE) and [NOTICE](NOTICE). Base components derive from [Herdr's shipped mods](https://github.com/herdrdev/herdr-app/tree/816d2057d83f0cbd3705926c0231fb12963ae0fb/defaults/mods). Runtime provider icons use Herdr-managed assets; legacy previews retain their [MIT icon notice](mods/sessions-plus/icons/LICENSE).

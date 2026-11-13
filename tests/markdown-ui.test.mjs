@@ -1,3 +1,4 @@
+import { uiFunction } from "./helpers/ui-function.mjs";
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -43,7 +44,7 @@ function harness() {
       return blocks.map(block => { try { if (!block.closed) throw new Error('Unclosed Mermaid fence.'); mermaidModel.validateDiagram(block.source); return { media: { path: 'test.svg', width: 300, height: 120 } }; } catch (error) { return { error: error.message }; } });
     }
   };
-  const Preview = new Function(...Object.keys(dependencies), source)(...Object.values(dependencies));
+  const Preview = uiFunction(...Object.keys(dependencies), source)(...Object.values(dependencies));
   return { Preview, cx, files, drafts, navigated, opened, editors, timers,
     view() { const view = new Preview({ editable: true, id: 'p', onNavigate: target => navigated.push(target) }); view.open('/r', 'a.md', null, cx); return view; },
     render(view) { rendering = true; try { return view.render(cx); } finally { rendering = false; } },

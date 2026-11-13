@@ -1,3 +1,4 @@
+import { uiFunction } from "./helpers/ui-function.mjs";
 import * as libraryModel from "../mods/files-plus/library-model.js";
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -27,7 +28,7 @@ function element() {
 }
 
 const iconsSource = readFileSync(new URL("../mods/files-plus/icons.js", import.meta.url), "utf8").replace(/^import .*;\n/gm, "").replaceAll("export function", "function");
-const closeButton = new Function("div", "svg", iconsSource + "\nreturn closeButton;")(element, element);
+const closeButton = uiFunction("div", "svg", iconsSource + "\nreturn closeButton;")(element, element);
 
 function view(name, dependencies) {
   dependencies = { ...libraryModel, fileIcon: element, closeButton, FileFind: class { handle = { focus() {} }; clear() {} setText() {} close() {} }, iconButton: (id, icon, label, click) => element().id(id).on_click(click), ...dependencies };
@@ -35,7 +36,7 @@ function view(name, dependencies) {
     .replace(/^import .*;\n/gm, "")
     .replace("export function changed", "function changed")
     .replace("export default class", "return class");
-  return new Function(...Object.keys(dependencies), source)(...Object.values(dependencies));
+  return uiFunction(...Object.keys(dependencies), source)(...Object.values(dependencies));
 }
 
 function context() {

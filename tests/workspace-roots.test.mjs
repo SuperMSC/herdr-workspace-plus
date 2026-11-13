@@ -1,3 +1,4 @@
+import { uiFunction } from "./helpers/ui-function.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
@@ -22,7 +23,7 @@ const nodes = node => !node || typeof node !== "object" ? [] : [node, ...node.ch
 const find = (tree, id) => nodes(tree).find(node => node.attrs.id === id);
 function load(name, deps) {
   const code = readFileSync(new URL(`../mods/files-plus/${name}.js`, import.meta.url), "utf8").replace(/^import .*;\n/gm, "").replace("export default class", "return class");
-  return new Function(...Object.keys(deps), code)(...Object.values(deps));
+  return uiFunction(...Object.keys(deps), code)(...Object.values(deps));
 }
 function input() { let value = ""; return { value: () => value, set_value(next) { value = next; }, on() {}, focus() {}, release() {} }; }
 
@@ -89,6 +90,7 @@ test("workspace browser retains roots while linked previews move focus and close
   const Workspace = load("workspace-browser", deps), view = new Workspace();
   state[model.WORKSPACES_KEY] = model.saveWorkspace(null, current, [{ path: "/main" }, { path: "/other" }]);
   view.init({}, cx);
+  assert.equal(view.main.workspaceTitle, "Workspace");
   const render = () => { rendering = true; try { return view.render(cx); } finally { rendering = false; } };
   let tree = render(); assert(find(tree, "workspace-0-same.txt")); assert(find(tree, "workspace-1-same.txt"));
   assert.equal(instances[0].syncs, 1); assert.equal(instances[1].syncs, 1);
@@ -101,6 +103,7 @@ test("workspace browser retains roots while linked previews move focus and close
   assert.equal(timers.length, 0);
   current = { cwd: "/new", space: "s2", on: null }; render(); timers.shift()(cx);
   assert(instances[0].closed); assert(instances[1].closed); assert.equal(view.main.root, "/new");
+  assert.equal(view.main.workspaceTitle, "new");
   view.close(); assert(view.main.closed);
 });
 

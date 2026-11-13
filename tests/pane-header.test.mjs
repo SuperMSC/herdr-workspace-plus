@@ -1,3 +1,4 @@
+import { uiFunction } from "./helpers/ui-function.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
@@ -38,7 +39,7 @@ function harness({ pane = "file-pane", tree = null } = {}) {
     shared: key => state[key], setShared: (key, value) => { state[key] = value; }, openOverlay: spec => overlays.push(spec),
     settings: () => ({ zoom: 1 }), window: () => ({ platform: "macos" }), layout: () => tree };
   globalThis.window = { viewport_size: () => ({ width: 1400, height: 900 }) };
-  const api = new Function(...Object.keys(deps), source)(...Object.values(deps));
+  const api = uiFunction(...Object.keys(deps), source)(...Object.values(deps));
   const view = new api.PaneHeader(); view.init({ pane });
   return { api, view, state, overlays, commands, cx: { notify() {}, stop_propagation() {} } };
 }

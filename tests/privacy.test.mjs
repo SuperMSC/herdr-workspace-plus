@@ -1,3 +1,4 @@
+import { uiFunction } from "./helpers/ui-function.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
@@ -19,7 +20,7 @@ const flat = node => typeof node === "string" ? [node] : node && typeof node ===
 test("privacy suppresses sensitive role content across all four owned mods without rewriting targets", () => {
   let enabled = false; const closed = [];
   const deps = { div: element, h_flex: element, v_flex: element, shared: () => enabled, setShared: (_key, value) => { enabled = value; }, theme: () => ({}), closeOverlay: id => closed.push(id) };
-  const api = new Function(...Object.keys(deps), source.replace(/^import .*;\n/gm, "").replaceAll("export ", "") + "\nreturn {privacyGuard,privacyToggle};")(...Object.values(deps));
+  const api = uiFunction(...Object.keys(deps), source.replace(/^import .*;\n/gm, "").replaceAll("export ", "") + "\nreturn {privacyGuard,privacyToggle};")(...Object.values(deps));
   const p = { role: "gallery", overlay: "o", target: { title: "private-title", cwd: "/private/customer", address: "secret-machine/t1" } }, before = structuredClone(p);
   assert.equal(api.privacyGuard("Sessions", p), null); api.privacyToggle();
   const tree = api.privacyGuard("Sessions", p), strings = flat(tree).filter(node => typeof node === "string").join(" ");
@@ -41,8 +42,8 @@ test("Tools places every feature in a bounded scrolling list without launching a
   let toggled=0;const overlays=[];
   const deps={div:element,h_flex:element,v_flex:element,theme:()=>({}),openOverlay:s=>overlays.push(s),closeOverlay(){},settings:()=>({zoom:1}),privacyToggle:()=>toggled++};
   const source=readFileSync(new URL("../mods/sessions-plus/tools.js",import.meta.url),"utf8").replace(/^import .*;\n/gm,"").replace("export default class","return class");
-  const Tools=new Function(...Object.keys(deps),source)(...Object.values(deps)),view=new Tools();view.init({}, {focus_handle:()=>({focus(){}})});
+  const Tools=uiFunction(...Object.keys(deps),source)(...Object.values(deps)),view=new Tools();view.init({}, {focus_handle:()=>({focus(){}})});
   const tree=view.render(),nodes=flat(tree).filter(node=>typeof node==="object");
-  const scroll=nodes.find(node=>Object.hasOwn(node.attrs,"overflow_y_scrollbar"));assert(scroll);assert.equal(scroll.childNodes.length,6);
+  const scroll=nodes.find(node=>Object.hasOwn(node.attrs,"overflow_y_scrollbar"));assert(scroll);assert.equal(scroll.childNodes.length,4);
   assert.equal(overlays.length,0);nodes.find(node=>node.attrs.id==="tool-privacy").events.on_click();assert.equal(toggled,1);assert.equal(overlays.length,0);
 });

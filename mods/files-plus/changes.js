@@ -1,3 +1,4 @@
+import { TYPE } from "./type-scale.js";
 import { projectContext } from "./file-tabs.js";
 import { fileIcon } from "./icons.js";
 // Modified from Herdr Changes (Apache-2.0). Git reads and UI extensions are independent of Git write actions.
@@ -11,7 +12,7 @@ import { diffView, splitHeader } from "./git-diff.js";
 import { REVIEW_KEY, reviewState, saveReview, reviewFileKey, anchorFor, viewedVersion, setViewed } from "./review-model.js";
 
 function location() { const { cwd, on } = projectContext(); return { cwd, on }; }
-const button = (id, label, selected, action, t) => div().id(id).px(7).py(4).rounded(5).text_size(11).flex_none().h(24).py(0).flex().items_center().justify_center().cursor_pointer().when(selected, el => el.bg(t.selected)).text_color(selected ? t.foreground : t.muted).hover(e => e.bg(t.hover)).tooltip(id === "git-expand" ? "Open larger diff preview" : id === "git-refresh" ? "Refresh Git data" : label).accessibility_label(id === "git-expand" ? "Open larger diff preview" : id === "git-refresh" ? "Refresh Git data" : label).on_click((_e, cx) => action(cx)).child(label);
+const button = (id, label, selected, action, t) => div().id(id).px(7).py(4).rounded(5).text_size(TYPE.sm).flex_none().h(24).py(0).flex().items_center().justify_center().cursor_pointer().when(selected, el => el.bg(t.selected)).text_color(selected ? t.foreground : t.muted).hover(e => e.bg(t.hover)).tooltip(id === "git-expand" ? "Open larger diff preview" : id === "git-refresh" ? "Refresh Git data" : label).accessibility_label(id === "git-expand" ? "Open larger diff preview" : id === "git-refresh" ? "Refresh Git data" : label).on_click((_e, cx) => action(cx)).child(label);
 
 export default class Changes {
   init(props, cx) {
@@ -186,7 +187,7 @@ export default class Changes {
     if (!this.root) return div();
     const file = this.selectedFile(), current = this.reviewDraft(), count = current.comments?.length || 0, selection = this.reviewSelection;
     const viewed = file && viewedVersion(current, file, this.reviewVersion);
-    const action = (id, label, callback, disabled = false) => div().id(id).px(7).py(4).rounded(5).text_size(10).flex_none().text_color(disabled ? t.dim : t.muted).when(!disabled, el => el.cursor_pointer().hover(row => row.bg(t.hover))).on_click((_event, cx) => { if (!disabled) callback(cx); }).child(label);
+    const action = (id, label, callback, disabled = false) => div().id(id).px(7).py(4).rounded(5).text_size(TYPE.xs).flex_none().text_color(disabled ? t.dim : t.muted).when(!disabled, el => el.cursor_pointer().hover(row => row.bg(t.hover))).on_click((_event, cx) => { if (!disabled) callback(cx); }).child(label);
     return h_flex().flex_none().min_h(28).px(5).gap(4).items_center().border_b(1).border_color(t.border)
       .child(action("git-comment", selection ? `Comment ${selection.side} ${selection.start}${selection.end === selection.start ? "" : `–${selection.end}`}` : "Comment file", cx => this.addComment(cx), !file || !this.reviewVersion || this.diffLoading || Boolean(current.delivery)))
       .when(Boolean(selection), el => el.child(action("git-clear-selection", "×", cx => { this.reviewSelection = null; cx.notify(); })))
@@ -224,14 +225,14 @@ export default class Changes {
     const data = this.hunkData, hunks = data?.hunks || [], hunk = hunks[this.activeHunk], file = this.selectedFile();
     if (!hunk && !this.hunkError) return div();
     const captured = hunk && file ? { context: this.context, root: this.root, path: file.path, section: file.section, version: data.version, index: hunk.index, patch: hunk.patch } : null;
-    const action = (id, text, callback, disabled = false) => div().id(id).px(7).py(4).rounded(5).flex_none().text_size(10).text_color(disabled ? t.dim : t.muted)
+    const action = (id, text, callback, disabled = false) => div().id(id).px(7).py(4).rounded(5).flex_none().text_size(TYPE.xs).text_color(disabled ? t.dim : t.muted)
       .when(!disabled, el => el.cursor_pointer().hover(row => row.bg(t.hover))).on_click((_event, cx) => { if (!disabled) callback(cx); }).child(text);
     const disabled = !hunk?.enabled || this.diffLoading || this.loading || this.busy || Boolean(this.on) || window()?.platform !== "macos";
     return h_flex().flex_none().min_h(27).px(5).gap(4).items_center().border_b(1).border_color(t.border)
       .when(Boolean(hunk), el => el.child(action("git-hunk-prev", "↑", cx => this.moveHunk(-1, cx))).child(action("git-hunk-next", "↓", cx => this.moveHunk(1, cx)))
-        .child(div().text_size(10).text_color(t.dim).child(`Hunk ${this.activeHunk + 1}/${hunks.length}`))
+        .child(div().text_size(TYPE.xs).text_color(t.dim).child(`Hunk ${this.activeHunk + 1}/${hunks.length}`))
         .child(action("git-hunk-apply", file?.section === "staged" ? "Unstage hunk" : "Stage hunk", cx => this.openHunk(cx, captured), disabled)))
-      .child(div().flex_1().min_w(0).truncate().text_size(10).text_color(t.dim).tooltip(hunk?.reason || this.hunkError || hunk?.header || "").child(hunk?.reason || this.hunkError || "Click a @@ header to choose a hunk. Working files are kept."));
+      .child(div().flex_1().min_w(0).truncate().text_size(TYPE.xs).text_color(t.dim).tooltip([hunk?.header, hunk?.reason || this.hunkError || "Click a @@ header to choose a hunk. Working files are kept."].filter(Boolean).join("\n")).child(hunk?.reason || this.hunkError || ""));
   }
 
   pick(file, cx) {
@@ -374,12 +375,12 @@ export default class Changes {
     const selected = this.selectedFile(), name = this.listMode === "tree" ? file.path.split("/").pop() : file.path;
     return h_flex().id(`change-${fileKey(file)}`).h(this.compact ? 26 : 28).flex_none().pl(8 + (file.depth || 0) * 12).pr(8).gap(6).items_center().rounded(5).cursor_pointer()
       .when(selected && fileKey(selected) === fileKey(file), e => e.bg(t.selected)).hover(e => e.bg(t.hover)).on_click((_e, cx) => this.pick(file, cx)).on_mouse_down("right", (_e, cx) => this.menu(file, cx))
-      .child(div().w(14).flex_none().text_size(11).text_color(file.status === "A" ? t.ansi2 : ["D", "U"].includes(file.status) ? t.ansi1 : t.blocked).child(file.status))
-      .when(Boolean(this.reviewVersions[reviewFileKey(file)] && viewedVersion(this.reviewDraft(), file, this.reviewVersions[reviewFileKey(file)])), el => el.child(div().text_size(10).text_color(t.ansi2).tooltip("Viewed this content version").child("✓")))
+      .child(div().w(14).flex_none().text_size(TYPE.sm).text_color(file.status === "A" ? t.ansi2 : ["D", "U"].includes(file.status) ? t.ansi1 : t.blocked).child(file.status))
+      .when(Boolean(this.reviewVersions[reviewFileKey(file)] && viewedVersion(this.reviewDraft(), file, this.reviewVersions[reviewFileKey(file)])), el => el.child(div().text_size(TYPE.xs).text_color(t.ansi2).tooltip("Viewed this content version").child("✓")))
       .child(fileIcon(file.path)).child(div().flex_1().min_w(0).truncate().tooltip(file.path).child(name))
-      .when(file.binary, e => e.child(div().text_size(10).text_color(t.dim).child("binary")))
-      .when(file.add > 0, e => e.child(div().flex_none().text_size(10).text_color(t.ansi2).child(`+${file.add}`)))
-      .when(file.del > 0, e => e.child(div().flex_none().text_size(10).text_color(t.ansi1).child(`−${file.del}`)));
+      .when(file.binary, e => e.child(div().text_size(TYPE.xs).text_color(t.dim).child("binary")))
+      .when(file.add > 0, e => e.child(div().flex_none().text_size(TYPE.xs).text_color(t.ansi2).child(`+${file.add}`)))
+      .when(file.del > 0, e => e.child(div().flex_none().text_size(TYPE.xs).text_color(t.ansi1).child(`−${file.del}`)));
   }
 
   // Every folder of the listed sections: any open folds them all, else all open.
@@ -408,7 +409,7 @@ export default class Changes {
     for (const section of sections) {
       const group = files.filter(file => file.section === section);
       const title = section === "staged" ? "Staged" : section === "unstaged" ? "Unstaged" : "Commit files";
-      rows.push(div().h(25).flex_none().px(8).py(4).font_semibold().text_size(11).text_color(t.muted).child(`${title} · ${group.length}`));
+      rows.push(div().h(25).flex_none().px(8).py(4).font_semibold().text_size(TYPE.sm).text_color(t.muted).child(`${title} · ${group.length}`));
       const visible = this.listMode === "tree" ? fileTree(group, this.collapsed) : group;
       rows.push(...visible.map(file => this.fileRow(file, t)));
     }
@@ -422,9 +423,9 @@ export default class Changes {
       .children(this.commits.map(commit => v_flex().id(`git-commit-${commit.hash}`).flex_none().px(7).py(5).rounded(5).cursor_pointer()
         .when(this.selectedCommit?.hash === commit.hash, e => e.bg(t.selected)).hover(e => e.bg(t.hover))
         .on_click((_e, cx) => { if (full) this.showCommit(commit, cx); else this.selectCommit(commit, cx); }).child(div().truncate().child(commit.subject || "(no subject)"))
-        .child(div().truncate().text_size(10).text_color(t.dim).child(`${commit.hash.slice(0, 8)} · ${commit.author} · ${new Date(commit.time * 1000).toLocaleDateString()}`))))
+        .child(div().truncate().text_size(TYPE.xs).text_color(t.dim).child(`${commit.hash.slice(0, 8)} · ${commit.author} · ${new Date(commit.time * 1000).toLocaleDateString()}`))))
       .when(this.historyMore && !this.historyLoading, e => e.child(button("history-more", "Load 50 more", false, cx => this.loadHistory(cx), t)))
-      .when(this.historyLoading || this.historyError || !this.commits.length, e => e.child(div().p(7).text_size(11).text_color(this.historyError ? t.ansi1 : t.dim).child(this.historyError || (this.historyLoading ? "Loading commits…" : "No commits yet"))));
+      .when(this.historyLoading || this.historyError || !this.commits.length, e => e.child(div().p(7).text_size(TYPE.sm).text_color(this.historyError ? t.ansi1 : t.dim).child(this.historyError || (this.historyLoading ? "Loading commits…" : "No commits yet"))));
   }
 
   panes(t) {
@@ -433,14 +434,14 @@ export default class Changes {
     const navigation = commitsOnly ? v_flex().size_full().min_h(0).min_w(0).child(this.historyList(t)) : v_flex().size_full().min_h(0).min_w(0)
       .when(this.page === "history", e => e.child(this.historyList(t)))
       .child(this.fileList(t))
-      .when(this.limited && this.page === "changes", e => e.child(div().px(10).py(3).text_size(10).text_color(t.dim).child("Showing the first 1,000 changed files")));
+      .when(this.limited && this.page === "changes", e => e.child(div().px(10).py(3).text_size(TYPE.xs).text_color(t.dim).child("Showing the first 1,000 changed files")));
     const preview = v_flex().size_full().min_h(0).min_w(0)
       .child(h_flex().h(32).flex_none().px(6).gap(3).items_center().border_b(1).border_color(t.border)
         .child(button("git-inline", "Inline", this.diffMode === "inline", cx => { this.diffMode = "inline"; this.diffScroll.scroll_to_item(0); cx.notify(); }, t))
         .child(button("git-split", "Side by side", this.diffMode === "split", cx => { this.diffMode = "split"; this.diffScroll.scroll_to_item(0); cx.notify(); }, t))
         .child(div().flex_1()).when((Boolean(selected) || Boolean(commit)) && !this.props.expanded, e => e.child(button("git-expand", "↗", false, () => this.expand(), t))))
-      .when(Boolean(selected), e => e.child(div().h(23).flex_none().px(10).py(3).truncate().text_size(10).text_color(t.dim).child(`${selected.section === "staged" ? "HEAD → Index" : selected.section === "history" ? `${selected.commit.slice(0, 8)} · ${selected.parents?.length > 1 ? "first parent" : "parent"}` : "Index → Working tree"} · ${selected.path}`)))
-      .when(Boolean(commit), e => e.child(div().h(23).flex_none().px(10).py(3).truncate().text_size(10).text_color(t.dim).child(`${commit.hash.slice(0, 8)} · ${commit.parents?.length > 1 ? "first parent" : "parent"} · ${commit.subject || "(no subject)"}`)))
+      .when(Boolean(selected), e => e.child(div().h(23).flex_none().px(10).py(3).truncate().text_size(TYPE.xs).text_color(t.dim).child(`${selected.section === "staged" ? "HEAD → Index" : selected.section === "history" ? `${selected.commit.slice(0, 8)} · ${selected.parents?.length > 1 ? "first parent" : "parent"}` : "Index → Working tree"} · ${selected.path}`)))
+      .when(Boolean(commit), e => e.child(div().h(23).flex_none().px(10).py(3).truncate().text_size(TYPE.xs).text_color(t.dim).child(`${commit.hash.slice(0, 8)} · ${commit.parents?.length > 1 ? "first parent" : "parent"} · ${commit.subject || "(no subject)"}`)))
       .child(this.reviewToolbar(t))
       .child(this.hunkToolbar(t))
       .when(this.diffMode === "split", e => e.child(splitHeader(this.counts ?? { removed: 0, added: 0 }, t)))
@@ -466,19 +467,17 @@ export default class Changes {
   footer(t) {
     const enabled = Boolean(this.message.trim() && this.root && this.hasStaged && !this.on && window()?.platform === "macos" && !this.busy && !this.loading);
     return v_flex().flex_none()
-      .when(Boolean(this.note || this.error), e => e.child(div().px(10).py(5).text_size(11).text_color(t.ansi1).child(this.note || this.error)))
+      .when(Boolean(this.note || this.error), e => e.child(div().px(10).py(5).text_size(TYPE.sm).text_color(t.ansi1).child(this.note || this.error)))
       .when(this.page === "changes", e => e
-        .child(div().px(10).py(5).text_size(10).text_color(t.dim).child(this.on || window()?.platform !== "macos" ? "Index actions and commits require local macOS." : "Commit uses staged changes. Right-click a file to stage or unstage."))
         .child(h_flex().flex_none().p(8).gap(6).border_t(1).border_color(t.border)
-          .child(div().id("commit-message").flex_1().min_w(0).h(32).px(8).flex().items_center().rounded(7).border_1().border_color(this.typing ? t.accent : t.border).cursor_text().on_mouse_down("left", (_e, cx) => cx.stop_propagation()).child(Input.new(this.input).h_full().text_size(12).text_color(t.foreground)))
-          .child(div().id("commit").h(32).px(10).flex_none().flex().items_center().rounded(7).bg(enabled ? t.solid : t.raised).text_color(enabled ? t.solid_foreground : t.dim).text_size(11).when(enabled, e => e.cursor_pointer()).on_click((_e, cx) => this.commit(cx)).child(this.busy ? "Committing…" : "Commit Staged"))))
-      .when(this.page === "history", e => e.child(div().px(10).py(5).text_size(10).text_color(t.dim).child("History is read-only · upstream counts use the last fetched refs.")));
+          .child(div().id("commit-message").flex_1().min_w(0).h(32).px(8).flex().items_center().rounded(7).border_1().border_color(this.typing ? t.accent : t.border).cursor_text().on_mouse_down("left", (_e, cx) => cx.stop_propagation()).child(Input.new(this.input).h_full().text_size(TYPE.md).text_color(t.foreground)))
+          .child(div().id("commit").h(32).px(10).flex_none().flex().items_center().rounded(7).bg(enabled ? t.solid : t.raised).text_color(enabled ? t.solid_foreground : t.dim).text_size(TYPE.sm).tooltip(this.on || window()?.platform !== "macos" ? "Index actions and commits require local macOS." : "Commit uses staged changes. Right-click a file to stage or unstage.").when(enabled, e => e.cursor_pointer()).on_click((_e, cx) => this.commit(cx)).child(this.busy ? "Committing…" : "Commit Staged"))));
   }
 
   headerItems(kind) {
     if (kind === "mode") return [
       { id: "git-changes-tab", label: "Changes", checked: this.page === "changes", act: cx => this.setPage("changes", cx) },
-      { id: "git-history-tab", label: "History", checked: this.page === "history", act: cx => this.setPage("history", cx) },
+      { id: "git-history-tab", label: "History", tooltip: "History is read-only · upstream counts use the last fetched refs.", checked: this.page === "history", act: cx => this.setPage("history", cx) },
     ];
     return [
       { id: "git-tree", label: "Group by folder", checked: this.listMode === "tree", act: () => { this.listMode = "tree"; } },
@@ -502,17 +501,17 @@ export default class Changes {
 
   headerPopover(kind, t) {
     const open = this.headerMenu === kind, items = this.headerItems(kind), name = kind === "mode" ? this.page === "history" ? "History" : "Changes" : "Repository actions";
-    const trigger = h_flex().id("git-header-" + kind).h(24).when(kind === "more", el => el.w(24)).px(kind === "mode" ? 4 : 0).gap(4).flex_none().items_center().justify_center().rounded(4).text_size(11.5).text_color(t.muted).cursor_pointer().hover(el => el.bg(t.hover).text_color(t.foreground)).accessibility_label(name).tooltip(name)
+    const trigger = h_flex().id("git-header-" + kind).h(24).when(kind === "more", el => el.w(24)).px(kind === "mode" ? 4 : 0).gap(4).flex_none().items_center().justify_center().rounded(4).text_size(TYPE.sm).text_color(t.muted).cursor_pointer().hover(el => el.bg(t.hover).text_color(t.foreground)).accessibility_label(name).tooltip(kind === "mode" && this.page === "history" ? items.find(item => item.id === "git-history-tab").tooltip : name)
       .when(kind === "mode", el => el.child(name).child(svg("mods/files-plus/chevron-down.svg").size(10)))
       .when(kind === "more", el => el.child(svg("mods/files-plus/icons/more.svg").size(14)));
-    const menu = v_flex().id("git-header-menu-" + kind).w(210).p(4).gap(1).rounded(6).border_1().border_color(t.border).bg(t.surface).text_color(t.foreground).text_size(12)
+    const menu = v_flex().id("git-header-menu-" + kind).w(210).p(4).gap(1).rounded(6).border_1().border_color(t.border).bg(t.surface).text_color(t.foreground).text_size(TYPE.md)
       .on_key_down((event, cx) => {
         const key = String(event.key || "").toLowerCase();
         if (["up", "arrowup", "down", "arrowdown"].includes(key)) { cx.stop_propagation(); this.headerMenuIndex = (this.headerMenuIndex + (key === "up" || key === "arrowup" ? -1 : 1) + items.length) % items.length; cx.notify(); }
         else if (key === "enter") { cx.stop_propagation(); this.chooseHeader(items[this.headerMenuIndex || 0], cx); }
         else if (key === "escape") { cx.stop_propagation(); this.headerMenu = null; cx.notify(); }
       })
-      .children(items.map((item, index) => h_flex().id(item.id).h(29).px(7).gap(6).items_center().rounded(4).text_color(item.disabled ? t.dim : t.foreground).when(item.disabled, el => el.opacity(0.45)).when(!item.disabled, el => el.cursor_pointer().hover(el => el.bg(t.hover))).when(open && index === this.headerMenuIndex, el => el.bg(t.selected))
+      .children(items.map((item, index) => h_flex().id(item.id).h(29).px(7).gap(6).items_center().rounded(4).text_color(item.disabled ? t.dim : t.foreground).tooltip(item.tooltip || item.label).when(item.disabled, el => el.opacity(0.45)).when(!item.disabled, el => el.cursor_pointer().hover(el => el.bg(t.hover))).when(open && index === this.headerMenuIndex, el => el.bg(t.selected))
         .on_click((_event, cx) => { cx.stop_propagation(); this.chooseHeader(item, cx); })
         .child(div().w(13).flex_none().text_color(t.accent).child(item.checked ? "✓" : "")).child(item.label)));
     return div().flex_none().child(Popover.new("git-header-popover-" + kind).open(open).anchor("top_left")
@@ -524,17 +523,17 @@ export default class Changes {
     const t = theme(); this.compact = shared("project-spaces.density.v1") === "compact";
     const loading = Boolean(this.loading || this.historyLoading);
     const branch = this.branch.name || (this.root ? "Branch unavailable" : "No repository"), counts = this.branch.upstream ? `↑${this.branch.ahead} ↓${this.branch.behind}` : "No upstream";
-    return v_flex().id("changes").size_full().min_h(0).min_w(0).rounded(this.props.expanded ? 10 : 0).overflow_hidden().bg(this.props.expanded ? t.background : t.chrome).when(this.props.expanded, el => el.border_1().border_color(t.border)).text_color(t.foreground).text_size(12).track_focus(this.handle)
+    return v_flex().id("changes").size_full().min_h(0).min_w(0).rounded(this.props.expanded ? 10 : 0).overflow_hidden().bg(this.props.expanded ? t.background : t.chrome).when(this.props.expanded, el => el.border_1().border_color(t.border)).text_color(t.foreground).text_size(TYPE.md).track_focus(this.handle)
       .on_key_down((e, cx) => { if (e.key === "escape" && this.typing) { this.typing = false; this.handle.focus(); cx.stop_propagation(); cx.notify(); } })
       .child(v_flex().id("git-context-header").flex_none().px(8).pt(6).pb(5).gap(3)
         .child(h_flex().h(23).gap(6).items_center()
           .child(svg("mods/files-plus/icons/folder.svg").size(14).text_color(t.muted))
-          .child(div().flex_1().min_w(0).truncate().font_semibold().text_size(12.5).tooltip((this.on ? "@" + this.on + ": " : "") + (this.root || this.sourceLocation().cwd || "No folder")).child(String(this.root || this.sourceLocation().cwd || "No folder").replace(/[\\/]+$/, "").split(/[\\/]/).pop() || "No folder"))
-          .child(div().max_w(110).truncate().text_size(11).text_color(t.dim).tooltip(this.branch.upstream ? branch + " → " + this.branch.upstream + " · " + counts : branch).child(branch)))
-        .when(!this.compact, el => el.child(div().h(14).min_w(0).truncate().text_size(10.5).text_color(t.dim).tooltip((this.on ? "@" + this.on + ": " : "") + (this.root || this.sourceLocation().cwd || "")).child((this.on ? "@" + this.on + ": " : "") + (this.root || this.sourceLocation().cwd || ""))))
+          .child(div().flex_1().min_w(0).truncate().font_semibold().text_size(TYPE.md).tooltip((this.on ? "@" + this.on + ": " : "") + (this.root || this.sourceLocation().cwd || "No folder")).child(String(this.root || this.sourceLocation().cwd || "No folder").replace(/[\\/]+$/, "").split(/[\\/]/).pop() || "No folder"))
+          .child(div().max_w(110).truncate().text_size(TYPE.sm).text_color(t.dim).tooltip(this.branch.upstream ? branch + " → " + this.branch.upstream + " · " + counts : branch).child(branch)))
+        .when(!this.compact, el => el.child(div().h(14).min_w(0).truncate().text_size(TYPE.xs).line_height("14px").text_color(t.dim).tooltip((this.on ? "@" + this.on + ": " : "") + (this.root || this.sourceLocation().cwd || "")).child((this.on ? "@" + this.on + ": " : "") + (this.root || this.sourceLocation().cwd || ""))))
         .child(h_flex().h(24).gap(3).items_center()
           .child(this.headerPopover("mode", t))
-          .child(div().flex_1().min_w(0).truncate().text_size(10.5).text_color(t.dim).child(this.page === "history" ? this.commits.length + " commits" : (this.fileCount ?? this.files.length) + " files"))
+          .child(div().flex_1().min_w(0).truncate().text_size(TYPE.xs).text_color(t.dim).child(this.page === "history" ? this.commits.length + " commits" : (this.fileCount ?? this.files.length) + " files"))
           .when(this.listMode === "tree", el => el.child(this.foldAllButton(t)))
           .when(this.props.expanded, el => el.child(button("git-preview-files", "Files", Boolean(this.showFiles), cx => { this.showFiles = !this.showFiles; cx.notify(); }, t)))
           .child(div().id("git-refresh").size(24).p(0).flex_none().flex().items_center().justify_center().rounded(4)

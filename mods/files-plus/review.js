@@ -1,3 +1,4 @@
+import { TYPE } from "./type-scale.js";
 import { div } from "gpui-kit";
 import { v_flex, h_flex, Editor, EditorState } from "gpui-base";
 import { agents, terminals, exec, hc, readTextFile, shared, setShared, theme, closeOverlay, openOverlay } from "herdr";
@@ -127,9 +128,9 @@ export default class Review {
     const locked = Boolean(state.delivery), selected = targets.find(target => target.identity === this.selected?.identity);
     const enabled = !locked && !this.busy && !this.checking && selected && ["idle", "done"].includes(selected.status) && comments.length > 0 && !state.messageStale;
     const action = (id, label, callback, disabled = false) => div().id(id).h(28).px(9).rounded(5).bg(t.raised).text_color(disabled ? t.dim : t.foreground).flex().items_center().when(!disabled, el => el.cursor_pointer().hover(row => row.bg(t.hover))).on_click((event, cx) => { if (!disabled) callback(event, cx); }).child(label);
-    return v_flex().id("review-draft").size_full().min_h(0).p(16).gap(9).rounded(10).border_1().border_color(t.border).bg(t.popover).text_color(t.foreground).text_size(12).track_focus(this.handle)
+    return v_flex().id("review-draft").size_full().min_h(0).p(16).gap(9).rounded(10).border_1().border_color(t.border).bg(t.popover).text_color(t.foreground).text_size(TYPE.md).track_focus(this.handle)
       .on_key_down((event, cx) => { if (event.key === "escape" && !this.busy) { closeOverlay(this.p.overlay); cx.stop_propagation(); } })
-      .child(h_flex().flex_none().gap(8).items_center().child(div().font_semibold().text_size(15).child(`Review · ${comments.length} comments`)).child(div().flex_1())
+      .child(h_flex().flex_none().gap(8).items_center().child(div().font_semibold().text_size(TYPE.lg).child(`Review · ${comments.length} comments`)).child(div().flex_1())
         .child(action("review-copy", "Copy message", (_event, cx) => cx.write_to_clipboard(this.editor.value())))
         .when(Boolean(state.messageStale), el => el.child(action("review-keep-edited", "Keep edited message", (_event, cx) => { this.save({ ...this.state(), messageStale: false }); cx.notify(); }, locked || this.busy)))
         .child(action("review-regenerate", "Regenerate", (_event, cx) => this.regenerate(cx), locked || this.busy)))
@@ -138,11 +139,11 @@ export default class Review {
       .child(div().id("review-comments").max_h(160).overflow_y_scrollbar().children(comments.map(comment => h_flex().id(`review-note-${comment.id}`).gap(6).py(4).items_center()
         .child(v_flex().flex_1().min_w(0).gap(2).child(div().truncate().child(commentLabel(comment)))
           .child(div().truncate().text_color(t.muted).child(comment.text))
-          .when(this.versions[reviewFileKey(comment.file)] !== comment.version, el => el.child(div().text_color(t.blocked).text_size(10).child("Outdated / source not verified · original lines are retained"))))
+          .when(this.versions[reviewFileKey(comment.file)] !== comment.version, el => el.child(div().text_color(t.blocked).text_size(TYPE.xs).child("Outdated / source not verified · original lines are retained"))))
         .child(action(`review-edit-${comment.id}`, "Edit", () => this.edit(comment), locked || this.busy))
         .child(action(`review-remove-${comment.id}`, "Remove", (_event, cx) => this.remove(comment.id, cx), locked || this.busy)))))
       .child(div().flex_1().min_h(100).border_1().border_color(t.border).rounded(6).child(Editor.new(this.editor).size_full()))
-      .child(div().flex_none().text_size(10).text_color(t.dim).child(locked ? state.delivery.status === "sent" ? `Sent to ${state.delivery.address}. Draft retained.` : `Delivery ${state.delivery.status}. Draft retained; automatic resend is disabled.` : this.checking ? "Verifying original source versions…" : "Choose the receiving agent, check this message, then send once. Original code stays attached to outdated comments."))
+      .child(div().flex_none().text_size(TYPE.xs).text_color(t.dim).child(locked ? state.delivery.status === "sent" ? `Sent to ${state.delivery.address}. Draft retained.` : `Delivery ${state.delivery.status}. Draft retained; automatic resend is disabled.` : this.checking ? "Verifying original source versions…" : "Choose the receiving agent, check this message, then send once. Original code stays attached to outdated comments."))
       .child(div().id("review-targets").max_h(100).overflow_y_scrollbar().children(targets.map(target => div().id(`review-target-${target.address}`).px(8).py(5).rounded(5).truncate().bg(target.identity === selected?.identity ? t.selected : t.background).when(!locked && !this.busy, el => el.cursor_pointer().hover(row => row.bg(t.hover))).on_click((_event, cx) => { if (!locked && !this.busy) { this.selected = { ...target }; cx.notify(); } }).child(`${target.identity === selected?.identity ? "●" : "○"} ${target.title} · ${target.space} · ${target.address} · ${target.status}`))))
       .when(!targets.length, el => el.child(div().text_color(t.dim).child("No live agent on this machine. Copy the review instead.")))
       .when(Boolean(this.error), el => el.child(div().text_color(t.ansi1).child(this.error)))

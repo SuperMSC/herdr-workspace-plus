@@ -1,3 +1,4 @@
+import { uiFunction } from "./helpers/ui-function.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
@@ -158,7 +159,7 @@ function uiFixture({ store = new Map([[model.PRESETS_KEY, initial()]]), core = c
     shared: key => store.get(key), setShared(key, value) { assert(!rendering); store.set(key, value); }, theme: () => ({}), closeOverlay() {}, hc: core.deps.control, appHome: () => "/fixture/herdr", spaces: core.deps.spaces, panes: core.deps.panes, machines: core.deps.machines,
     exec: (program, argv, options) => program === "/usr/bin/env" ? Promise.resolve(reply(core.deps.command(argv[3], JSON.parse(argv[4])))) : core.deps.execute(program, argv, options) };
   const source = readFileSync(new URL("../mods/sessions-plus/presets.js", import.meta.url), "utf8").replace(/^import .*;\n/gm, "").replace("export default class", "return class");
-  const Presets = new Function(...Object.keys(deps), source)(...Object.values(deps)), view = new Presets(); view.init({ context: { root: config.root, on: null } }, cx);
+  const Presets = uiFunction(...Object.keys(deps), source)(...Object.values(deps)), view = new Presets(); view.init({ context: { root: config.root, on: null } }, cx);
   return { view, cx, store, core, inputs, timers, state: () => model.presetState(store.get(model.PRESETS_KEY)), render() { rendering = true; try { return view.render(cx); } finally { rendering = false; } }, click(id) { const node = nodes(this.render()).find(node => node.attrs.id === id); assert(node, id); node.events.on_click({}, cx); }, async settle() { for (let i = 0; i < 8 && tasks.length; i++) await Promise.all(tasks.splice(0)); } };
 }
 

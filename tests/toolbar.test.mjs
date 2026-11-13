@@ -1,3 +1,4 @@
+import { uiFunction } from "./helpers/ui-function.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
@@ -21,7 +22,7 @@ function fixture({ enabled, hidden = false, active = "files", missing = false } 
     .replace(/^import .*;\n/gm, "").replace("export default class", "return class");
   const dependencies = { div: element, svg: element, h_flex: element, theme: () => ({ selected: "selected", chrome: "chrome", foreground: "foreground", muted: "muted", hover: "hover", border: "border" }), layout: () => ({ children: [panel] }),
     shared: key => state[key], setShared: (key, value) => { writes.push([key, value]); state[key] = value; }, run: (...args) => calls.push(args) };
-  const Toolbar = new Function(...Object.keys(dependencies), source)(...Object.values(dependencies));
+  const Toolbar = uiFunction(...Object.keys(dependencies), source)(...Object.values(dependencies));
   const toolbar = new Toolbar(); toolbar.init({});
   return { toolbar, calls, state, writes, panel, button: () => toolbar.render().children[0] };
 }
@@ -73,9 +74,11 @@ test("Sessions keeps its rounded frame inside its own native block in normal, se
     const f = fixture(options), root = f.toolbar.render(), button = root.children[0];
     assert((button.attrs.ml ?? 0) >= 0, "A negative left margin clips the left round corners at the separate mod block boundary");
     assert.equal(button.attrs.h, 26); assert.equal(button.attrs.rounded, 6); assert.equal(button.attrs.px, 8); assert.equal(button.attrs.gap, 5);
+    assert.equal(button.attrs.text_size, 12); assert.equal(button.children[0].attrs.size, 14);
     assert(Object.hasOwn(root.attrs, "items_center")); assert(Object.hasOwn(button.attrs, "items_center"));
     const on = !options.hidden && options.active === "files-plus-sessions";
-    assert.equal(button.attrs.bg, on ? "selected" : "chrome");
+    assert.equal(button.attrs.bg, on ? "selected" : undefined);
+    assert.equal(root.attrs.bg, "chrome"); assert.equal(root.attrs.border_b, 1); assert.equal(root.attrs.border_color, "border");
     assert.equal(button.attrs.text_color, on ? "foreground" : "muted");
     if (!options.missing) {
       const hovered = element(); button.attrs.hover(hovered);

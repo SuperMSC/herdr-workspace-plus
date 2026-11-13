@@ -1,3 +1,4 @@
+import { TYPE } from "./type-scale.js";
 import { div, svg } from "gpui-kit";
 import { v_flex, h_flex, Input, InputState, Textarea, TextareaState } from "gpui-base";
 import { shared, setShared, theme, exec, hc, appHome, spaces, panes, machines, closeOverlay } from "herdr";
@@ -107,24 +108,24 @@ export default class WorkspacePresets {
     this.scheduleExpiry(cx);
     const t = theme(), state = this.state(), current = state.launches.find(row => row.token === this.resultToken);
     const button = (id, label, action, disabled = false, primary = false) => div().id(id).px(8).py(5).flex_none().rounded(5).bg(primary ? t.solid : t.raised).text_color(disabled ? t.dim : primary ? t.solid_foreground : t.foreground).when(!disabled, el => el.cursor_pointer().hover(row => row.bg(t.hover))).on_click((_event, cx) => { cx.stop_propagation(); if (!disabled) action(cx); }).child(label);
-    const detail = (label, value) => v_flex().gap(3).child(div().text_size(10.5).text_color(t.dim).child(label)).child(div().text_size(11.5).text_color(t.muted).child(value));
+    const detail = (label, value) => v_flex().gap(3).child(div().text_size(TYPE.xs).text_color(t.dim).child(label)).child(div().text_size(TYPE.sm).text_color(t.muted).child(value));
     const result = row => v_flex().id(`preset-result-${row.token}`).gap(6).p(10).rounded(6).bg(t.background)
       .child(div().font_semibold().child(`${row.name} · ${row.status === "complete" ? "Workspace created" : row.status}`))
-      .child(div().text_size(10.5).text_color(t.dim).child(`${row.on || "This computer"}${row.spaceId ? ` · ${row.spaceId}` : ""} · ${row.spaceMarker}`))
-      .children(row.items.map(item => v_flex().gap(2).child(div().text_color(item.error ? t.blocked : t.muted).child(`${item.title}: ${item.status}${item.processStatus ? ` · ${item.processStatus}` : ""}${item.address ? ` · ${item.address}` : ""}`)).when(Boolean(item.error), el => el.child(div().text_size(10.5).text_color(t.blocked).child(item.error)))))
+      .child(div().text_size(TYPE.xs).text_color(t.dim).child(`${row.on || "This computer"}${row.spaceId ? ` · ${row.spaceId}` : ""} · ${row.spaceMarker}`))
+      .children(row.items.map(item => v_flex().gap(2).child(div().text_color(item.error ? t.blocked : t.muted).child(`${item.title}: ${item.status}${item.processStatus ? ` · ${item.processStatus}` : ""}${item.address ? ` · ${item.address}` : ""}`)).when(Boolean(item.error), el => el.child(div().text_size(TYPE.xs).text_color(t.blocked).child(item.error)))))
       .when(Boolean(row.error), el => el.child(div().text_color(t.blocked).child(row.error)))
-      .when(!["complete", "failed"].includes(row.status) && !row.reviewed, el => el.child(div().text_size(10.5).text_color(t.muted).child("Created items remain in Herdr. Inspect this result and its launch marker before starting another workspace; nothing retries automatically.")))
+      .when(!["complete", "failed"].includes(row.status) && !row.reviewed, el => el.child(div().text_size(TYPE.xs).text_color(t.muted).child("Created items remain in Herdr. Inspect this result and its launch marker before starting another workspace; nothing retries automatically.")))
       .when(!row.reviewed, el => el.child(button(`preset-review-${row.token}`, PRESET_WORKING.includes(row.status) ? "Review interrupted launch" : "I reviewed this result", cx => this.review(row, cx), row.token === this.busyToken || PRESET_WORKING.includes(row.status) && Date.now() <= row.expires)));
     let body;
     if (this.form) {
-      const field = (key, label, multi = false, height = 70) => v_flex().flex_none().gap(4).child(div().text_size(10.5).text_color(t.dim).child(label)).child(div().h(multi ? height : 30).border_1().border_color(t.input).rounded(5).child(multi ? Textarea.new(this.inputs[key]).size_full() : Input.new(this.inputs[key]).size_full()));
+      const field = (key, label, multi = false, height = 70) => v_flex().flex_none().gap(4).child(div().text_size(TYPE.xs).text_color(t.dim).child(label)).child(div().h(multi ? height : 30).border_1().border_color(t.input).rounded(5).child(multi ? Textarea.new(this.inputs[key]).size_full() : Input.new(this.inputs[key]).size_full()));
       body = v_flex().flex_1().min_h(0).gap(9)
         .child(v_flex().id("preset-form-scroll").flex_1().min_h(0).gap(9).overflow_y_scrollbar()
           .child(field("name", "Project name")).child(field("machine", "Machine · empty means this computer")).child(field("root", "Main folder · existing checkout"))
           .child(field("rootsText", "File roots · JSON array, up to 8; main folder is included", true, 75))
           .child(field("agentText", "Initial agent · literal argv JSON array", true, 75))
           .child(field("tabsText", 'Extra terminal tabs · 1–3 objects: {"name", "argv", "cwd"}', true, 125))
-          .child(div().text_size(10.5).text_color(t.muted).child("Saving never starts a program. argv strings stay literal; a shell command needs an explicit shell executable. Restoring opens a separate copy and keeps the original.")))
+          .child(div().text_size(TYPE.xs).text_color(t.muted).child("Saving never starts a program. argv strings stay literal; a shell command needs an explicit shell executable. Restoring opens a separate copy and keeps the original.")))
         .child(h_flex().gap(8).justify_end().child(button("preset-form-back", "Back · keep form", cx => this.back(cx))).child(button("preset-form-save", "Save preset", cx => this.save(cx), false, true)));
     } else if (this.preview) {
       const config = this.preview.config;
@@ -133,11 +134,11 @@ export default class WorkspacePresets {
           .child(detail("New workspace", `${config.on || "This computer"} · ${config.root}`)).child(detail("File roots", config.roots.join("\n")))
           .child(detail("Agent tab", JSON.stringify(config.agentArgv))).children(config.tabs.map(tab => detail(`Terminal: ${tab.name} · ${tab.cwd}`, JSON.stringify(tab.argv))))
           .child(div().text_color(t.muted).child(`Creates one new workspace and ${config.tabs.length + 1} terminal tabs. Every program below starts only when you press Launch. No prompt is sent and no setup hook is discovered.`))
-          .child(div().text_size(10.5).text_color(t.dim).child("Herdr starts these commands in its login shell and keeps the shell open afterward. Session creation does not prove a command completed. A partial launch stops and keeps its created items.")))
+          .child(div().text_size(TYPE.xs).text_color(t.dim).child("Herdr starts these commands in its login shell and keeps the shell open afterward. Session creation does not prove a command completed. A partial launch stops and keeps its created items.")))
         .child(h_flex().gap(8).justify_end().child(button("preset-preview-back", "Back", cx => this.back(cx))).child(button("preset-launch", "Launch workspace", cx => this.launch(cx), Boolean(this.busyToken), true)));
     } else if (current) body = v_flex().flex_1().min_h(0).gap(9).child(v_flex().flex_1().min_h(0).overflow_y_scrollbar().child(result(current))).child(button("preset-result-back", this.busyToken ? "Creating workspace…" : "Back to presets", cx => this.back(cx), Boolean(this.busyToken)));
     else body = v_flex().flex_1().min_h(0).gap(9)
-      .child(h_flex().gap(8).child(button("preset-new", "New preset", cx => this.openForm(null, cx))).child(div().flex_1()).child(div().text_size(10.5).text_color(t.dim).child(`${state.presets.length}/${PRESET_LIMITS.presets} presets`)))
+      .child(h_flex().gap(8).child(button("preset-new", "New preset", cx => this.openForm(null, cx))).child(div().flex_1()).child(div().text_size(TYPE.xs).text_color(t.dim).child(`${state.presets.length}/${PRESET_LIMITS.presets} presets`)))
       .child(v_flex().id("preset-list").flex_1().min_h(0).gap(9).overflow_y_scrollbar()
         .children([...state.presets].sort((a, b) => Number(b.favorite) - Number(a.favorite)).map(preset => v_flex().id(`preset-${preset.id}`).p(10).gap(6).rounded(6).bg(t.raised)
           .child(h_flex().gap(6).items_center().child(button(`preset-favorite-${preset.id}`, preset.favorite ? "★" : "☆", cx => this.mutate(state => favoritePreset(state, preset.id), cx)))
@@ -145,22 +146,22 @@ export default class WorkspacePresets {
             .child(button(`preset-edit-${preset.id}`, "Edit", cx => this.openForm(preset, cx))).child(button(`preset-copy-${preset.id}`, "Copy", cx => this.mutate(state => copyPreset(state, preset), cx)))
             .child(button(`preset-remove-${preset.id}`, "Remove", cx => { this.confirmDelete = { id: preset.id, revision: presetRevision(preset) }; cx.notify(); }))
             .child(button(`preset-preview-${preset.id}`, "Preview launch", cx => this.prepare(preset, cx), false, true)))
-          .child(div().text_size(10.5).text_color(t.dim).truncate().tooltip(preset.root).child(`${preset.on || "This computer"} · ${preset.root}`))
-          .child(div().text_size(10.5).text_color(t.muted).child(`${preset.roots.length} file roots · agent + ${preset.tabs.length} terminal tabs`))
+          .child(div().text_size(TYPE.xs).text_color(t.dim).truncate().tooltip(preset.root).child(`${preset.on || "This computer"} · ${preset.root}`))
+          .child(div().text_size(TYPE.xs).text_color(t.muted).child(`${preset.roots.length} file roots · agent + ${preset.tabs.length} terminal tabs`))
           .when(this.confirmDelete?.id === preset.id, el => el.child(h_flex().gap(8).items_center().child(div().flex_1().child("Remove this saved preset? Existing workspaces stay."))
             .child(button(`preset-remove-no-${preset.id}`, "Keep", cx => { this.confirmDelete = null; cx.notify(); }))
             .child(button(`preset-remove-yes-${preset.id}`, "Remove preset", cx => this.mutate(state => { const next = removePreset(state, preset.id, this.confirmDelete.revision); this.confirmDelete = null; return next; }, cx)))))))
         .when(!state.presets.length, el => el.child(div().p(10).text_color(t.muted).child("Save a project's folders, agent and terminal commands. Preview every workspace before launching it.")))
-        .when(state.drafts.length > 0, el => el.child(div().font_semibold().text_size(11).child("Unfinished forms"))).children(state.drafts.map(draft => h_flex().id(`preset-draft-${draft.draftId}`).gap(6).items_center()
+        .when(state.drafts.length > 0, el => el.child(div().font_semibold().text_size(TYPE.sm).child("Unfinished forms"))).children(state.drafts.map(draft => h_flex().id(`preset-draft-${draft.draftId}`).gap(6).items_center()
           .child(div().flex_1().truncate().child(draft.name || "Untitled preset"))
           .child(button(`preset-restore-${draft.draftId}`, "Restore copy", cx => this.openForm(null, cx, draft)))
           .child(button(`preset-discard-${draft.draftId}`, this.confirmDraft === draft.draftId ? "Confirm discard" : "Discard", cx => { if (this.confirmDraft === draft.draftId) this.discard(draft, cx); else { this.confirmDraft = draft.draftId; cx.notify(); } }))))
-        .when(state.launches.length > 0, el => el.child(div().font_semibold().text_size(11).child("Recent launches"))).children([...state.launches].reverse().map(row => h_flex().gap(6).items_center()
+        .when(state.launches.length > 0, el => el.child(div().font_semibold().text_size(TYPE.sm).child("Recent launches"))).children([...state.launches].reverse().map(row => h_flex().gap(6).items_center()
           .child(div().flex_1().truncate().text_color(["partial", "unconfirmed"].includes(row.status) ? t.blocked : t.dim).child(`${row.name} · ${row.status}`))
           .child(button(`preset-open-result-${row.token}`, "Result", cx => { this.resultToken = row.token; cx.notify(); })))));
-    return v_flex().id("workspace-presets").size_full().min_h(0).p(16).gap(10).rounded(10).border_1().border_color(t.border).bg(t.popover).text_color(t.foreground).text_size(12).track_focus(this.handle)
+    return v_flex().id("workspace-presets").size_full().min_h(0).p(16).gap(10).rounded(10).border_1().border_color(t.border).bg(t.popover).text_color(t.foreground).text_size(TYPE.md).track_focus(this.handle)
       .on_key_down((event, cx) => { if (event.key === "escape" && !this.busyToken) { closeOverlay(this.p.overlay); cx.stop_propagation(); } })
-      .child(h_flex().gap(8).items_center().child(svg("mods/sessions-plus/presets.svg").size(17).text_color(t.muted)).child(div().font_semibold().text_size(15).child("Workspace presets")))
+      .child(h_flex().gap(8).items_center().child(svg("mods/sessions-plus/presets.svg").size(17).text_color(t.muted)).child(div().font_semibold().text_size(TYPE.lg).child("Workspace presets")))
       .child(body).when(Boolean(this.error), el => el.child(div().text_color(t.blocked).child(this.error)));
   }
 }

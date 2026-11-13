@@ -1,3 +1,4 @@
+import { uiFunction } from "./helpers/ui-function.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
@@ -21,13 +22,13 @@ const nodes = node => !node || typeof node !== "object" ? [] : [node, ...node.ch
 function fixture() {
   const storage = new Map(), overlays = [], liveMenus = new Map(), calls = [], closed = [], writes = [], cx = { focus_handle: () => ({ focus() {}, release() {} }), notify() {}, stop_propagation() {} };
   const shared = key => storage.get(key), setShared = (key, value) => { storage.set(key, value); writes.push([key, value]); };
-  const helper = new Function("shared", "setShared", source("menu-tooltip").replaceAll("export ", "") + "\nreturn { MENU_TOOLTIP_KEY, menuTooltipState, beginMenuTooltip, endMenuTooltip, menuTooltipKey };")(shared, setShared);
+  const helper = uiFunction("shared", "setShared", source("menu-tooltip").replaceAll("export ", "") + "\nreturn { MENU_TOOLTIP_KEY, menuTooltipState, beginMenuTooltip, endMenuTooltip, menuTooltipKey };")(shared, setShared);
   let openFailure = false;
   const deps = { ...model, ...pins, ...helper, View: class {}, div: element, svg: element, image: element, h_flex: element, v_flex: element, shared, setShared, run: (...args) => calls.push(args), theme: () => ({ dim: "dim", muted: "muted", border: "border", hover: "hover", selected: "selected", foreground: "foreground", background: "background" }), spaces: () => [w], closeOverlay(id) { closed.push(id); liveMenus.get(id)?.close(cx); liveMenus.delete(id); }, openOverlay(spec) { if (openFailure instanceof Error) throw openFailure; if (openFailure) return null; const id = `popup-${overlays.length}`; overlays.push({ ...spec, id }); return id; } };
-  const menuModule = new Function(...Object.keys(deps), source("menus").replaceAll("export ", "") + "\nreturn { Menu, openMenu, menuRows };")(...Object.values(deps));
+  const menuModule = uiFunction(...Object.keys(deps), source("menus").replaceAll("export ", "") + "\nreturn { Menu, openMenu, menuRows };")(...Object.values(deps));
   Object.assign(deps, menuModule);
-  const Main = new Function(...Object.keys(deps), source("main").replace("export default class", "return class"))(...Object.values(deps));
-  const Unified = new Function(...Object.keys(deps), source("unified").replace("export default class", "return class"))(...Object.values(deps));
+  const Main = uiFunction(...Object.keys(deps), source("main").replace("export default class", "return class"))(...Object.values(deps));
+  const Unified = uiFunction(...Object.keys(deps), source("unified").replace("export default class", "return class"))(...Object.values(deps));
   const w = { id: "bash", name: "Bash", folder: "/work/bash", machine: null, status: "working", active: true, tabs: [] }, g = { name: "Bash", branch: "main", repo: JSON.stringify([null, "/work/bash/.git"]), ahead: 2, behind: 1 };
   const group = model.buildGroups([{ w, i: 0, g, place: w.folder }], {})[0]; group.custom = true;
   function owner() { const main = new Main(); main.home = "/Users/test"; main.lastGroups = [group]; main.lastProjects = [group]; main.state = () => model.normalizeState(shared(model.STATE_KEY)); return main; }

@@ -1,3 +1,4 @@
+import { uiFunction } from "./helpers/ui-function.mjs";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
@@ -29,10 +30,10 @@ async function harness(mode = "inline") {
   };
   const dependencies = { div: element, h_flex: element, Scrollbar: { vertical: element }, v_virtual_list };
   const source = (await readFile(new URL("../mods/files-plus/git-diff.js", import.meta.url), "utf8")).replace(/^import .+;$/gm, "").replaceAll("export function ", "function ");
-  const { diffView } = new Function(...Object.keys(dependencies), `${source}\nreturn { diffView };`)(...Object.values(dependencies));
+  const { diffView } = uiFunction(...Object.keys(dependencies), `${source}\nreturn { diffView };`)(...Object.values(dependencies));
   const changesDependencies = { ...git, ...review, div: element, shared: () => null, openOverlay: value => overlays.push(value) };
   const changesSource = (await readFile(new URL("../mods/files-plus/changes.js", import.meta.url), "utf8")).replace(/^import .+;$/gm, "").replace("export default class Changes {", "return class Changes {");
-  const Changes = new Function(...Object.keys(changesDependencies), changesSource)(...Object.values(changesDependencies));
+  const Changes = uiFunction(...Object.keys(changesDependencies), changesSource)(...Object.values(changesDependencies));
   const view = new Changes(), file = { path: "src/file.js", section: "unstaged" };
   const rawRows = git.diffRows(["@@ -1,2 +1,3 @@", " keep", "-old", "+new", "+extra"]);
   Object.assign(view, { root: "/repo", on: null, files: [file], historyFiles: [], page: "changes", open: file.path, section: file.section,

@@ -1,8 +1,8 @@
+import { uiFunction } from "./helpers/ui-function.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import * as model from "../mods/sessions-plus/model.js";
-import * as inboxModel from "../mods/sessions-plus/inbox-model.js";
 import { createTrashClient } from "../mods/sessions-plus/trash-client.js";
 import { promptTargets } from "../mods/sessions-plus/prompt-queue-model.js";
 
@@ -30,12 +30,20 @@ function element() {
 function viewClass(file, dependencies) {
   const source = readFileSync(new URL(`../mods/sessions-plus/${file}.js`, import.meta.url), "utf8")
     .replace(/^import .*;\n/gm, "").replace("export default class", "return class");
-  return new Function(...Object.keys(dependencies), source)(...Object.values(dependencies));
+  return uiFunction(...Object.keys(dependencies), source)(...Object.values(dependencies));
 }
 
 const nodes = node => !node || typeof node !== "object" ? [] : [node, ...node.childNodes.flatMap(nodes), ...Object.values(node.slots).flatMap(nodes)];
 const find = (tree, id) => nodes(tree).find(node => node.attributes.id === id);
 const text = node => typeof node === "string" ? node : (node?.childNodes ?? []).map(text).join(" ");
+
+test('session and Trash hints appear only for empty lists while their filled views keep action tooltips',async()=>{
+ for(const platform of ['macos','linux']){
+  const f=harness({platform}),panel=f.panel();await f.finish();panel.rows=()=>[session()];let tree=panel.renderSessions(f.cx);assert(!find(tree,'sessions-empty-hint'));assert.doesNotMatch(text(tree),/Local history · Right-click|Live sessions · Local history requires/);
+  panel.rows=()=>[];tree=panel.renderSessions(f.cx);assert(find(tree,'sessions-empty-hint'));assert.match(text(find(tree,'sessions-empty-hint')),platform==='macos'?/Local history/:/requires macOS/);
+  panel.trashEntries=[entry()];const trash=panel.renderTrash();assert.doesNotMatch(text(trash),/Only sessions moved/);assert(nodes(trash).some(node=>/Emptying the macOS Trash/.test(node.attributes.tooltip||'')));
+ }
+});
 
 function harness({ state = {}, target = session(), role, action = "trash", platform = "macos", response, context = {} } = {}) {
   const calls = [], tasks = [], queued = [], timers = [], closed = [], overlays = [], launches = [], running = [];
@@ -44,7 +52,7 @@ function harness({ state = {}, target = session(), role, action = "trash", platf
   const cx = { notify() { notifications++; }, stop_propagation() { stopped++; }, focus_handle: () => ({ focus() {} }),
     spawn(task) { if (defer) queued.push(task); else tasks.push(task(cx)); },
     timer: { every(ms, callback) { timers.push({ ms, callback }); }, after(ms, callback) { timers.push({ ms, callback }); } } };
-  const dependencies = { promptTargets, privacyGuard: () => null, settings: () => ({zoom:1}), ...model, ...inboxModel, agents: () => running, createTrashClient, View: class {}, div: element, svg: element, h_flex: element, v_flex: element,
+  const dependencies = { promptTargets, privacyGuard: () => null, settings: () => ({zoom:1}), ...model, agents: () => running, createTrashClient, View: class {}, div: element, svg: element, h_flex: element, v_flex: element,
     InputState: { new: () => ({ on() {}, value: () => "", focus() {} }) }, Input: { new: element }, providerIcon: (provider, size) => element().id(`provider-icon-${provider}`).size(size),
     Popover: { new: id => element().id(id) },
     theme: () => ({}), window: () => ({ platform }), appHome: () => "/fixture/herdr", props: () => p,
@@ -68,9 +76,8 @@ function harness({ state = {}, target = session(), role, action = "trash", platf
   };
   const contextSource = readFileSync(new URL("../mods/sessions-plus/project-context.js", import.meta.url), "utf8").replace(/^import .*;\n/gm, "").replaceAll("export ", "");
   const contextDeps = { focused: dependencies.focused, spaces: dependencies.spaces, panes: dependencies.panes, machines: () => [], shared: dependencies.shared };
-  dependencies.projectContext = new Function(...Object.keys(contextDeps), contextSource + "\nreturn projectContext;")(...Object.values(contextDeps));
+  dependencies.projectContext = uiFunction(...Object.keys(contextDeps), contextSource + "\nreturn projectContext;")(...Object.values(contextDeps));
   dependencies.Preview = viewClass("preview", dependencies);
-  dependencies.Inbox = viewClass("inbox", dependencies);
   dependencies.Rename = viewClass("rename", dependencies);
   dependencies.Actions = viewClass("actions", dependencies);
   dependencies.TrashDialog = viewClass("trash-dialog", dependencies);
@@ -468,18 +475,16 @@ test("preview failures remain retryable and Antigravity's unsupported body is ex
   assert.equal(f.launches.length, 0);
 });
 
-test("Inbox groups real statuses, dismisses only the current update, and new work returns", async () => {
-  const f = harness({ role: "inbox" });
-  f.running.push({ address: "t1", status: "blocked", seq: 1, title: "Needs a decision" }, { address: "t2", status: "done", seq: 2, title: "Completed" }, { address: "t3", status: "working", seq: 3, title: "Working now" }, { address: "t4", status: "idle", seq: 4 });
-  const panel = f.panel(); let tree = panel.render(f.cx);
-  assert.match(text(tree), /Needs you · 1/); assert.match(text(tree), /Finished · 1/); assert.match(text(tree), /Working · 1/);
-  find(tree, "inbox-dismiss-t1").events["on_click:"]({}, f.cx);
-  assert(!find(panel.render(f.cx), "inbox-t1")); assert.equal(f.launches.length, 0);
-  f.running[0].seq = 5; assert(find(panel.render(f.cx), "inbox-t1"));
-  const content = find(panel.render(f.cx), "inbox-t1").childNodes[0]; content.events["on_click:"]({}, f.cx);
-  assert.deepEqual(f.launches, [["agent.focus", { terminal: "t1" }]]); assert.deepEqual(f.closed, ["overlay-1"]); assert.equal(f.calls.length, 0);
+test("message preview keeps its fixed explanation in a tooltip and only displays active size-limit notices", async () => {
+  for (const limited of [false, true]) {
+    const f = harness({ role: "preview", response: async () => ({ code: 0, stdout: JSON.stringify({ row: session(), available: true, limited, messages: [{ role: "user", text: "Recorded message", truncated: true }] }) }) });
+    const panel = f.panel(); await f.finish(); const tree = panel.render(f.cx);
+    assert.match(find(tree, "preview-info").attributes.tooltip, /Read-only excerpts.*No generated summary/);
+    assert.doesNotMatch(text(tree), /Read-only excerpts|No generated summary|persistent message index/);
+    assert.equal(/older or oversized messages may be absent/.test(text(tree)), limited);
+    assert.match(text(tree), /Message shortened to 6,000 characters/);
+  }
 });
-
 
 test("This folder stays on a center file preview's project and ignores a replaced pane", async () => {
   const context = { focus: { tab: "preview-tab", pane: "preview-pane", cwd: null }, spaces: [{ id: "space", active: true, folder: "/different", tabs: [{ id: "preview-tab" }] }], panes: [{ tab: "preview-tab", pane: "preview-pane", mod: "files-plus", terminal: null }] };
@@ -507,7 +512,7 @@ test("Sessions keeps tools in a context-checked menu, clears individual filters 
   const context = { focus: { cwd: "/fixture/project" } }, f = harness({ role: "sessions", context }), panel = f.panel(); await f.finish();
   let tree = panel.render(f.cx);
   assert(find(tree, "sessions-toolbar")); assert(!find(tree, "sessions-workspace-tools")); assert(!find(tree, "sessions-filters"));
-  for (const id of ["notes", "commands", "prompts", "inbox", "trash", "services", "presets", "lineage", "tools"]) assert(find(tree, "sessions-" + id));
+  for (const id of ["notes", "commands", "prompts", "trash", "presets", "tools"]) assert(find(tree, "sessions-" + id));
   const popover = find(tree, "sessions-more-actions-popover"); popover.events["on_open_change:"](true, f.cx);
   context.focus = { cwd: "/changed-project" };
   find(panel.render(f.cx), "sessions-notes").events["on_click:"]({}, f.cx);

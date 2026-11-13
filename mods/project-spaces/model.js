@@ -5,6 +5,7 @@
 // group, or choosing "Move to project", records a manual assignment that wins over that.
 
 export const STATE_KEY = "project-spaces.v1";
+export const FILTER_KEY = "project-spaces.filter.v1";
 export const SIDEBAR_COLUMNS = { pin: 19, gap: 3, summary: 56, width: 78, inset: 5 };
 export const MODES = [
   { id: "project", label: "Project" },
@@ -21,9 +22,7 @@ export const STATUS_GROUPS = [
   { id: "working", label: "Working" },
   { id: "idle", label: "Idle" },
 ];
-export const PALETTE = ["ansi6", "ansi3", "ansi4", "ansi5", "ansi2", "ansi1"];
-// The avatar colors Herdr's Spaces draws for these names: one strong color per hue, light and dark alike.
-export const MARK = { ansi6: "#22a99a", ansi3: "#e3814f", ansi4: "#5b8def", ansi5: "#8b7cf6", ansi2: "#3fae6a", ansi1: "#d9649a" };
+export const PALETTE = ["ansi1", "ansi2", "ansi3", "ansi4", "ansi5", "ansi6"];
 const URGENCY = { blocked: 3, done: 2, working: 1, idle: 0 };
 const object = value => value !== null && typeof value === "object" && !Array.isArray(value);
 const text = (value, limit = 80) => typeof value === "string" ? value.slice(0, limit) : "";
@@ -88,8 +87,16 @@ function hash(key) {
   return value;
 }
 
-export function groupColor(state, key) {
-  return state.groups[key]?.color ?? PALETTE[hash(key) % PALETTE.length];
+export function groupColor(state, key, name = key) {
+  return state.groups[key]?.color ?? PALETTE[hash(name) % PALETTE.length];
+}
+
+/** Theme ink on a 20% tint; automatic project colors follow the displayed name. */
+export function projectMark(t, name, color = null) {
+  const key = PALETTE.includes(color) ? color : PALETTE[hash(name) % PALETTE.length];
+  const foreground = t[key] || t.accent;
+  const rgb = /^#[\da-f]{3}$/i.test(foreground) ? "#" + [...foreground.slice(1)].map(char => char + char).join("") : foreground;
+  return { foreground, background: /^#[\da-f]{6}(?:[\da-f]{2})?$/i.test(rgb) ? rgb.slice(0, 7) + "33" : "#00000000" };
 }
 
 const byIndex = (a, b) => a.i - b.i;
@@ -144,7 +151,7 @@ export function buildGroups(rows, rawState, { home = "" } = {}) {
     group.name = meta.name || native?.auto.name || "Project";
     group.folder = native?.auto.folder ?? group.rows[0].auto.folder;
     group.machine = native?.auto.machine ?? group.rows[0].auto.machine;
-    group.color = groupColor(state, group.key);
+    group.color = groupColor(state, group.key, group.name);
     group.manual = group.rows.filter(r => r.manual).length;
     finish(group);
   }
@@ -305,7 +312,10 @@ export function groupPath(group, home = "") {
 export function spacePath(row, group, home = "", nested = false, capturedParent = undefined) {
   const own = projectPath(row.place || row.w.folder, home, row.w.machine ?? null); if (!own) return null;
   const parent = nested ? capturedParent === undefined ? groupPath(group, home) : capturedParent : null;
-  return { ...own, repeat: Boolean(parent && !parent.mixed && parent.path === own.path && parent.on === own.on) };
+  const root = parent?.path?.replace(/\/+$/, "") || (parent?.path === "/" ? "/" : ""), prefix = root === "/" ? "/" : root + "/";
+  const sameRoot = Boolean(parent && !parent.mixed && parent.on === own.on && root);
+  const relative = sameRoot && own.path.startsWith(prefix) ? own.path.slice(prefix.length) : "";
+  return { ...own, short: relative || own.short, repeat: Boolean(sameRoot && root === (own.path.replace(/\/+$/, "") || "/")) };
 }
 export function filterProjectGroups(groups, { query = "", filter = "all" } = {}) {
   const terms = String(query).slice(0, 200).toLocaleLowerCase().trim().split(/\s+/).filter(Boolean), searching = terms.length > 0;

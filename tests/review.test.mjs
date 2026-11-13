@@ -1,3 +1,4 @@
+import { uiFunction } from "./helpers/ui-function.mjs";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
@@ -136,7 +137,7 @@ async function harness() {
   } }, agents: () => [agent], terminals: () => [terminal], theme: () => ({}), shared: () => state, setShared(_key, value) { state = value; }, closeOverlay() {}, openOverlay() {}, exec() {}, readTextFile() {},
   createGitReader: () => ({ reviewVersion: (...args) => readVersion(...args) }), hc: async args => { if (args[0] === "get") return { code: 0, stdout: JSON.stringify({ ...terminal, status: { state: agent.status, app: agent.app } }) }; calls.push(args); return sendResult; } };
   const source = (await readFile(new URL("../mods/files-plus/review.js", import.meta.url), "utf8")).replace(/^import .+;$/gm, "").replace("export default class Review {", "return class Review {");
-  const Review = new Function(...Object.keys(dependencies), source)(...Object.values(dependencies));
+  const Review = uiFunction(...Object.keys(dependencies), source)(...Object.values(dependencies));
   const create = () => { const view = new Review(); view.init({ context, versions: { [model.reviewFileKey(file)]: "version-a" } }, cx); return view; };
   const drain = async () => { while (pending.length) await pending.shift(); while (timers.length) timers.shift()(cx); while (pending.length) await pending.shift(); };
   const view = create(); await drain();
@@ -210,7 +211,7 @@ test("Changes supports before/after range selection and forbids Viewed for an in
   const overlays = []; let stored = null;
   const dependencies = { ...model, div: element, projectContext: () => context, shared: () => stored, setShared(_key, value) { stored = value; }, openOverlay: value => overlays.push(value) };
   const source = (await readFile(new URL("../mods/files-plus/changes.js", import.meta.url), "utf8")).replace(/^import .+;$/gm, "").replace("export default class Changes {", "return class Changes {");
-  const Changes = new Function(...Object.keys(dependencies), source)(...Object.values(dependencies));
+  const Changes = uiFunction(...Object.keys(dependencies), source)(...Object.values(dependencies));
   const view = new Changes();
   Object.assign(view, { page: "changes", files: [file], historyFiles: [], root: context.root, on: null, open: file.path, section: file.section, reviewVersion: "version-a", rawRows: rows, diffLoading: false, reviewComplete: false });
   const cx = { notify() {} };
@@ -271,7 +272,7 @@ async function commentHarness(initial, props) {
     return { value: () => value, on(name, callback) { events[name] = callback; }, type(next) { value = next; events.change?.({}, cx); }, release() {} };
   } }, shared: () => stored, setShared(_key, next) { stored = next; }, theme: () => ({}), closeOverlay() { closed = true; } };
   const source = (await readFile(new URL("../mods/files-plus/review-comment.js", import.meta.url), "utf8")).replace(/^import .+;$/gm, "").replace("export default class ReviewComment {", "return class ReviewComment {");
-  const Comment = new Function(...Object.keys(dependencies), source)(...Object.values(dependencies));
+  const Comment = uiFunction(...Object.keys(dependencies), source)(...Object.values(dependencies));
   const view = new Comment(); view.init({ ...props, context }, cx);
   return { view, cx, state: () => stored, replaceState: value => { stored = value; }, closed: () => closed };
 }

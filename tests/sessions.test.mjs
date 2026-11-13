@@ -1,3 +1,4 @@
+import { uiFunction } from "./helpers/ui-function.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
@@ -137,7 +138,7 @@ test("folder and provider filters preserve local/remote boundaries and renamed t
 
 function viewClass(file, dependencies) {
   const source = readFileSync(new URL(`../mods/sessions-plus/${file}.js`, import.meta.url), "utf8").replace(/^import .*;\n/gm, "").replace("export default class", "return class");
-  return new Function(...Object.keys(dependencies), source)(...Object.values(dependencies));
+  return uiFunction(...Object.keys(dependencies), source)(...Object.values(dependencies));
 }
 
 test("a repeated resume click starts once and uses the captured session directory", async () => {

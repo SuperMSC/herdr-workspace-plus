@@ -1,3 +1,4 @@
+import { uiFunction } from "./helpers/ui-function.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
@@ -191,7 +192,7 @@ function quotaFixture(state = {}, { deferredSpawn = false } = {}) {
     providerIcon: provider => Object.assign(quotaElement(), { provider }),
     exec: (program, args) => new Promise((resolve, reject) => { calls.push({ program, args, provider: args[1], resolve, reject }); }),
   };
-  const Quota = new Function(...Object.keys(dependencies), source)(...Object.values(dependencies));
+  const Quota = uiFunction(...Object.keys(dependencies), source)(...Object.values(dependencies));
   const cx = { notify() {}, timer: { after() {} }, spawn(task) { if (deferredSpawn) queued.push(task); else tasks.push(task(cx)); } };
   const quota = new Quota(); quota.init({}, cx);
   const render = () => quota.render();

@@ -150,11 +150,11 @@ test("promoted siblings prevent a false single-terminal merge and each terminal 
  const only=fixture({ts:[terminal("t1",{program:shell,labels:{"herdr.pinned":"true"}})],as:[]});const pinned=all(only);assert.equal(entities(pinned).length,1);assert(!pinned.rows.some(r=>r.kind==="tab"));assert(pinned.rows.some(r=>r.kind==="space"&&r.foldable&&r.section==="pinned"));
 });
 
-test("nested project tasks show only local details while promoted and status rows retain their standalone context",()=>{
+test("nested, promoted and status tasks reserve provider context for their tooltip metadata",()=>{
  const f=fixture({sp:[space("s1",[tab("tab1",{name:"Review",named:true})],{name:"GDP"})]});f.groups[0].name="OrbStack";f.groups[0].custom=true;
- const nested=byAddress(all(f),"t1");assert.equal(nested.depth,2);assert.equal(nested.inlineMetadata,"Codex");for(const name of ["OrbStack","GDP","Review"])assert(nested.metadata.includes(name));assert(!nested.inlineMetadata.includes("GDP"));
- const status=byAddress(all(f,{view:"status"}),"t1");assert.equal(status.inlineMetadata,"Codex");assert(status.metadata.includes("OrbStack"));
- f.agents[0].pinned=true;const pinned=byAddress(all(f),"t1");assert.equal(pinned.inlineMetadata,"Codex");assert(pinned.metadata.includes("GDP"));
+ const nested=byAddress(all(f),"t1");assert.equal(nested.depth,2);assert.equal(nested.inlineMetadata,"");for(const name of ["OrbStack","GDP","Review","Codex"])assert(nested.metadata.includes(name));
+ const status=byAddress(all(f,{view:"status"}),"t1");assert.equal(status.inlineMetadata,"");assert(status.metadata.includes("OrbStack"));
+ f.agents[0].pinned=true;const pinned=byAddress(all(f),"t1");assert.equal(pinned.inlineMetadata,"");assert(pinned.metadata.includes("GDP"));
 });
 
 test("pinning all agents removes duplicate tab shells, preserves the workspace, and unpin restores tree tasks",()=>{
@@ -189,7 +189,7 @@ test("attention promotion removes its duplicate tab and settling back to Idle re
 
 test("whole promoted spaces and complete custom projects precede their tasks and disappear from the main tree",()=>{
  const f=fixture({sp:[space("s1",[tab("a")]),space("s2",[tab("b")])],ts:[terminal("t1"),terminal("t2")],as:[agent("t1","s1","a","p1",{pinned:true}),agent("t2","s2","b","p2",{pinned:true})],ps:[pane("t1","a","p1"),pane("t2","b","p2")]});f.groups[0].custom=true;f.groups[0].name="Suite";const before=JSON.stringify(f),result=all(f);
- assert.equal(JSON.stringify(f),before);const group=result.rows.find(r=>r.kind==="group");assert.equal(group.section,"pinned");assert.equal(group.depth,1);assert.equal(result.rows.filter(r=>r.kind==="group").length,1);assert(result.rows.filter(r=>r.kind==="space").every(r=>r.section==="pinned"&&r.depth===2));assert.equal(result.rows.find(r=>r.id==="section:pinned").count,2);assert.equal(new Set(result.rows.map(r=>r.id)).size,result.rows.length);
+ assert.equal(JSON.stringify(f),before);const group=result.rows.find(r=>r.kind==="group");assert.equal(group.section,"pinned");assert.equal(group.depth,0);assert.equal(result.rows.filter(r=>r.kind==="group").length,1);assert(result.rows.filter(r=>r.kind==="space").every(r=>r.section==="pinned"&&r.depth===1));assert.equal(result.rows.find(r=>r.id==="section:pinned").count,1);assert.equal(new Set(result.rows.map(r=>r.id)).size,result.rows.length);
  f.agents[1].pinned=false;const partial=all(f);assert.equal(partial.rows.find(r=>r.kind==="group").section,null);assert.equal(partial.rows.find(r=>r.spaceId==="s1"&&r.kind==="space").section,"pinned");assert.equal(partial.rows.find(r=>r.spaceId==="s2"&&r.kind==="space").section,null);assert.equal(entities(partial).length,2);
 });
 
@@ -223,7 +223,7 @@ function taskWithAuxiliaryShell(status="done",pinned=false) {
 test("attention and pinned directories carry auxiliary shells without changing their own state or count",()=>{
  for(const [status,pinned,bucket]of [["done",false,"attention"],["blocked",false,"attention"],["working",true,"pinned"]]){
   const f=taskWithAuxiliaryShell(status,pinned),before=JSON.stringify(f);freeze(f);const result=all(f),directory=result.rows.find(r=>r.kind==="space"),header=result.rows.find(r=>r.id==="section:"+bucket),shell=byAddress(result,"sh");
-  assert.equal(directory.section,bucket);assert.equal(result.rows.filter(r=>r.kind==="space").length,1);assert(result.rows.indexOf(directory)<result.rows.findIndex(r=>r.address==="task"));assert(result.rows.indexOf(directory)<result.rows.indexOf(shell));assert.equal(header.count,1);assert.equal(header.childCount,2);assert.equal(shell.status,"unknown");assert.equal(shell.pinned,false);assert.equal(shell.agent,false);assert(!result.rows.some(r=>r.kind==="tab"));assert.equal(new Set(result.rows.map(r=>r.id)).size,result.rows.length);assert.equal(entities(result).length,2);for(const row of entities(result))assert(validateUnifiedTarget(row.target,f));assert.equal(JSON.stringify(f),before);
+  assert.equal(directory.section,bucket);assert.equal(result.rows.filter(r=>r.kind==="space").length,1);assert(result.rows.indexOf(directory)<result.rows.findIndex(r=>r.address==="task"));assert(result.rows.indexOf(directory)<result.rows.indexOf(shell));assert.equal(header.count,1);assert.equal(header.childCount,bucket==="pinned"?1:2);assert.equal(shell.status,"unknown");assert.equal(shell.pinned,false);assert.equal(shell.agent,false);assert(!result.rows.some(r=>r.kind==="tab"));assert.equal(new Set(result.rows.map(r=>r.id)).size,result.rows.length);assert.equal(entities(result).length,2);for(const row of entities(result))assert(validateUnifiedTarget(row.target,f));assert.equal(JSON.stringify(f),before);
  }
 });
 
@@ -287,4 +287,30 @@ test("pinning every child directory carries its parent project, including empty 
 
 test("an explicitly pinned project retains its actionable heading after shrinking to one remaining space",()=>{
  const f=fixture(),key=f.groups[0].key;assert(!all(f).rows.some(r=>r.kind==="group"));for(const view of ["project","status"]){const result=all(f,{view,directoryPins:{groups:[key]}}),heading=result.rows.find(r=>r.kind==="group");assert(heading.directoryPinned);assert.equal(heading.section,"pinned");assert.equal(heading.sourceGroup.key,key);assert.equal(result.rows.filter(r=>r.kind==="group").length,1);}
+});
+
+test("task timing uses existing single-terminal tab timestamps and never borrows a sibling or parent clock",()=>{
+ const f=fixture({sp:[space('s1',[tab('tab1',{working_since:10000,changed_at:20000})])]});
+ assert.equal(byAddress(all(f),'t1').activityAt,10000);assert.equal(byAddress(all(f),'t1').activityKind,'working');
+ f.agents[0].status='idle';assert.equal(byAddress(all(f),'t1').activityAt,20000);assert.equal(byAddress(all(f),'t1').activityKind,'changed');
+ f.spaces[0].tabs[0].changed_at=null;assert.equal(byAddress(all(f),'t1').activityAt,null);
+ f.spaces[0].tabs[0].changed_at=20000;f.terminals.push(terminal('t2'));f.agents.push(agent('t2','s1','tab1','p2'));f.panes.push(pane('t2','tab1','p2'));assert(entities(all(f)).every(row=>row.activityAt===null));
+ const child=fixture({sp:[space('s1',[tab('tab1',{working_since:10000,changed_at:20000})])],ts:[terminal('t1'),terminal('child',{parent:'t1',created_ms:2})]});assert.equal(byAddress(all(child),'child').activityAt,null);
+ const shell=fixture({sp:[space('s1',[tab('tab1',{working_since:10000,changed_at:20000})])],ts:[terminal('t1',{program:{name:'zsh',shell:true,agent:false}})],as:[]});assert.equal(byAddress(all(shell),'t1').activityAt,null);
+});
+
+test("sections never add a tree level to complete projects, task branches or other workspace navigation",()=>{
+ const f=fixture();f.groups[0].custom=true;
+ const depths=result=>['group','space','agent'].map(kind=>result.rows.find(row=>row.kind===kind).depth);assert.deepEqual(depths(all(f)),[0,1,2]);
+ f.agents[0].pinned=true;const pinned=all(f);assert.deepEqual(depths(pinned),[0,1,2]);assert.equal(byAddress(pinned,'t1').section,'pinned');
+ f.agents[0].pinned=false;f.agents[0].status='blocked';assert.deepEqual(depths(all(f)),[0,1,2]);assert.deepEqual(depths(all(f,{view:'status'})),[0,1,2]);
+ const loose=fixture({sp:[],ts:[terminal('unowned')],as:[],ps:[]});assert.equal(byAddress(all(loose),'unowned').depth,0);
+ const empty=fixture({sp:[space('empty',[])],ts:[],as:[],ps:[]});assert.equal(all(empty,{view:'status'}).rows.find(row=>row.kind==='space').depth,0);
+});
+
+test("Pinned counts top-level project, directory and standalone entries independently of descendants and folds",()=>{
+ const f=fixture({sp:[space('s1',[tab('a')]),space('s2',[tab('b')])],ts:[terminal('a'),terminal('b')],as:[agent('a','s1','a','p1',{pinned:true}),agent('b','s2','b','p2',{pinned:true})],ps:[pane('a','a','p1'),pane('b','b','p2')]});f.groups[0].custom=true;
+ for(const options of [{},{folded:['group:'+f.groups[0].key]},{collapseAll:true},{pageSize:1},{query:'Long task'}])assert.equal(all(f,options).rows.find(row=>row.id==='section:pinned').count,1);
+ const empty=fixture({sp:[space('a',[],{folder:'/one'}),space('b',[],{folder:'/two'})],ts:[],as:[],ps:[]});assert.equal(all(empty,{directoryPins:{spaces:['a','b']}}).rows.find(row=>row.id==='section:pinned').count,2);
+ f.terminals.push(terminal('standalone',{labels:{'herdr.pinned':'true'}}));assert.equal(all(f).rows.find(row=>row.id==='section:pinned').count,2);
 });

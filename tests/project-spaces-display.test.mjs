@@ -1,3 +1,4 @@
+import { uiFunction } from "./helpers/ui-function.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
@@ -14,6 +15,22 @@ test("density is independent of grouping; local home paths shorten without guess
   assert.equal(model.projectPath(null), null);
   const groups = model.buildGroups(rows(), {}), group = groups[0]; assert(model.spacePath(group.rows[0], group, "/Users/me", true).repeat); assert(!model.spacePath(group.rows[1], group, "/Users/me", true).repeat);
   const custom = { ...group, custom: true, rows: [group.rows[0], groups[1].rows[0]] }; assert.equal(model.groupPath(custom).short, "Multiple folders");
+});
+
+test("nested folder paths are relative only to their same-machine parent root, with full paths retained in tooltips",()=>{
+ const row={w:space('nested','/Users/me/project/Source/GRecon'),place:'/Users/me/project/Source/GRecon'},group={folder:'/Users/me/project/',machine:null,custom:false};
+ const relative=model.spacePath(row,group,'/Users/me',true);assert.equal(relative.short,'Source/GRecon');assert.equal(relative.tooltip,row.place);assert.equal(relative.repeat,false);
+ assert.equal(model.spacePath({...row,place:'/Users/me/project-other/Source'},group,'/Users/me',true).short,'~/project-other/Source');
+ assert.equal(model.spacePath({...row,w:{...row.w,machine:'server'}},group,'/Users/me',true).short,row.place);
+ const remote=model.spacePath({...row,w:{...row.w,machine:'server'}},{...group,machine:'server'},'/Users/me',true);assert.equal(remote.short,'Source/GRecon');assert.equal(remote.tooltip,'@server\n'+row.place);
+ const mixed={...group,custom:true,rows:[row,{w:space('other','/other')}]};assert.equal(model.spacePath(row,mixed,'/Users/me',true).short,'~/project/Source/GRecon');
+ assert.equal(model.spacePath(row,{...group,folder:'/'},'/Users/me',true).short,'Users/me/project/Source/GRecon');
+});
+
+test("automatic project colors are stable by name across roots and cover only the six theme ANSI hues",()=>{
+ const make=folder=>model.buildGroups([{w:space('P',folder,{name:'Project'}),i:0,place:folder,g:null}],{})[0],a=make('/one/Project'),b=make('/two/Project');assert.equal(a.color,b.color);assert(model.PALETTE.includes(a.color));assert.deepEqual(model.PALETTE,['ansi1','ansi2','ansi3','ansi4','ansi5','ansi6']);
+ const t=Object.fromEntries(model.PALETTE.map((color,index)=>[color,'#'+String(index+1).repeat(6)]));
+ assert.equal(model.projectMark(t,'Project').foreground,t[a.color]);assert.equal(model.projectMark(t,'Project').background,t[a.color]+'33');assert.deepEqual(model.projectMark({ansi4:'#abc'},'Project','ansi4'),{foreground:'#abc',background:'#aabbcc33'});
 });
 
 test("status filters use only reported statuses; search expands temporarily and retains full source membership", () => {
@@ -35,7 +52,7 @@ function fixture({ density, folded = false, rail = false } = {}) {
   const input = () => { let value = ""; const events = {}, control = { value: () => value, on(name, fn) { events[name] = fn; }, type(next) { value = next; events.change?.({}, cx); }, release() { this.released = true; } }; inputs.push(control); return control; };
   const deps = { ...model, View: class {}, div: element, svg: element, v_flex: element, h_flex: element, Input: { new: element }, InputState: { new: input }, privacyGuard: () => masked ? "MASK" : null, Menu: class {}, Prompt: class {}, openMenu: (...args) => overlays.push(args), menuRows: () => 1,
     props: () => null, spaces: () => source.map(row => row.w), panes: () => source.map(row => ({ tab: `tab-${row.w.id}`, cwd: row.place })), machines: () => [{ name: null, layout: "ready" }, { name: "server", layout: "ready" }], theme: () => ({}), home: () => "/Users/me", layout: () => ({ id: "sidebar", size: { px: rail ? 100 : 300 } }), window: () => ({ active: true }), shared: key => shared.get(key), setShared: (key, value) => { assert(!rendering); shared.set(key, value); }, run: (...args) => commands.push(args), exec: () => { throw Error("No automatic commands during UI test"); }, watchFolder: () => new Promise(() => {}) };
-  const Role = new Function(...Object.keys(deps), code("main").replace("export default class", "return class"))(...Object.values(deps)), view = new Role(); view.init({}, cx); for (const row of source) view.git[JSON.stringify([row.w.machine ?? null, row.place])] = row.g;
+  const Role = uiFunction(...Object.keys(deps), code("main").replace("export default class", "return class"))(...Object.values(deps)), view = new Role(); view.init({}, cx); for (const row of source) view.git[JSON.stringify([row.w.machine ?? null, row.place])] = row.g;
   return { view, cx, source, shared, commands, inputs, groupKey, mask: value => { masked = value; }, render() { rendering = true; try { return view.render(cx); } finally { rendering = false; } } };
 }
 
@@ -56,7 +73,7 @@ test("production search filters only the drawing and drag-to-group still uses fu
 test("production view-menu toggles only the density key and privacy masks all new controls and paths", () => {
   const f = fixture(), modelBefore = JSON.stringify(f.shared.get(model.STATE_KEY));
   const deps = { ...model, div: element, svg: element, v_flex: element, h_flex: element, run() {}, closeOverlay() {}, openOverlay() {}, theme: () => ({}), shared: key => f.shared.get(key), setShared: (key, value) => f.shared.set(key, value) };
-  const Menu = new Function(...Object.keys(deps), code("menus").replaceAll("export ", "") + "\nreturn Menu;")(...Object.values(deps)), menu = new Menu(); menu.init({ role: "view-menu", keys: [f.groupKey] }, f.cx);
+  const Menu = uiFunction(...Object.keys(deps), code("menus").replaceAll("export ", "") + "\nreturn Menu;")(...Object.values(deps)), menu = new Menu(); menu.init({ role: "view-menu", keys: [f.groupKey] }, f.cx);
   assert(menu.items().find(row => row.label === "Detailed").checked); menu.items().find(row => row.label === "Compact").act(); assert.equal(f.shared.get(model.DENSITY_KEY), "compact"); assert(menu.items().find(row => row.label === "Compact").checked); assert.equal(JSON.stringify(f.shared.get(model.STATE_KEY)), modelBefore);
   f.mask(true); assert.equal(f.render(), "MASK"); f.view.close(f.cx); assert(f.inputs[0].released);
 });

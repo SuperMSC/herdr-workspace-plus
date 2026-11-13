@@ -1,3 +1,4 @@
+import { TYPE } from "./type-scale.js";
 import { div, svg } from "gpui-kit";
 import { v_flex, h_flex, Input, InputState } from "gpui-base";
 import { closeOverlay, exec, theme } from "herdr";
@@ -67,22 +68,22 @@ export default class Dialog {
       : "Existing items are never replaced.";
     const label = this.busy ? "Working…" : this.immediate ? "Retry" : trash ? "Move to Trash" : this.action === "rename" ? "Rename" : "Create";
 
-    const button = (id, text, primary, click) => h_flex().id(id).h(32).px(14).gap(8).items_center().rounded(8).text_size(13)
+    const button = (id, text, primary, click) => h_flex().id(id).h(32).px(14).gap(8).items_center().rounded(8).text_size(TYPE.md)
       .font_medium().border_1().cursor_pointer().hover(s => s.opacity(0.88)).when(this.busy, el => el.opacity(0.5))
       .border_color(primary ? (trash ? (t.danger || t.blocked) : t.solid) : t.input)
       .bg(primary ? (trash ? (t.danger || t.blocked) : t.solid) : t.raised)
       .text_color(primary ? (trash ? (t.danger_foreground || "#ffffff") : t.solid_foreground) : t.foreground)
       .on_click(click).child(text)
-      .when(primary && !this.busy && (trash || this.immediate), el => el.child(div().text_size(11).opacity(0.7).child("↵")));
+      .when(primary && !this.busy && (trash || this.immediate), el => el.child(div().text_size(TYPE.sm).opacity(0.7).child("↵")));
 
     const target = h_flex().flex_none().gap(10).items_center().px(12).py(9).rounded(8).border_1().border_color(t.border).bg(t.background)
       .child(fileIcon(path ?? "", Boolean(isFolder)))
       .child(v_flex().flex_1().min_w(0).gap(1)
-        .child(div().text_size(13).font_medium().text_color(t.foreground).truncate().child(name))
-        .when(Boolean(parent), el => el.child(div().text_size(11.5).text_color(t.dim).truncate().text_ellipsis_start().child(parent))));
+        .child(div().text_size(TYPE.md).font_medium().text_color(t.foreground).truncate().child(name))
+        .when(Boolean(parent), el => el.child(div().text_size(TYPE.sm).text_color(t.dim).truncate().text_ellipsis_start().child(parent))));
 
     return v_flex().id("files-plus-dialog").track_focus(this.handle).size_full().min_h(0).px(20).pt(20).pb(18).gap(14)
-      .rounded(12).overflow_hidden().border_1().border_color(t.border).bg(t.popover).text_size(13).text_color(t.foreground)
+      .rounded(12).overflow_hidden().border_1().border_color(t.border).bg(t.popover).text_size(TYPE.md).text_color(t.foreground)
       .on_key_down((event, cx) => {
         if (event.key === "escape") { if (!this.busy) closeOverlay(this.p.overlay); }
         else if (event.key === "enter" && (trash || this.immediate)) this.submit(cx);
@@ -93,14 +94,14 @@ export default class Dialog {
         .child(h_flex().size(36).flex_none().items_center().justify_center().rounded(10).bg(tone + "1f")
           .child(svg(`mods/files-plus/${icon}.svg`).size(16).text_color(tone)))
         .child(v_flex().flex_1().min_w(0).gap(3)
-          .child(div().text_size(15).font_semibold().child(TITLES[this.action] ?? "File action"))
-          .child(div().text_size(12.5).text_color(t.muted).child(note)))
+          .child(div().text_size(TYPE.lg).font_semibold().child(TITLES[this.action] ?? "File action"))
+          .child(div().text_size(TYPE.md).text_color(t.muted).child(note)))
         .child(div().flex_none().px(6).h(20).flex().items_center().rounded(5).border_1().border_color(t.border)
-          .text_size(10.5).text_color(t.dim).child("Esc")))
+          .text_size(TYPE.xs).text_color(t.dim).child("Esc")))
       .child(target)
       .when(!trash && !this.immediate, el => el.child(h_flex().h(36).px(10).flex_none().items_center().rounded(8).border_1()
         .border_color(t.input).bg(t.background).child(Input.new(this.input).w_full().h_full().text_color(t.foreground))))
-      .child(div().flex_1().min_h(0).overflow_y_scrollbar().text_size(12).text_color(t.blocked).child(this.error || ""))
+      .child(div().flex_1().min_h(0).overflow_y_scrollbar().text_size(TYPE.md).text_color(t.blocked).child(this.error || ""))
       .child(h_flex().flex_none().justify_end().gap(8)
         .when(!this.immediate, el => el.child(button("files-plus-cancel", "Cancel", false, () => { if (!this.busy) closeOverlay(this.p.overlay); })))
         .child(button("files-plus-confirm", label, true, (_event, cx) => this.submit(cx))));

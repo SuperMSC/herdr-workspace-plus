@@ -1,4 +1,5 @@
 // Compose existing bounded browsers; every row keeps its original machine/root identity.
+import { TYPE } from "./type-scale.js";
 import { div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { shared, setShared, theme, openOverlay, settings } from "herdr";
@@ -31,6 +32,7 @@ export default class WorkspaceBrowser {
     }
     for (const [key, browser] of previous) if (!next.has(key)) browser.close();
     this.children = next; this.main = next.values().next().value;
+    this.main.workspaceTitle = this.roots.length > 1 ? "Workspace" : this.roots[0].name;
     this.main.onWorkspaceManage = cx => this.manage(cx);
     this.main.onWorkspaceSearch = cx => this.search(cx);
     this.main.onWorkspaceFold = cx => this.fold(cx);
@@ -86,8 +88,8 @@ export default class WorkspaceBrowser {
           .child(div().flex_1().min_w(0).truncate().font_semibold().tooltip(`${this.context.on ? this.context.on + ":" : ""}${root.path}`).child(root.name))
           .child(iconButton(`workspace-root-search-${index}`, "search", "Search this folder", (_e, cx) => Browser.prototype.search.call({ ...browser, onWorkspaceSearch: null }, cx), t)))
         .when(!closed, el => el.when(browser.mode !== "tree", child => child.child(browser.libraryHeader(t, entries.length, `workspace-${index}-`))).children(visible.map(entry => browser.row(entry, t, `workspace-${index}`)))
-          .when(!visible.length, child => child.child(div().px(10).py(6).text_color(t.dim).text_size(11).child(browser.error || (browser.loading ? "Loading files…" : browser.filterQuery?.trim() ? "No matching files in this folder." : browser.mode === "tree" ? "No files" : "No saved files in this folder"))))
-          .when(visible.length < entries.length || browser.limited, child => child.child(div().px(10).py(5).text_color(t.dim).text_size(10.5).child("Workspace display limit reached; use Search to find more files."))));
+          .when(!visible.length, child => child.child(div().px(10).py(6).text_color(t.dim).text_size(TYPE.sm).child(browser.error || (browser.loading ? "Loading files…" : browser.filterQuery?.trim() ? "No matching files in this folder." : browser.mode === "tree" ? "No files" : "No saved files in this folder"))))
+          .when(visible.length < entries.length || browser.limited, child => child.child(div().px(10).py(5).text_color(t.dim).text_size(TYPE.xs).child("Workspace display limit reached; use Search to find more files."))));
     }));
   }
   close() { this.disposed = true; for (const browser of this.children.values()) browser.close(); }

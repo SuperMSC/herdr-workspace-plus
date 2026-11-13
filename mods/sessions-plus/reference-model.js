@@ -1,4 +1,4 @@
-// File references are plain text until the person explicitly adds them to a queue.
+// Captured references become editable drafts in the prompt queue.
 export function referencePayload(props = {}) {
   if (typeof props.text === "string") {
     if (props.text.length > 200000 || props.text.includes("\0")) throw new Error("The reference text is unavailable or too large.");

@@ -1,3 +1,4 @@
+import { TYPE } from "./type-scale.js";
 import { div } from "gpui-kit";
 import { v_flex } from "gpui-base";
 import { theme, window, openOverlay, closeOverlay, terminals, settings } from "herdr";
@@ -50,7 +51,7 @@ export default class Actions {
 
   render() {
     const t = theme();
-    return v_flex().id("sessions-actions").size_full().min_h(0).overflow_y_scrollbar().p(6).gap(4).bg(t.popover || t.surface).text_color(t.foreground).text_size(12.5)
+    return v_flex().id("sessions-actions").size_full().min_h(0).overflow_y_scrollbar().p(6).gap(4).bg(t.popover || t.surface).text_color(t.foreground).text_size(TYPE.md)
       .track_focus(this.handle).on_key_down((event, cx) => {
         if (event.key === "escape") closeOverlay(this.p.overlay);
         else if (event.key === "down" || event.key === "up") {
@@ -67,6 +68,6 @@ export default class Actions {
         .when(this.at === index, el => el.bg(t.selected))
         .on_mouse_move((_event, cx) => { if (!item.disabled) { this.at = index; cx.notify(); } })
         .on_click(() => this.choose(index)).child(item.label)))
-      .when(!this.canTrash, el => el.child(div().px(8).text_size(10.5).text_color(t.muted).child("Only stopped local sessions can be moved to Trash.")));
+      .when(!this.canTrash, el => el.child(div().px(8).text_size(TYPE.xs).text_color(t.muted).child("Only stopped local sessions can be moved to Trash.")));
   }
 }

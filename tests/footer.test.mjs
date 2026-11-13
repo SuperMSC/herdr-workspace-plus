@@ -1,7 +1,9 @@
+import { uiFunction } from "./helpers/ui-function.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { INBOX_DISMISSED, inboxRows } from "../mods/sessions-plus/inbox-model.js";
+import { FILTER_KEY } from "../mods/project-spaces/model.js";
+import * as perf from "../mods/sessions-plus/perf-model.js";
 
 function element() {
   const value = { children: [], attributes: {}, events: {} };
@@ -19,11 +21,11 @@ const descendants = node => !node || typeof node !== "object" ? [] : [node, ...n
 const find = (tree, id) => descendants(tree).find(node => node.attributes.id === id);
 const text = node => typeof node === "string" ? node : (node?.children ?? []).map(text).join(" ");
 
-function fixture({ spaces = [], agents = [], bindings = [], platform = "macos", props = {} } = {}) {
-  const state = { spaces, agents, bindings, platform }, calls = [], initialized = [], instances = [], resources = [];
+function fixture({ spaces = [], agents = [], bindings = [], platform = "macos", props = {}, unified = false, hidden = false, width = 268 } = {}) {
+  const state = { spaces, agents, bindings, platform, values: {}, tree: { id: "sidebar", hidden, size: { px: width }, children: unified ? [{ type: "block", content: { mod: "project-spaces", props: { unified: true } } }] : [] } }, calls = [], initialized = [], instances = [], resources = [];
   let renders = 0;
   const dependencies = {
-    INBOX_DISMISSED, inboxRows, terminals: () => [], shared: () => ({}), openOverlay: (...args) => calls.push(["overlay", ...args]),
+    terminals: () => [], shared: key => state.values[key], setShared: (key, value) => { state.values[key] = value; }, layout: () => state.tree,
     div: element, svg: element, h_flex: element, theme: () => ({}),
     spaces: () => state.spaces, agents: () => state.agents.map((agent, index) => ({ address: `t${index}`, ...agent })), keys: () => state.bindings,
     window: () => ({ platform: state.platform }), run: (...args) => calls.push(args),
@@ -39,7 +41,7 @@ function fixture({ spaces = [], agents = [], bindings = [], platform = "macos", 
   };
   const source = readFileSync(new URL("../mods/sessions-plus/footer.js", import.meta.url), "utf8")
     .replace(/^import .*;\n/gm, "").replace("export default class", "return class");
-  const Footer = new Function(...Object.keys(dependencies), source)(...Object.values(dependencies));
+  const Footer = uiFunction(...Object.keys(dependencies), source)(...Object.values(dependencies));
   const footer = new Footer(), cx = { notify() {} };
   footer.init(props, cx);
   return { footer, state, calls, initialized, instances, resources, cx, render: () => footer.render(), renders: () => renders };
@@ -110,11 +112,24 @@ test("the footer initializes one embedded StatusBar and forwards helper properti
 });
 
 
-test("the agent count and needs-you badge open the Inbox without ending an agent", () => {
-  const f = fixture({ agents: [{ address: "t1", status: "blocked", seq: 4 }] });
-  find(f.render(), "workspace-inbox").events.on_click();
-  assert.equal(f.calls.length, 1); assert.equal(f.calls[0][0], "overlay");
-  assert.equal(f.calls[0][1].props.role, "inbox");
+test("the agent count expands a collapsed unified sidebar and selects Needs attention", () => {
+  const f = fixture({ agents: [{ address: "t1", status: "blocked", seq: 4 }], unified: true, hidden: true, width: 76 });
+  f.state.values["sidebar.width"] = 310;
+  const control = find(f.render(), "workspace-agents");
+  assert.equal(control.attributes.tooltip, "Show agents that need attention");
+  control.events.on_click();
+  assert.deepEqual(f.calls, [["layout.show", { id: "sidebar" }], ["layout.resize", { id: "sidebar", px: 310 }]]);
+  assert.equal(f.state.values[FILTER_KEY], "attention");
+});
+
+test("the agent count is an explained no-op without the unified sidebar and rechecks layout at click time", () => {
+  const f = fixture(); let control = find(f.render(), "workspace-agents");
+  assert.match(control.attributes.tooltip, /Enable the unified sidebar/); control.events.on_click();
+  assert.deepEqual(f.calls, []); assert.deepEqual(f.state.values, {});
+  const g = fixture({ unified: true, width: 44 }); g.state.values["sidebar.width"] = NaN;
+  find(g.render(), "workspace-agents").events.on_click(); assert.deepEqual(g.calls, [["layout.resize", { id: "sidebar", px: 268 }]]);
+  g.state.tree.children = []; g.calls.length = 0; g.state.values = {};
+  find(g.render(), "workspace-agents").events.on_click(); assert.deepEqual(g.calls, []); assert.deepEqual(g.state.values, {});
 });
 
 test("resource use sits before the command hint and shares the footer's props", () => {
@@ -123,4 +138,14 @@ test("resource use sits before the command hint and shares the footer's props", 
   assert.deepEqual(ids.slice(-2), ["workspace-resources", "workspace-commands"]);
   assert.match(text(find(tree, "workspace-resources")), /324 MB/);
   assert.equal(f.resources.length, 1); assert.equal(f.resources[0].props.node, "/opt/node");
+});
+
+test('footer context, agent count, commands and the real memory badge share centered 24px controls and a 16px line height',()=>{
+ const f=fixture({spaces:[{active:true,machine:'server',branch:'feature/test'}],agents:[{status:'working'}]}),tree=f.render();
+ for(const id of ['workspace-status-context','workspace-device','workspace-branch','workspace-agents','workspace-resources','workspace-commands']){
+  const control=find(tree,id);assert(control,id);assert(Object.hasOwn(control.attributes,'items_center'),id);assert.equal(control.attributes.h,24,id);assert.equal(control.attributes.line_height,'16px',id);
+ }
+ for(const id of ['workspace-plus-footer','workspace-quota-inline'])assert(Object.hasOwn(find(tree,id).attributes,'items_center'),id);
+ const deps={...perf,div:element,svg:element,h_flex:element},source=readFileSync(new URL('../mods/sessions-plus/resources.js',import.meta.url),'utf8').replace(/^import[\s\S]*?;\n/gm,'').replace('export default class','return class'),Resources=uiFunction(...Object.keys(deps),source)(...Object.values(deps)),resources=new Resources();resources.snapshot=null;
+ const badge=resources.trigger({});assert(Object.hasOwn(badge.attributes,'items_center'));assert.equal(badge.attributes.h,24);assert.equal(badge.attributes.line_height,'16px');
 });

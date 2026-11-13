@@ -1,3 +1,4 @@
+import { uiFunction } from "./helpers/ui-function.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
@@ -40,7 +41,7 @@ function harness({ disk = "one\n", draft = null } = {}) {
       files[path] = text; writes.push({ path, text, expected });
     },
     loadDraft: async () => draft, keepDraft: async (root, path, text, base) => { drafts.push({ root, path, text, base }); }, dropDraft: async (root, path) => { dropped.push(path); } };
-  const Preview = new Function(...Object.keys(deps), source)(...Object.values(deps));
+  const Preview = uiFunction(...Object.keys(deps), source)(...Object.values(deps));
   return { cx, Preview, files, writes, drafts, dropped, editors, state, timers, clipboard,
     failWrite() { failNextWrite = true; },
     render(view) { rendering = true; try { return view.render(cx); } finally { rendering = false; } },

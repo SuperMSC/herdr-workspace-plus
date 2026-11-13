@@ -1,3 +1,4 @@
+import { uiFunction } from "./helpers/ui-function.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
@@ -24,7 +25,7 @@ function menuFixture() {
   const live = [space()], storage = new Map(), commands = [];
   storage.set(model.STATE_KEY, { mode: "project", assign: {}, groups: {} });
   const deps = { ...model, ...directoryPins, div: element, svg: element, v_flex: element, h_flex: element, run: (...args) => commands.push(args), closeOverlay() {}, openOverlay() {}, theme: () => ({}), shared: key => storage.get(key), setShared: (key, value) => storage.set(key, value), spaces: () => live };
-  const Menu = new Function(...Object.keys(deps), source("menus").replaceAll("export ", "") + "\nreturn Menu;")(...Object.values(deps));
+  const Menu = uiFunction(...Object.keys(deps), source("menus").replaceAll("export ", "") + "\nreturn Menu;")(...Object.values(deps));
   const group = model.buildGroups(live.map((w, i) => ({ w, i, place: w.folder, g: null })), {})[0];
   const spaceProps = { role: "space-menu", unified: true, space: live[0], key: group.key, auto: group.rows[0].auto, groups: [group] };
   const groupProps = { role: "group-menu", unified: true, group, members: group.rows.map(row => ({ id: row.w.id, machine: row.w.machine, autoKey: row.auto.key })), shown: [group.key], sort: "manual" };
@@ -82,7 +83,7 @@ test("project menus pin their exact current group and reject vanished or reassig
 
 test("main captures unified directory and project menu targets without changing legacy props", () => {
   const calls = [], deps = { View: class {}, normalizeState: model.normalizeState, openMenu: (...args) => calls.push(args), menuRows: () => 1 };
-  const Main = new Function(...Object.keys(deps), source("main").replace("export default class", "return class"))(...Object.values(deps)), f = menuFixture(), main = new Main();
+  const Main = uiFunction(...Object.keys(deps), source("main").replace("export default class", "return class"))(...Object.values(deps)), f = menuFixture(), main = new Main();
   main.state = () => model.normalizeState({}); main.lastProjects = [f.group]; main.lastGroups = [f.group];
   main.spaceMenu(f.group.rows[0]); assert.equal(calls.at(-1)[1].unified, undefined);
   main.groupMenu(f.group); assert.equal(calls.at(-1)[1].unified, undefined); assert.equal(calls.at(-1)[1].members, undefined);

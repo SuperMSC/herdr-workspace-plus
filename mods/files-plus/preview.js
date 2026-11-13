@@ -1,6 +1,7 @@
 // Native type previews. Retained editors and view IDs survive refreshes. A file preview tab
 // can also edit a local text file: saves only replace what was read, and unsaved edits are
 // kept as drafts on disk.
+import { TYPE } from './type-scale.js';
 import { div, image, svg } from 'gpui-kit';
 import { h_flex, v_flex, Editor, EditorState, TextView } from 'gpui-base';
 import { exec, appHome, readTextFile, writeTextFile, theme, settings, shared, setShared } from 'herdr';
@@ -176,7 +177,7 @@ export default class Preview {
   }
   banner(t, tone, text, actions) {
     return h_flex().id('edit-banner').flex_none().flex_wrap().min_h(34).px(10).py(4).gap(6).items_center().bg(tone + '1f').border_b(1).border_color(t.border)
-      .child(div().flex_1().min_w(120).text_size(11.5).text_color(t.foreground).child(text)).children(actions);
+      .child(div().flex_1().min_w(120).text_size(TYPE.sm).text_color(t.foreground).child(text)).children(actions);
   }
   setFontSize(size, cx, persist = true) {
     if (this.disposed) return;
@@ -255,11 +256,11 @@ export default class Preview {
     const found = this.anchor ? blocks.findIndex(block => block.heading?.slug === this.anchor) : 0, start = Math.max(0, found);
     const body = v_flex().id('markdown-navigation').flex_1().min_h(0).min_w(0);
     if (this.contents) body.child(v_flex().id('markdown-contents').h(Math.min(180, this.headings.length * 28)).flex_none().overflow_y_scrollbar().border_b(1).border_color(t.border)
-      .children(this.headings.map(heading => div().id('markdown-heading-' + heading.slug).h(28).flex_none().pl(10 + (heading.level - 1) * 12).pr(8).text_size(11).truncate().tooltip(heading.title).cursor_pointer().hover(s => s.bg(t.hover))
+      .children(this.headings.map(heading => div().id('markdown-heading-' + heading.slug).h(28).flex_none().pl(10 + (heading.level - 1) * 12).pr(8).text_size(TYPE.sm).truncate().tooltip(heading.title).cursor_pointer().hover(s => s.bg(t.hover))
         .on_click((_e, cx) => this.followMarkdown('#' + encodeURIComponent(heading.slug), cx)).child(heading.title))));
     if (this.anchor) body.child(this.button('whole-document', '↑ Whole document', false, (_e, cx) => this.followMarkdown('#', cx), t).flex_none());
-    if (this.headingsLimited || this.diagramsLimited) body.child(div().px(10).py(4).flex_none().text_size(10.5).text_color(t.dim).child(this.headingsLimited ? 'Contents limited to 200 headings.' : 'Only the first 24 Mermaid diagrams are rendered; later diagrams remain source.'));
-    if (this.markdownBusy) body.child(div().px(10).py(4).flex_none().text_size(10.5).text_color(t.dim).child('Rendering diagrams…'));
+    if (this.headingsLimited || this.diagramsLimited) body.child(div().px(10).py(4).flex_none().text_size(TYPE.xs).text_color(t.dim).child(this.headingsLimited ? 'Contents limited to 200 headings.' : 'Only the first 24 Mermaid diagrams are rendered; later diagrams remain source.'));
+    if (this.markdownBusy) body.child(div().px(10).py(4).flex_none().text_size(TYPE.xs).text_color(t.dim).child('Rendering diagrams…'));
     return body.child(v_flex().id('markdown-document-' + this.path + '-' + (this.anchor || 'top')).flex_1().min_h(0).min_w(0).overflow_y_scrollbar().p(12).gap(10)
       .children(blocks.slice(start).map((block, offset) => {
         const index = start + offset;
@@ -267,10 +268,10 @@ export default class Preview {
           .child(image(block.media.path).w(block.media.width).h(block.media.height).flex_none());
         const text = TextView.markdown('markdown-file-preview-' + index, markdownForPreview(block.text)).selectable(true).scrollable(false).w_full().flex_none().text_size(this.fontSize)
           .on_link_click((url, cx) => this.followMarkdown(url, cx));
-        return block.error ? v_flex().flex_none().gap(4).child(div().text_size(11).text_color(t.blocked).child('Mermaid: ' + block.error)).child(text) : text;
+        return block.error ? v_flex().flex_none().gap(4).child(div().text_size(TYPE.sm).text_color(t.blocked).child('Mermaid: ' + block.error)).child(text) : text;
       })));
   }
-  button(id, label, active, action, t) { return div().id(`preview-${id}`).px(7).py(4).rounded(5).cursor_pointer().bg(active ? t.selected : t.surface).hover(s => s.bg(t.hover)).text_size(11).on_click(action).child(label); }
+  button(id, label, active, action, t) { return div().id(`preview-${id}`).px(7).py(4).rounded(5).cursor_pointer().bg(active ? t.selected : t.surface).hover(s => s.bg(t.hover)).text_size(TYPE.sm).on_click(action).child(label); }
   render(cx) {
     if (!this.disposed && !this.fontSyncScheduled && previewFontSize(shared(PREVIEW_FONT_KEY)) !== this.fontSize) {
       this.fontSyncScheduled = true;
@@ -282,7 +283,7 @@ export default class Preview {
       if (this.editing && e.key === 's' && (e.modifiers?.platform || e.modifiers?.control)) { cx.stop_propagation(); this.save(cx); return; }
       this.find.key(e, cx, !this.editing && !this.error && typeof this.data?.text === 'string');
     });
-    if (this.error || !data) return body.when(Boolean(this.history.length), el => el.child(this.button('back-document', '← Back', false, (_e, cx) => this.backMarkdown(cx), t).flex_none())).child(div().p(12).text_size(12).text_color(t.dim).child(this.error || 'Loading file…'));
+    if (this.error || !data) return body.when(Boolean(this.history.length), el => el.child(this.button('back-document', '← Back', false, (_e, cx) => this.backMarkdown(cx), t).flex_none())).child(div().p(12).text_size(TYPE.md).text_color(t.dim).child(this.error || 'Loading file…'));
     if (kind === 'markdown' && !this.editing && this.markdownLook !== JSON.stringify(diagramLook(t, settings().font_family)) && !this.markdownScheduled) {
       this.markdownScheduled = true;
       cx.timer.after(0, cx => { this.markdownScheduled = false; if (!this.disposed && this.data?.kind === 'markdown') { this.prepareMarkdown(cx); cx.notify(); } });
@@ -300,13 +301,13 @@ export default class Preview {
         .child(this.button('font-larger', 'A+', false, (_e, cx) => this.setFontSize(this.fontSize + 1, cx), t).disabled(this.fontSize >= 24).tooltip('Increase text size').accessibility_label('Increase text size'))))
       .when(typeof data.text === 'string' && !this.editing, row => row.child(this.button('find', 'Find', this.find.visible, (_e, cx) => this.find.show(cx), t).tooltip('Find in file · ⌘F / Ctrl+F').accessibility_label('Find in file')))
       .when(this.editing, row => row
-        .child(div().text_size(10.5).text_color(this.status === 'Saved' ? t.done : dirty ? t.working : t.dim).child(this.status || (dirty ? 'Unsaved changes' : 'Editing')))
+        .child(div().text_size(TYPE.xs).text_color(this.status === 'Saved' ? t.done : dirty ? t.working : t.dim).child(this.status || (dirty ? 'Unsaved changes' : 'Editing')))
         .child(this.button('edit-done', this.armed === 'discard' ? 'Discard changes?' : 'Done', false, (_e, cx) => this.finish(cx), t).when(this.armed === 'discard', el => el.text_color(t.blocked)).tooltip(dirty ? 'Stop editing (asks before discarding changes)' : 'Stop editing'))
-        .child(div().id('preview-edit-save').px(9).py(4).rounded(5).text_size(11).font_medium().bg(t.solid).text_color(t.solid_foreground)
+        .child(div().id('preview-edit-save').px(9).py(4).rounded(5).text_size(TYPE.sm).font_medium().bg(t.solid).text_color(t.solid_foreground)
           .when(!dirty || this.saving, el => el.opacity(0.45).cursor_default()).when(dirty && !this.saving, el => el.cursor_pointer().hover(s => s.opacity(0.88)))
           .tooltip('Save · ⌘S / Ctrl+S').on_click((_e, cx) => this.save(cx)).child(this.saving ? 'Saving…' : 'Save')))
       .when(!this.editing && !blocker, row => row.child(this.button('edit', this.status || 'Edit', false, (_e, cx) => this.startEdit(cx), t).tooltip('Edit this file')))
-      .when(!this.editing && Boolean(blocker), row => row.child(div().text_size(10).text_color(t.dim).tooltip(blocker === 'Read only' ? '' : blocker).child(this.loading ? 'Refreshing…' : data.truncated ? 'First 400 KB' : 'Read only')))
+      .when(!this.editing && Boolean(blocker), row => row.child(div().text_size(TYPE.xs).text_color(t.dim).tooltip(blocker === 'Read only' ? '' : blocker).child(this.loading ? 'Refreshing…' : data.truncated ? 'First 400 KB' : 'Read only')))
       .child(div().id('preview-refresh').w(24).h(24).p(0).flex_none().flex().items_center().justify_center().rounded(4)
         .text_color(loading ? t.accent : t.muted).disabled(loading).tooltip(loading ? 'Refreshing file…' : 'Refresh file preview').accessibility_label('Refresh file preview')
         .when(loading, el => el.cursor_default()).when(!loading, el => el.cursor_pointer().hover(s => s.bg(t.hover)))
@@ -322,8 +323,8 @@ export default class Preview {
     else if (this.external && this.editing) body.child(this.banner(t, t.working, 'This file changed on disk while you were editing.', [
       this.button('external-reload', this.armed === 'reload' ? 'Discard my edits?' : 'Reload from disk', false, (_e, cx) => this.confirm('reload', cx, () => this.reload(cx)), t),
       this.button('external-keep', 'Keep my version', false, (_e, cx) => { this.external = false; cx.notify(); }, t)]));
-    if (this.linkError) body.child(div().px(10).py(4).text_size(11).text_color(t.blocked).child(this.linkError));
-    if (this.parseError && !this.editing) body.child(div().px(10).py(4).text_size(11).text_color(t.blocked).child(this.parseError));
+    if (this.linkError) body.child(div().px(10).py(4).text_size(TYPE.sm).text_color(t.blocked).child(this.linkError));
+    if (this.parseError && !this.editing) body.child(div().px(10).py(4).text_size(TYPE.sm).text_color(t.blocked).child(this.parseError));
     if (this.find?.visible && typeof data.text === 'string' && !this.editing) {
       body.child(this.find.bar(t));
       if (this.find.result.matches.length) return body.child(this.find.content(t, this.width, this.fontSize));
@@ -335,18 +336,18 @@ export default class Preview {
     if (this.line && this.mode === 'source') {
       const excerpt = data.excerpt || lineExcerpt(data.text, this.line);
       if (excerpt.selected !== this.line) return body.child(div().p(12).text_color(t.blocked).child(`Line ${this.line} is outside the available preview; the file may have changed.`));
-      return body.child(h_flex().px(10).gap(8).items_center().child(div().text_size(11).text_color(t.muted).child(`Line ${excerpt.selected}`)).child(this.button('whole-file', 'Whole file', false, (_e, cx) => { this.line = null; cx.notify(); }, t)))
-        .child(v_flex().id('matched-line-preview').flex_1().min_h(0).overflow_scroll().children(excerpt.rows.map(row => h_flex().min_h(Math.ceil(this.fontSize * 1.8)).flex_none().px(8).gap(10).bg(row.line === excerpt.selected ? t.selected : t.background).child(div().w(44).flex_none().text_right().text_size(11).text_color(t.dim).child(String(row.line))).child(div().min_w(0).text_size(this.fontSize).child(row.text || ' ')))));
+      return body.child(h_flex().px(10).gap(8).items_center().child(div().text_size(TYPE.sm).text_color(t.muted).child(`Line ${excerpt.selected}`)).child(this.button('whole-file', 'Whole file', false, (_e, cx) => { this.line = null; cx.notify(); }, t)))
+        .child(v_flex().id('matched-line-preview').flex_1().min_h(0).overflow_scroll().children(excerpt.rows.map(row => h_flex().min_h(Math.ceil(this.fontSize * 1.8)).flex_none().px(8).gap(10).bg(row.line === excerpt.selected ? t.selected : t.background).child(div().w(44).flex_none().text_right().text_size(TYPE.sm).text_color(t.dim).child(String(row.line))).child(div().min_w(0).text_size(this.fontSize).child(row.text || ' ')))));
     }
     if (this.editing || this.mode === 'source' || kind === 'source' || this.parseError) return body.child(this.code ? Editor.new(this.code).flex_1().min_h(0) : div().p(10).child('No text preview'));
     if (kind === 'markdown') return body.child(this.renderMarkdown(t));
     if (kind === 'json') {
       const result = jsonRows(this.json, this.expanded);
-      return body.child(v_flex().id('json-file-preview').flex_1().min_h(0).overflow_scroll().p(6).text_size(this.fontSize).children(result.rows.map(row => h_flex().id(`json-${row.path}`).flex_none().min_h(Math.max(25, Math.ceil(this.fontSize * 1.8))).pl(6 + row.depth * 14).pr(8).gap(6).cursor_pointer().hover(s => s.bg(t.hover)).on_click((_e, cx) => { if (row.branch) { this.expanded.has(row.path) ? this.expanded.delete(row.path) : this.expanded.add(row.path); cx.notify(); } }).child(div().w(10).flex_none().text_color(t.dim).child(row.branch ? row.open ? '▾' : '▸' : '')).child(div().text_color(t.accent).child(`${row.key}:`)).child(div().text_size(this.fontSize).text_color(t.muted).child(String(row.value).slice(0, 2000))))).when(result.limited, el => el.child(div().p(8).text_size(11).text_color(t.dim).child('JSON tree limited to 1,000 visible nodes and 40 levels'))));
+      return body.child(v_flex().id('json-file-preview').flex_1().min_h(0).overflow_scroll().p(6).text_size(this.fontSize).children(result.rows.map(row => h_flex().id(`json-${row.path}`).flex_none().min_h(Math.max(25, Math.ceil(this.fontSize * 1.8))).pl(6 + row.depth * 14).pr(8).gap(6).cursor_pointer().hover(s => s.bg(t.hover)).on_click((_e, cx) => { if (row.branch) { this.expanded.has(row.path) ? this.expanded.delete(row.path) : this.expanded.add(row.path); cx.notify(); } }).child(div().w(10).flex_none().text_color(t.dim).child(row.branch ? row.open ? '▾' : '▸' : '')).child(div().text_color(t.accent).child(`${row.key}:`)).child(div().text_size(this.fontSize).text_color(t.muted).child(String(row.value).slice(0, 2000))))).when(result.limited, el => el.child(div().p(8).text_size(TYPE.sm).text_color(t.dim).child('JSON tree limited to 1,000 visible nodes and 40 levels'))));
     }
     if (kind === 'csv' || kind === 'tsv') return body
-      .when(Boolean(this.table.error || this.table.truncated), el => el.child(div().p(8).text_size(11).text_color(t.blocked).child(this.table.error || 'Table limited to 500 rows and 40 columns')))
-      .child(v_flex().id('table-file-preview').flex_1().min_h(0).overflow_scroll().children(this.table.rows.map((row, i) => h_flex().id(`table-row-${i}`).min_h(28).flex_none().bg(i === 0 ? t.surface : t.background).border_b(1).border_color(t.border).child(div().w(40).flex_none().p(6).text_color(t.dim).text_size(10).child(String(i + 1))).children(row.map(cell => div().w(160).flex_none().p(6).border_r(1).border_color(t.border).text_size(this.fontSize).child(cell.slice(0, 3000)))))));
+      .when(Boolean(this.table.error || this.table.truncated), el => el.child(div().p(8).text_size(TYPE.sm).text_color(t.blocked).child(this.table.error || 'Table limited to 500 rows and 40 columns')))
+      .child(v_flex().id('table-file-preview').flex_1().min_h(0).overflow_scroll().children(this.table.rows.map((row, i) => h_flex().id(`table-row-${i}`).min_h(28).flex_none().bg(i === 0 ? t.surface : t.background).border_b(1).border_color(t.border).child(div().w(40).flex_none().p(6).text_color(t.dim).text_size(TYPE.xs).child(String(i + 1))).children(row.map(cell => div().w(160).flex_none().p(6).border_r(1).border_color(t.border).text_size(this.fontSize).child(cell.slice(0, 3000)))))));
     return body.child(div().p(10).text_color(t.dim).child('No preview available'));
   }
 }

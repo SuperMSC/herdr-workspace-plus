@@ -1,3 +1,4 @@
+import { TYPE } from "./type-scale.js";
 import { div } from "gpui-kit";
 import { h_flex, Scrollbar, v_virtual_list } from "gpui-base";
 
@@ -105,7 +106,7 @@ export function splitDiffRow(row, t, index = 0, review = null) {
 export function splitHeader(counts, t) {
   const title = (label, count, color, sign) => h_flex().flex_1().min_w(0).px(10).gap(6).items_center()
     .child(div().child(label)).when(count > 0, e => e.child(div().text_color(color).child(`${sign}${count}`)));
-  return h_flex().h(22).flex_none().items_center().text_size(10).text_color(t.dim).border_b(1).border_color(t.border)
+  return h_flex().h(22).flex_none().items_center().text_size(TYPE.xs).text_color(t.dim).border_b(1).border_color(t.border)
     .child(title("Before", counts.removed, t.ansi1, "−"))
     .child(div().w(1).h_full().flex_none().bg(t.border))
     .child(title("After", counts.added, t.ansi2, "+"));
@@ -115,7 +116,7 @@ export function diffView(view, t, font) {
   const side = view.diffMode === "split", rows = side ? view.split : view.rows;
   const request = view.diffRequest, mode = view.diffMode;
   // Inline scrolls sideways for long lines; split halves fit the view and truncate (hover shows the line).
-  return div().flex_1().min_h(0).relative().font_family(font).text_size(11)
+  return div().flex_1().min_h(0).relative().font_family(font).text_size(TYPE.sm)
     .on_mouse_down("left", event => { view.diffReviewPress = { request, mode, event: reviewPress(event) }; })
     .on_size_change((size, cx) => { if (Math.abs((view.diffViewport || 0) - size.width) > 2) { view.diffViewport = size.width; cx.notify(); } })
     .child(div().id("changes-diff-x").size_full().when(!side, e => e.overflow_x_scrollbar())

@@ -1,10 +1,11 @@
 // Popup menus for Project Spaces: a space's menu, a project group's menu, and the view menu.
 // Each is the same mod opened as an overlay with props.role; changes go through shared state.
 
+import { TYPE } from "./type-scale.js";
 import { div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { run, closeOverlay, openOverlay, theme, shared, setShared, spaces } from "herdr";
-import { STATE_KEY, DENSITY_KEY, DENSITIES, projectDensity, MODES, SORTS, PALETTE, MARK, normalizeState, assignSpace, setGroupColor, stepGroup, ungroup, foldAll } from "./model.js";
+import { STATE_KEY, DENSITY_KEY, DENSITIES, projectDensity, MODES, SORTS, PALETTE, normalizeState, assignSpace, setGroupColor, stepGroup, ungroup, foldAll } from "./model.js";
 import { beginMenuTooltip, endMenuTooltip } from "./menu-tooltip.js";
 import { DIRECTORY_PINS_KEY, normalizeDirectoryPins, setDirectoryPin } from "./directory-pins.js";
 
@@ -173,7 +174,7 @@ export class Menu {
   swatches(key, t) {
     const current = state().groups[key]?.color ?? null;
     const dot = (color, n) => div().id(`swatch-${n}`).size(18).rounded(9).cursor_pointer()
-      .bg(color ? MARK[color] ?? t[color] : t.raised).border_2().border_color(current === color ? t.foreground : t.popover)
+      .bg(color ? t[color] : t.raised).border_2().border_color(current === color ? t.foreground : t.popover)
       .when(!color, el => el.border_color(current === null ? t.foreground : t.border))
       .tooltip(color ? "Project color" : "Automatic color")
       .on_click((_e, cx) => { save(setGroupColor(state(), key, color)); cx.notify(); });
@@ -190,7 +191,7 @@ export class Menu {
     const t = theme();
     const list = this.items();
     // A popup is as tall as its content: no flex_1 or scroll wrapper, or it measures 0.
-    return v_flex().id("project-spaces-menu").track_focus(this.handle).w_full().min_h(0).p(5).bg(t.popover).text_size(12.8)
+    return v_flex().id("project-spaces-menu").track_focus(this.handle).w_full().min_h(0).p(5).bg(t.popover).text_size(TYPE.md)
       .on_key_down((e, cx) => {
         if (e.key === "down") this.step(list, 1);
         else if (e.key === "up") this.step(list, -1);
@@ -202,7 +203,7 @@ export class Menu {
       })
       .children(list.map((it, i) => {
         if (it.separator) return div().mx(7).my(4).h(1).flex_none().bg(t.border);
-        if (it.section) return div().h(24).flex_none().px(9).pt(6).text_size(11).text_color(t.dim).child(it.section);
+        if (it.section) return div().h(24).flex_none().px(9).pt(6).text_size(TYPE.sm).text_color(t.dim).child(it.section);
         if (it.swatches) return this.swatches(it.key, t);
         const tint = it.disabled ? t.dim : it.danger ? t.ansi1 : t.foreground;
         return h_flex().id(`pm-${i}`).h(31).flex_none().px(8).gap(9).rounded(7).items_center().text_color(tint)
@@ -214,7 +215,7 @@ export class Menu {
             ? div().size(14).flex_none().child(it.checked ? svg(icon("check")).size(14).text_color(t.accent) : div())
             : svg(icon(it.icon ?? "terminal")).size(14).flex_none().text_color(it.danger ? t.ansi1 : t.muted))
           .child(div().flex_1().min_w(0).truncate().child(it.label))
-          .when(Boolean(it.hint), el => el.child(div().flex_none().max_w(110).truncate().text_size(11).text_color(t.dim).child(it.hint)));
+          .when(Boolean(it.hint), el => el.child(div().flex_none().max_w(110).truncate().text_size(TYPE.sm).text_color(t.dim).child(it.hint)));
       }));
   }
 }

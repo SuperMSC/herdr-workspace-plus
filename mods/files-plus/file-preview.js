@@ -1,4 +1,5 @@
 // A captured, read-only file in the center tab area; terminals keep their own tabs.
+import { TYPE } from "./type-scale.js";
 import { div } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { theme, shared, setShared, spaces, panes, run, openOverlay, settings, window } from "herdr";
@@ -69,7 +70,7 @@ export default class FilePreview {
       cx.timer.after(0, cx => { this.syncScheduled = false; if (!this.disposed) this.sync(cx); });
     }
     const t = theme(), pinned = libraryFor(shared(LIBRARY_KEY), this.root, this.on).pinned.includes(this.path);
-    return v_flex().id("file-tab-preview").size_full().min_w(0).min_h(0).overflow_hidden().bg(t.background).text_color(t.foreground).text_size(12)
+    return v_flex().id("file-tab-preview").size_full().min_w(0).min_h(0).overflow_hidden().bg(t.background).text_color(t.foreground).text_size(TYPE.md)
       // The workspace pane header already shows this file, its pin and its actions.
       .when(!headerShown(), el => el.child(h_flex().h(40).flex_none().px(10).gap(8).items_center().border_b(1).border_color(t.border)
         .child(fileIcon(this.path || ""))

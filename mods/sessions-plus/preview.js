@@ -1,3 +1,4 @@
+import { TYPE } from "./type-scale.js";
 import { div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { appHome, exec, theme, closeOverlay } from "herdr";
@@ -26,11 +27,11 @@ export default class Preview {
   render() {
     const t = theme();
     const button = (id, label, callback) => div().id(id).px(10).py(6).rounded(5).bg(t.raised).cursor_pointer().on_click(callback).child(label);
-    return v_flex().id("session-preview").size_full().min_h(0).p(16).gap(10).rounded(10).overflow_hidden().border_1().border_color(t.border).bg(t.popover).text_color(t.foreground).text_size(12)
+    return v_flex().id("session-preview").size_full().min_h(0).p(16).gap(10).rounded(10).overflow_hidden().border_1().border_color(t.border).bg(t.popover).text_color(t.foreground).text_size(TYPE.md)
       .track_focus(this.handle).on_key_down((event, cx) => { if (event.key === "escape") { closeOverlay(this.p.overlay); cx.stop_propagation(); } })
-      .child(h_flex().flex_none().gap(8).items_center().child(div().flex_1().min_w(0).truncate().font_semibold().text_size(15).child("Recent messages")))
+      .child(h_flex().flex_none().gap(8).items_center().child(div().id("preview-info").flex_1().min_w(0).truncate().font_semibold().text_size(TYPE.lg).tooltip("Read-only excerpts · No generated summary or persistent message index.").child("Recent messages")))
       .child(div().truncate().child(this.target.title || "Session"))
-      .child(div().text_size(10.5).text_color(t.dim).child(`${PROVIDERS[this.target.provider] || this.target.provider} · ${this.target.id || ""}`))
+      .child(div().text_size(TYPE.xs).text_color(t.dim).child(`${PROVIDERS[this.target.provider] || this.target.provider} · ${this.target.id || ""}`))
       .child(v_flex().id("session-preview-messages").flex_1().min_h(0).gap(10).overflow_y_scrollbar()
         .when(this.loading, el => el.child(div().text_color(t.muted).child("Reading recent messages…")))
         .when(Boolean(this.error), el => el.child(div().text_color(t.ansi1).child(this.error)))
@@ -38,8 +39,8 @@ export default class Preview {
         .children((this.data?.messages ?? []).map(message => v_flex().p(10).gap(5).rounded(6).bg(t.raised)
           .child(div().font_semibold().text_color(t.accent).child(message.role === "user" ? "Latest user message" : "Latest assistant message"))
           .child(div().child(message.text))
-          .when(message.truncated, el => el.child(div().text_size(10.5).text_color(t.dim).child("Message shortened to 6,000 characters."))))))
-      .child(div().text_size(10.5).text_color(t.dim).child(this.data?.limited ? "Recent history is read with a size limit; older or oversized messages may be absent. No summary is generated." : "Read-only excerpts · No generated summary or persistent message index."))
+          .when(message.truncated, el => el.child(div().text_size(TYPE.xs).text_color(t.dim).child("Message shortened to 6,000 characters."))))))
+      .when(Boolean(this.data?.limited), el => el.child(div().text_size(TYPE.xs).text_color(t.dim).child("Recent history is read with a size limit; older or oversized messages may be absent.")))
       .when(Boolean(this.error), el => el.child(h_flex().flex_none().gap(8).justify_end()
         .child(button("preview-retry", "Retry", (_e, cx) => this.load(cx)))));
   }

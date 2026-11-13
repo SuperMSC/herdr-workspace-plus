@@ -1,3 +1,4 @@
+import { uiFunction } from "./helpers/ui-function.mjs";
 import assert from "node:assert/strict";
 import { mkdtemp, readFile, writeFile, mkdir, rm, readdir } from "node:fs/promises";
 import { readFileSync } from "node:fs";
@@ -141,7 +142,7 @@ function harness({ disk = { raw: null }, storage = memoryStorage(), props = {}, 
     readTextFile: async () => disk.raw,
     writeTextFile: async (_file, value, expected) => { if (gate) await gate; if (failWrite) throw new Error("Disk denied"); if (disk.raw !== expected) throw new Error("stale"); disk.raw = value; writes++; },
   };
-  const Class = new Function(...Object.keys(deps), source)(...Object.values(deps));
+  const Class = uiFunction(...Object.keys(deps), source)(...Object.values(deps));
   const view = new Class(); view.init({ project: { root: "/project/main" }, ...props }, cx);
   return { view, cx, storage, disk, editors, inputs, timers, overlays, writes: () => writes,
     setGate(value) { gate = value; }, render() { render = true; try { return view.render(cx); } finally { render = false; } },
@@ -172,6 +173,16 @@ test("closing and reopening retains the unsaved text until explicit recovery", a
   const recovered = model.decodeNoteDrafts(g.storage.getItem(model.NOTES_DRAFTS))[0];
   g.view.restoreDraft(recovered, g.cx); assert.equal(g.editors[0].value(), "Before close");
   g.view.save(g.cx); await g.settle(); assert.equal(model.noteFor(model.decodeNotes(g.disk.raw), project).body, "Before close");
+});
+
+test("notes retain save status while fixed storage guidance lives in Refresh's tooltip", async () => {
+  const f = harness(); await f.settle();
+  const text = node => typeof node === "string" ? node : node?.childNodes?.map(text).join("\n") || "";
+  let tree = f.render();
+  assert.match(find(tree, "notes-refresh").attributes.tooltip, /Closing a tab keeps its notes.*last three saved versions/);
+  assert.doesNotMatch(text(tree), /Saved on this computer|last three saved versions/);
+  f.editors[0].type("Unsaved decision"); tree = f.render();
+  assert.match(text(tree), /Unsaved changes/); assert.match(text(tree), /characters/);
 });
 
 test("concurrent views never overwrite the other's saved note and retain conflict text", async () => {
@@ -215,7 +226,7 @@ test("notes search includes closed contexts, archive is reversible, and queue ha
   f.view.save(f.cx, true); await f.settle(); assert.equal(model.filterNotes(f.view.store).length, 0);
   assert.equal(model.filterNotes(f.view.store, "carry", true).length, 1);
   f.view.save(f.cx, false); await f.settle(); assert.equal(model.filterNotes(f.view.store).length, 1);
-  f.click("notes-queue"); assert.equal(f.overlays[0].props.role, "reference");
+  f.click("notes-queue"); assert.equal(f.overlays[0].props.role, "prompt-queue");
   assert.match(f.overlays[0].props.text, /Decision to carry forward/); assert.equal(f.overlays[0].props.on, null);
   f.view.choose(global, f.cx); await f.settle(); f.click("notes-all");
   assert(find(f.render(), "notes-entry-" + project.key));

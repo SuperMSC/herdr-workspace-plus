@@ -1,3 +1,4 @@
+import { uiFunction } from "./helpers/ui-function.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import fs from "node:fs/promises";
@@ -168,7 +169,7 @@ function harness(api = {}) {
     exec() { throw new Error("No real programs in production UI tests"); }, appHome: () => "/fixture/herdr", settings: () => ({}), theme: () => ({}), openOverlay: spec => overlays.push(spec), closeOverlay() {}, readTextFile: async () => "{}",
     createGithubClient: () => ({ list: async (context, repo) => { calls.push(["list", { ...context }, repo]); return api.list ? api.list(context, repo) : list(); }, detail: async (context, repo, number) => { calls.push(["detail", { ...context }, repo, number]); return api.detail ? api.detail(context, repo, number) : detail(number); }, log: async (...args) => { calls.push(["log", ...args]); return { text: "fixture log", head, truncated: false }; } }) };
   const source = readFileSync(new URL("../mods/files-plus/github.js", import.meta.url), "utf8").replace(/^import .*;\n/gm, "").replace("export default class", "return class");
-  const Github = new Function(...Object.keys(deps), source)(...Object.values(deps));
+  const Github = uiFunction(...Object.keys(deps), source)(...Object.values(deps));
   const view = new Github(), props = { context: { ...context } }; view.init(props, cx);
   return { view, props, cx, calls, tasks, overlays, opened, copied, render() { rendering = true; try { return view.render(cx); } finally { rendering = false; } }, click(id) { const node = find(this.render(), id); assert(node, id); node.events.on_click({}, cx); }, async settle() { for (let i = 0; i < 8 && tasks.length; i++) await Promise.all(tasks.splice(0)); } };
 }
@@ -176,8 +177,9 @@ function harness(api = {}) {
 test("production panel reads once, renders nonempty data without polling and queues only an explicit preview", async () => {
   const f = harness(); await f.settle(); f.render(); f.render(); assert.deepEqual(f.calls.map(call => call[0]), ["list", "detail"]);
   assert(find(f.render(), "github-check-0")); assert(find(f.render(), "github-thread-0"));
+  assert.match(find(f.render(),'github-refresh').attrs.tooltip,/Read only · manual refresh/);assert(!nodes(f.render()).some(node=>node.childNodes.some(child=>typeof child==='string'&&child.includes('Read only · manual refresh'))));
   f.click("github-copy-summary"); assert(f.copied[0].includes("src/a'b.js:12"));
-  f.click("github-queue"); await f.settle(); assert.equal(f.overlays.length, 1); assert.equal(f.overlays[0].props.role, "reference");
+  f.click("github-queue"); await f.settle(); assert.equal(f.overlays.length, 1); assert.equal(f.overlays[0].props.role, "prompt-queue");
   assert.equal(f.overlays[0].props.on, null); assert(f.overlays[0].props.text.includes("$(never)")); assert(f.overlays[0].props.text.length < 12000);
   assert.equal(f.calls.some(call => call[0] === "log"), false);
   f.click("github-open-pr"); assert.deepEqual(f.opened, [pr().url]);

@@ -1,3 +1,4 @@
+import { uiFunction } from "./helpers/ui-function.mjs";
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
@@ -14,9 +15,9 @@ function fixture(props = { unified: true }, mode = 'project') {
     Menu: class { init(p) { calls.push(['menu', p]); } render() { return 'MENU'; } }, Prompt: class {}, run: (...args) => calls.push(['run', ...args]), exec: () => { throw Error('No automatic execution'); }, openMenu: (...args) => calls.push(['open-menu', ...args]), menuRows: () => 1,
   };
   const tooltipSource = readFileSync(new URL('../mods/project-spaces/menu-tooltip.js', import.meta.url), 'utf8').replace(/^import[\s\S]*?;\n/gm, '').replaceAll('export ', '');
-  Object.assign(dependencies, new Function('shared', 'setShared', tooltipSource + '\nreturn { menuTooltipState, menuTooltipKey, endMenuTooltip };')(dependencies.shared, dependencies.setShared));
+  Object.assign(dependencies, uiFunction('shared', 'setShared', tooltipSource + '\nreturn { menuTooltipState, menuTooltipKey, endMenuTooltip };')(dependencies.shared, dependencies.setShared));
   const source = readFileSync(new URL('../mods/project-spaces/main.js', import.meta.url), 'utf8').replace(/^import[\s\S]*?;\n/gm, '').replace('export default class', 'return class');
-  const Sidebar = new Function(...Object.keys(dependencies), source)(...Object.values(dependencies)), sidebar = new Sidebar(), cx = { timer: { every() {} }, notify() {} };
+  const Sidebar = uiFunction(...Object.keys(dependencies), source)(...Object.values(dependencies)), sidebar = new Sidebar(), cx = { timer: { every() {} }, notify() {} };
   sidebar.init({}, cx);
   return { sidebar, cx, calls, shared, spaces, agents, terminals, panes, focus };
 }
@@ -39,6 +40,12 @@ test('unified main passes one complete machine-aware snapshot and canonical proj
 test('unified menu roles bypass sidebar initialization and legacy ungrouped mode migrates only its display preference', () => {
   const menu = fixture({ role: 'view-menu', unified: true }); assert.equal(menu.sidebar.render(menu.cx), 'MENU'); assert(!menu.calls.some(call => call[0] === 'init'));
   const legacy = fixture(undefined, 'none'); assert.equal(legacy.sidebar.state().mode, 'project'); assert.deepEqual(legacy.sidebar.state().assign, {});
+});
+
+test('the owning sidebar reads external Needs attention changes from its shared filter key', () => {
+  const f = fixture(); f.shared.set(model.FILTER_KEY, 'attention');
+  f.sidebar.render(f.cx); assert.equal(f.calls.filter(call => call[0] === 'render').at(-1)[1].filter, 'attention');
+  f.shared.set(model.FILTER_KEY, 'all'); f.sidebar.render(f.cx); assert.equal(f.calls.filter(call => call[0] === 'render').at(-1)[1].filter, 'all');
 });
 
 test('unified group folding uses its tree callback while legacy groups retain persistent folding',()=>{

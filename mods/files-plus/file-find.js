@@ -1,4 +1,5 @@
 // A retained file-local find bar; no project scan or file writes are involved.
+import { TYPE } from "./type-scale.js";
 import { div } from "gpui-kit";
 import { h_flex, v_flex, Input, InputState, v_virtual_list, VirtualListScrollHandle, Scrollbar } from "gpui-base";
 import { settings } from "herdr";
@@ -59,11 +60,11 @@ export default class FileFind {
       .child(h_flex().gap(4).items_center()
         .child(Input.new(this.input).h(30).flex_1().min_w(40).px(8).rounded(4).border_1().border_color(t.input).bg(t.background))
         .child(this.control("case", "Aa", "Match case", this.caseSensitive, false, (_e, cx) => { this.caseSensitive = !this.caseSensitive; this.update(false); cx.notify(); }, t))
-        .child(div().id("file-find-count").min_w(55).flex_none().text_center().text_size(11).text_color(query && !count ? t.blocked : t.muted).child(query ? count ? `${this.active + 1}/${count}${this.result.limited ? "+" : ""}` : "No matches" : ""))
+        .child(div().id("file-find-count").min_w(55).flex_none().text_center().text_size(TYPE.sm).text_color(query && !count ? t.blocked : t.muted).child(query ? count ? `${this.active + 1}/${count}${this.result.limited ? "+" : ""}` : "No matches" : ""))
         .child(this.control("previous", "↑", "Previous match · Shift+Enter", false, !count, (_e, cx) => this.move(-1, cx), t))
         .child(this.control("next", "↓", "Next match · Enter", false, !count, (_e, cx) => this.move(1, cx), t))
         .child(iconButton("file-find-close", "close", "Close find · Esc", (_e, cx) => this.hide(cx), t)))
-      .when(Boolean(this.truncated || this.result.limited), el => el.child(div().text_size(10).text_color(t.blocked).child([
+      .when(Boolean(this.truncated || this.result.limited), el => el.child(div().text_size(TYPE.xs).text_color(t.blocked).child([
         this.truncated ? "Searching the first 400 KB only" : "",
         this.result.limited ? "Showing the first 1,000 matches" : "",
       ].filter(Boolean).join(" · "))));

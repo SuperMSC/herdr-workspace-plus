@@ -1,3 +1,4 @@
+import { TYPE } from "./type-scale.js";
 import { div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { appHome, exec, theme, shared, setShared, window } from "herdr";
@@ -77,19 +78,19 @@ export default class Quota {
         .child(h_flex().min_w(0).items_center().gap(8).child(providerIcon(provider, 21).flex_none())
           .child(div().flex_1().min_w(0).truncate().font_semibold().child(PROVIDERS[provider]))
           .child(h_flex().id(`quota-updated-${provider}`).flex_none().items_center().gap(4)
-            .child(div().whitespace_nowrap().text_size(10.5).text_color(stale ? t.ansi3 : t.dim).child(loading ? "Updating…" : timestamp ? `${stale ? "Stale · " : "Updated "}${updated}` : ""))
+            .child(div().whitespace_nowrap().text_size(TYPE.xs).text_color(stale ? t.ansi3 : t.dim).child(loading ? "Updating…" : timestamp ? `${stale ? "Stale · " : "Updated "}${updated}` : ""))
             .when(Boolean(warning), el => el.child(div().id(`quota-warning-${provider}`).size(13).flex_none().text_color(t.ansi3).tooltip(warning).accessibility_label(`${PROVIDERS[provider]}: ${warning}`).child(svg("mods/sessions-plus/warning.svg").size(13))))))
         .children((data?.windows ?? []).map(row => {
           const value = row[mode], color = row.used >= 90 ? t.ansi1 : row.used >= 75 ? t.ansi3 : t.accent;
           return v_flex().gap(4)
-            .child(h_flex().gap(6).justify_between().child(div().flex_1().min_w(0).truncate().text_size(11.5).child(row.label)).child(div().flex_none().font_semibold().child(percentage(row, mode))))
+            .child(h_flex().gap(6).justify_between().child(div().flex_1().min_w(0).truncate().text_size(TYPE.sm).child(row.label)).child(div().flex_none().font_semibold().child(percentage(row, mode))))
             .when(!row.unlimited, el => el.child(div().w_full().h(5).rounded(3).bg(t.raised)
               .child(div().w(`${Math.max(0, Math.min(100, value ?? 0))}%`).h(5).rounded(3).bg(color))))
-            .when(!row.unlimited, el => el.child(div().text_size(10.5).text_color(t.dim).child(resetLabel(row.resetAt))));
+            .when(!row.unlimited, el => el.child(div().text_size(TYPE.xs).text_color(t.dim).child(resetLabel(row.resetAt))));
         }))
-        .when(Boolean(data?.message), el => el.child(div().text_size(11).text_color(stale ? t.ansi3 : t.muted).child(data.message)));
+        .when(Boolean(data?.message), el => el.child(div().text_size(TYPE.sm).text_color(stale ? t.ansi3 : t.muted).child(data.message)));
     };
-    return v_flex().id("sessions-quota").size_full().min_h(0).bg(t.surface).text_color(t.foreground).text_size(12)
+    return v_flex().id("sessions-quota").size_full().min_h(0).bg(t.surface).text_color(t.foreground).text_size(TYPE.md)
       .child(h_flex().px(8).py(7).gap(3).flex_none()
         .child(button("quota-remaining", "Remaining", mode === "remaining", () => setShared("sessions-plus.quota-mode", "remaining")))
         .child(button("quota-used", "Used", mode === "used", () => setShared("sessions-plus.quota-mode", "used")))
@@ -98,12 +99,12 @@ export default class Quota {
           .when(refreshDisabled, el => el.cursor_default().opacity(loading ? 1 : 0.45)).tooltip(refreshHint).accessibility_label("Refresh quota")))
       .child(h_flex().px(8).pb(4).flex_none().child(button("quota-agents", `Agents ${this.showAgents ? "▴" : "▾"}`, this.showAgents, (_e, cx) => { this.showAgents = !this.showAgents; cx.notify(); })))
       .when(this.showAgents, el => el.child(v_flex().px(8).pb(5).gap(4).flex_none()
-        .child(div().text_size(10.5).text_color(t.dim).child("Show account quota for"))
+        .child(div().text_size(TYPE.xs).text_color(t.dim).child("Show account quota for"))
         .child(h_flex().gap(4).children(Object.keys(PROVIDERS).map(provider => button(`quota-show-${provider}`,
           h_flex().items_center().gap(4).child(div().child(hidden.has(provider) ? "○" : "✓")).child(providerIcon(provider, 14)).child(div().min_w(0).truncate().child(provider === "claude" ? "Claude" : PROVIDERS[provider])),
           !hidden.has(provider), (_e, cx) => this.toggleProvider(provider, cx)).flex_1().min_w(0))))))
       .child(v_flex().id("quota-cards").flex_1().min_h(0).overflow_y_scrollbar().p(8).gap(9).children(available.map(card))
         .when(!available.length, el => el.child(div().p(10).text_color(t.muted).child(!visible.length ? "All agents are hidden. Open Agents to show account quota." : loading ? "Reading account quota…" : "No account quota to show."))))
-      .child(div().px(10).py(7).text_size(10.5).text_color(t.dim).flex_none().child(window()?.platform === "macos" ? this.p.statusbar ? "Local accounts · Refreshes every 5 min" : "Local accounts · Refreshes every 5 min while Status is shown" : "Account quota currently requires macOS"));
+      .child(div().px(10).py(7).text_size(TYPE.xs).text_color(t.dim).flex_none().child(window()?.platform === "macos" ? this.p.statusbar ? "Local accounts · Refreshes every 5 min" : "Local accounts · Refreshes every 5 min while Status is shown" : "Account quota currently requires macOS"));
   }
 }

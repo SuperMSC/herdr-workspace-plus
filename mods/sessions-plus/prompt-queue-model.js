@@ -1,4 +1,5 @@
 import { argvIdentity, cleanTitle, PROVIDERS } from "./model.js";
+import { referenceMachineMatches } from "./reference-model.js";
 
 export const PROMPT_QUEUE_KEY = "sessions-plus.prompt-queue.v1";
 export const QUEUE_LIMITS = { queues: 40, items: 40, text: 12000, total: 240000, message: 48000 };
@@ -46,9 +47,12 @@ export function samePromptTarget(expected, actual) {
 
 export function queueState(value) {
   const source = Array.isArray(value?.queues) ? value.queues : [];
-  return { queues: source.filter(queue => queue && typeof queue.key === "string" && queue.target?.key === queue.key && Array.isArray(queue.items))
+  const result = { queues: source.filter(queue => queue && typeof queue.key === "string" && queue.target?.key === queue.key && Array.isArray(queue.items))
     .map(queue => ({ ...queue, composer: text(queue.composer), items: queue.items.filter(item => typeof item?.id === "string" && typeof item.text === "string")
       .map(item => ({ ...item, status: ["pending", "sent", "uncertain"].includes(item.status) ? item.status : "uncertain" })) })) };
+  const drafts = (Array.isArray(value?.drafts) ? value.drafts : []).filter(item => typeof item?.id === "string" && typeof item.text === "string" && (item.machine === null || typeof item.machine === "string")).map(item => ({ ...item }));
+  if (drafts.length) result.drafts = drafts;
+  return result;
 }
 
 export function queueFor(state, target) {
@@ -59,7 +63,7 @@ function storeQueue(state, queue) {
   const next = queueState(state), exists = next.queues.findIndex(item => item.key === queue.key);
   if (exists < 0 && next.queues.length >= QUEUE_LIMITS.queues) throw new Error("Saved queue limit reached. Choose a saved queue and clear it first.");
   if (exists < 0) next.queues.push(queue); else next.queues[exists] = queue;
-  const total = next.queues.reduce((sum, entry) => sum + entry.composer.length + entry.items.reduce((length, item) => length + item.text.length, 0), 0);
+  const total = next.queues.reduce((sum, entry) => sum + entry.composer.length + entry.items.reduce((length, item) => length + item.text.length, 0), 0) + (next.drafts || []).reduce((sum, item) => sum + item.text.length, 0);
   if (total > QUEUE_LIMITS.total) throw new Error("Saved prompts are full. Remove or clear a saved queue before adding more.");
   return next;
 }
@@ -92,7 +96,8 @@ export function removePrompt(state, target, id) {
 
 export function clearPromptQueue(state, key) {
   if (queueState(state).queues.find(queue => queue.key === key)?.items.some(item => item.activeUntil > Date.now())) throw new Error("Wait for the current send to finish before clearing it.");
-  return { queues: queueState(state).queues.filter(queue => queue.key !== key) };
+  const next = queueState(state);
+  return { ...next, queues: next.queues.filter(queue => queue.key !== key) };
 }
 
 export function preparePrompts(state, target, ids) {
@@ -133,4 +138,29 @@ export function appendPrompt(state, target, value, now = Date.now()) {
   const next = savePrompt(state, target, value, null, now);
 
   return saveComposer(next, target, composer, now);
+}
+
+export function saveQueueDraft(state, payload, id = null, now = Date.now()) {
+  const next = queueState(state), drafts = next.drafts || [], index = drafts.findIndex(item => item.id === id);
+  if (id && index < 0) throw new Error("This draft was removed or assigned in another view.");
+  if (!id && drafts.length >= QUEUE_LIMITS.items) throw new Error("Saved draft limit reached. Assign or remove a draft first.");
+  if (typeof payload.text !== "string" || !payload.text.trim() || payload.text.length > 200000 || payload.text.includes("\0")) throw new Error("Use 1–200,000 characters without NUL for a reference draft.");
+  if (payload.machine !== null && typeof payload.machine !== "string") throw new Error("The draft's captured machine is invalid.");
+  const item = { ...payload, title: String(payload.title || "Reference draft").slice(0, 120), id: id || `${now.toString(36)}-${Math.random().toString(36).slice(2, 10)}`, created: index < 0 ? now : drafts[index].created, updated: now };
+  const updated = [...drafts]; if (index < 0) updated.push(item); else updated[index] = item;
+  const total = next.queues.reduce((sum, entry) => sum + entry.composer.length + entry.items.reduce((n, item) => n + item.text.length, 0), 0) + updated.reduce((sum, item) => sum + item.text.length, 0);
+  if (total > QUEUE_LIMITS.total) throw new Error("Saved prompts are full. Remove or clear a saved queue before adding more.");
+  return { ...next, drafts: updated };
+}
+
+export function removeQueueDraft(state, id) {
+  const next = queueState(state);
+  return { ...next, drafts: (next.drafts || []).filter(item => item.id !== id) };
+}
+
+export function assignQueueDraft(state, id, target) {
+  const draft = queueState(state).drafts?.find(item => item.id === id);
+  if (!draft) throw new Error("This draft was removed or assigned in another view.");
+  if (!referenceMachineMatches(draft, target)) throw new Error("Choose a live agent on the draft's captured machine.");
+  return appendPrompt(removeQueueDraft(state, id), target, draft.text);
 }

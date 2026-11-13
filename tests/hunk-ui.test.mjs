@@ -1,3 +1,4 @@
+import { uiFunction } from "./helpers/ui-function.mjs";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
@@ -18,7 +19,7 @@ function element() {
 const request = () => ({ root: "/repo", on: null, action: "stage", file: { path: "file.txt", section: "unstaged", status: "M" }, version: "version-1", hunk: { index: 0, header: "@@ -1 +1 @@", patch: "complete patch", enabled: true } });
 async function load(file, deps) {
   const source = (await readFile(new URL(`../mods/files-plus/${file}.js`, import.meta.url), "utf8")).replace(/^import .+;$/gm, "").replace(/export default class \w+ \{/, match => "return " + match.slice("export default ".length));
-  return new Function(...Object.keys(deps), source)(...Object.values(deps));
+  return uiFunction(...Object.keys(deps), source)(...Object.values(deps));
 }
 
 test("hunk controls capture the checkout and exact selected patch, with history/remote/loading disabled", async () => {
@@ -31,6 +32,8 @@ test("hunk controls capture the checkout and exact selected patch, with history/
   view.moveHunk(-1, cx); assert.equal(view.activeHunk, 0); assert.deepEqual(scrolls, [0]);
   view.openHunk(cx); assert.equal(overlays[0].props.role, "hunk"); assert.deepEqual(overlays[0].props.request, first);
   const toolbar = view.hunkToolbar({});
+  const nodes=node=>!node||typeof node!=='object'?[]:[node,...node.childNodes.flatMap(nodes)],text=node=>typeof node==='string'?node:(node?.childNodes||[]).map(text).join(' ');
+  assert.doesNotMatch(text(toolbar),/Click a @@ header/);assert(nodes(toolbar).some(node=>/Click a @@ header/.test(node.attributes.tooltip||'')));view.hunkError='Fixture hunk warning';assert.match(text(view.hunkToolbar({})),/Fixture hunk warning/);view.hunkError='';
   const find = node => !node || typeof node !== "object" ? null : node.attributes.id === "git-hunk-apply" ? node : node.childNodes.map(find).find(Boolean);
   const oldButton = find(toolbar);
   view.hunkData.version = "changed"; view.activeHunk = 1;

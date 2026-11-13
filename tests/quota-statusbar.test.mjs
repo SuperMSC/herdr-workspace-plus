@@ -1,3 +1,4 @@
+import { uiFunction } from "./helpers/ui-function.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
@@ -21,7 +22,7 @@ function element() {
 function view(name, dependencies) {
   const source = readFileSync(new URL(`../mods/sessions-plus/${name}.js`, import.meta.url), "utf8")
     .replace(/^import .*;\n/gm, "").replace("export default class", "return class");
-  return new Function(...Object.keys(dependencies), source)(...Object.values(dependencies));
+  return uiFunction(...Object.keys(dependencies), source)(...Object.values(dependencies));
 }
 
 const nodes = tree => !tree || typeof tree !== "object" ? [] : [tree, ...tree.childNodes.flatMap(nodes), ...Object.values(tree.slots).flatMap(nodes)];
@@ -34,7 +35,6 @@ function fixture(state = {}) {
   const calls = [], tasks = [], timers = [], timeouts = [];
   const cx = { notify() { notifications++; }, spawn(task) { tasks.push(task(cx)); }, timer: { every(ms, task) { timers.push({ ms, task }); }, after(ms, task) { timeouts.push({ at: now + ms, task }); } } };
   const dependencies = {
-    privacyToggle: () => { state["agent-workspace.screenshot-mode.v1"] = state["agent-workspace.screenshot-mode.v1"] !== true; },
     div: element, svg: element, h_flex: element, v_flex: element,
     Popover: { new: id => element().id(id) },
     theme: () => ({ chrome: "chrome", surface: "surface", selected: "selected", ansi1: "red", ansi3: "yellow", foreground: "white" }),
@@ -168,8 +168,8 @@ test("compact strip shows window percentages with countdowns, plus mode, refresh
 
 test("narrow widths retain countdowns and expanding restores percentages without new reads", async () => {
   const f = fixture(); await f.finish();
-  // Preserve the tested quota-area widths while reserving the new 60px control and 4px gap.
-  const resize = baselineWidth => find(f.render(), "quota-statusbar").events.on_size_change({ width: baselineWidth + 64, height: 28 }, f.cx);
+  // Preserve the HEAD quota-area widths after removing the 60px Privacy control and its gap.
+  const resize = baselineWidth => find(f.render(), "quota-statusbar").events.on_size_change({ width: baselineWidth, height: 28 }, f.cx);
   resize(425);
   for (const provider of Object.keys(PROVIDERS)) {
     assert.equal(text(find(f.render(), `quota-status-${provider}`)).trim(), "5h 1h 0m");
@@ -204,8 +204,8 @@ test("weekly countdown remains labeled when the five-hour reset is unavailable",
 test("narrowing hides bars then percentages while retaining both countdowns", async () => {
   const f = fixture({ "sessions-plus.quota-hidden": ["codex", "agy"] });
   await f.finish({ claude: { windows: [row("5h", 7, 1800012120000), row("7d", 35, 1800093600000)] } });
-  // Preserve the tested quota-area widths while reserving the new 60px control and 4px gap.
-  const resize = baselineWidth => find(f.render(), "quota-statusbar").events.on_size_change({ width: baselineWidth + 64, height: 28 }, f.cx);
+  // Preserve the HEAD quota-area widths after removing the 60px Privacy control and its gap.
+  const resize = baselineWidth => find(f.render(), "quota-statusbar").events.on_size_change({ width: baselineWidth, height: 28 }, f.cx);
   const hasBar = () => nodes(find(f.render(), "quota-status-claude")).some(node => node.attributes.w === 32);
   assert(hasBar());
   resize(350);
@@ -304,8 +304,8 @@ test("initial query failure remains visible without inventing quota or a success
 test("warning icons have reserved width through full, brief, icon-only, and collapsed layouts", async () => {
   const f = fixture({ "sessions-plus.quota-hidden": ["agy"] });
   await f.finish({ claude: { state: "stale", message: "Claude connection failed", windows: [row("5h", 10), row("7d", 35, 1800093600000)] }, codex: { state: "stale", message: "Codex connection failed", windows: [row("7d", 35, 1800093600000)] } });
-  // Preserve the tested quota-area widths while reserving the new 60px control and 4px gap.
-  const resize = baselineWidth => find(f.render(), "quota-statusbar").events.on_size_change({ width: baselineWidth + 64, height: 28 }, f.cx);
+  // Preserve the HEAD quota-area widths after removing the 60px Privacy control and its gap.
+  const resize = baselineWidth => find(f.render(), "quota-statusbar").events.on_size_change({ width: baselineWidth, height: 28 }, f.cx);
   resize(1000); assert.match(text(find(f.render(), "quota-status-claude")), /90%/);
   resize(450); assert.doesNotMatch(text(find(f.render(), "quota-status-claude")), /%/); assert.match(text(find(f.render(), "quota-status-claude")), /7d 1d 2h/);
   for (const width of [450, 250]) {
@@ -345,11 +345,62 @@ test("single Codex tooltip shows its window only once and keeps named quota pool
 });
 
 
-test("status bar reserves the measured Privacy control width and its toggle does not refresh quota", () => {
-  const f=fixture();f.bar.width=500;f.bar.modeWidth=68;f.bar.privacyWidth=60;
-  const before=f.calls.length;
-  assert.equal(find(f.render(),"quota-status-trigger").attributes.max_w,322);
-  find(f.render(),"screenshot-mode-toggle").events.on_size_change({width:90},f.cx);
-  assert.equal(find(f.render(),"quota-status-trigger").attributes.max_w,292);
-  f.click("screenshot-mode-toggle");assert.equal(f.state["agent-workspace.screenshot-mode.v1"],true);assert.equal(f.calls.length,before);
+test("the strip reserves measured mode width and reclaims the removed Privacy button's space", () => {
+  const f = fixture(); f.bar.width = 500; f.bar.modeWidth = 68;
+  const before = f.calls.length;
+  assert.equal(find(f.render(), "quota-status-trigger").attributes.max_w, 386);
+  assert.equal(find(f.render(), "screenshot-mode-toggle"), undefined);
+  find(f.render(), "quota-status-mode").events.on_size_change({ width: 90 }, f.cx);
+  assert.equal(find(f.render(), "quota-status-trigger").attributes.max_w, 364);
+  assert.equal(f.calls.length, before);
+});
+
+test("status labels retain HEAD countdown formatting in remaining and used modes", async () => {
+  const f = fixture({ "sessions-plus.quota-hidden": ["agy"] }), now = 1800000000000;
+  await f.finish({ claude: { windows: [row("5h", 29, now + 241 * 60000), row("7d", 6, now + 9240 * 60000)] }, codex: { windows: [row("7d", 31, now + 8820 * 60000)] } });
+  let tree = f.render(), claude = find(tree, "quota-status-claude"), codex = find(tree, "quota-status-codex");
+  assert.equal(text(claude).trim(), "5h 71% 4h 1m · 7d 94% 6d 10h");
+  assert.equal(text(codex).trim(), "7d 69% 6d 3h");
+  assert.match(claude.attributes.tooltip, /Claude Code · Remaining/); assert.match(claude.attributes.tooltip, /5h: 71%.*Resets in/); assert.match(codex.attributes.tooltip, /7d: 69%.*Resets in/);
+  f.click("quota-status-mode"); tree = f.render();
+  assert.equal(text(find(tree, "quota-status-claude")).trim(), "5h 29% 4h 1m · 7d 6% 6d 10h");
+  assert.equal(text(find(tree, "quota-status-codex")).trim(), "7d 31% 6d 3h");
+  assert.match(find(tree, "quota-status-claude").attributes.tooltip, /Claude Code · Used/);
+  assert.doesNotMatch(text(find(tree, "quota-status-trigger")), /used/); assert.equal(f.calls.length, 2);
+});
+
+test("HEAD progress bars remain one 32px strip bar and one full-width detail bar per metered window", async () => {
+  const f = fixture({ "sessions-plus.quota-hidden": ["codex", "agy"] });
+  await f.finish({ claude: { windows: [row("5h", 10), row("7d", 80)] } });
+  let tree = f.render(), bars = nodes(find(tree, "quota-status-claude")).filter(node => node.attributes.w === 32 && node.attributes.h === 5);
+  assert.equal(bars.length, 1); assert.equal(bars[0].attributes.min_w, undefined); assert.equal(bars[0].childNodes[0].attributes.w, "20%");
+  let details = nodes(find(tree, "quota-card-claude")).filter(node => Object.hasOwn(node.attributes, "w_full") && node.attributes.h === 5);
+  assert.equal(details.length, 2); assert(details.every(node => node.attributes.min_w === undefined));
+  assert.match(text(find(tree, "quota-card-claude")), /Resets in/); assert.match(text(find(tree, "sessions-quota")), /Local accounts · Refreshes every 5 min/);
+  assert.equal(find(tree, "quota-refresh").attributes.tooltip, "Refresh available in 60s");
+  f.click("quota-status-mode"); tree = f.render();
+  bars = nodes(find(tree, "quota-status-claude")).filter(node => node.attributes.w === 32 && node.attributes.h === 5);
+  assert.equal(bars[0].childNodes[0].attributes.w, "80%");
+  details = nodes(find(tree, "quota-card-claude")).filter(node => Object.hasOwn(node.attributes, "w_full") && node.attributes.h === 5);
+  assert.deepEqual(details.map(node => node.childNodes[0].attributes.w), ["10%", "80%"]); assert.equal(f.calls.length, 1);
+});
+
+test("full Remaining and Used labels still toggle from the strip and details without a Privacy control", async () => {
+  const f = fixture(); await f.finish(); let tree = f.render(); const before = f.calls.length;
+  assert.equal(text(find(tree, "quota-status-mode")), "Remaining"); assert.equal(find(tree, "quota-status-mode").attributes.h, 24);
+  assert.equal(find(tree, "screenshot-mode-toggle"), undefined); assert.doesNotMatch(text(find(tree, "quota-statusbar")), /Privacy/);
+  f.click("quota-status-mode"); tree = f.render(); assert.equal(text(find(tree, "quota-status-mode")), "Used"); assert.equal(f.state["sessions-plus.quota-mode"], "used");
+  f.open(true); f.click("quota-remaining"); assert.equal(text(find(f.render(), "quota-status-mode")), "Remaining");
+  f.click("quota-used"); assert.equal(text(find(f.render(), "quota-status-mode")), "Used"); assert.equal(f.calls.length, before);
+});
+
+test("every remaining clickable quota strip control shares centered 24px height and 16px line height", async () => {
+  const f = fixture(); await f.finish(); const tree = f.render();
+  for (const id of ["quota-status-trigger", "quota-status-mode", "quota-status-claude", "quota-status-codex", "quota-status-agy", "quota-status-refresh"]) {
+    const control = find(tree, id); assert(control, id); assert(Object.hasOwn(control.attributes, "items_center"), id); assert.equal(control.attributes.h ?? control.attributes.size, 24, id); assert.equal(control.attributes.line_height, "16px", id);
+  }
+  for (const provider of Object.keys(PROVIDERS)) {
+    const group = find(tree, "quota-status-" + provider), label = find(tree, "quota-status-label-" + provider), bar = nodes(group).find(node => node.attributes.w === 32 && node.attributes.h === 5);
+    assert(Object.hasOwn(label.attributes, "items_center")); assert.equal(label.attributes.line_height, "16px"); assert.equal(label.attributes.h, 24); assert(bar); assert(group.childNodes.includes(find(tree, "icon-" + provider)));
+  }
 });

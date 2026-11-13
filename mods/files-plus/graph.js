@@ -1,3 +1,4 @@
+import { TYPE } from "./type-scale.js";
 import { div, PathBuilder } from "gpui-kit";
 import { v_flex, h_flex, v_virtual_list, VirtualListScrollHandle, Input, InputState } from "gpui-base";
 import { exec, appHome, theme, settings, openOverlay, closeOverlay } from "herdr";
@@ -44,27 +45,27 @@ export default class GitGraph {
   }
   row(row, t) {
     return h_flex().h(32).w_full().min_w(0).items_center().gap(8).bg(this.selected?.hash === row.hash ? t.selected : t.background)
-      .child(this.lane(row, t)).child(div().w(68).flex_none().text_size(10.5).text_color(row.head ? t.accent : t.dim).child(row.hash.slice(0, 8)))
+      .child(this.lane(row, t)).child(div().w(68).flex_none().text_size(TYPE.xs).text_color(row.head ? t.accent : t.dim).child(row.hash.slice(0, 8)))
       .child(div().flex_1().min_w(0).truncate().tooltip(row.subject).child(`${row.head ? "HEAD · " : ""}${row.refs.length ? row.refs.join(" · ") + "  │  " : ""}${row.subject || "(no subject)"}`))
-      .child(div().w(110).flex_none().truncate().text_size(10.5).text_color(t.dim).child(row.author))
-      .child(div().w(78).flex_none().text_size(10).text_color(t.dim).child(new Date(row.time * 1000).toLocaleDateString()));
+      .child(div().w(110).flex_none().truncate().text_size(TYPE.xs).text_color(t.dim).child(row.author))
+      .child(div().w(78).flex_none().text_size(TYPE.xs).text_color(t.dim).child(new Date(row.time * 1000).toLocaleDateString()));
   }
   close() { this.closed = true; ++this.revision; this.branchInput?.release(); this.scroll?.release(); }
   render() {
     const t = theme(), revision = this.revision, rows = this.rows, choices = [{ name: "all", label: "All branches" }, { name: "HEAD", label: "Current HEAD" }, ...this.refs].filter(ref => ref.label.toLocaleLowerCase().includes(this.branchQuery.toLocaleLowerCase())).slice(0, 100);
     const button = (id, title, action, disabled = false) => div().id(id).px(8).py(5).flex_none().rounded(5).bg(t.raised).text_color(disabled ? t.dim : t.foreground).when(!disabled, el => el.cursor_pointer().hover(el => el.bg(t.hover))).on_click((_event, cx) => { if (!disabled) action(cx); }).child(title);
-    return v_flex().id("git-graph").size_full().min_h(0).min_w(0).p(13).gap(8).rounded(10).border_1().border_color(t.border).bg(t.popover).text_color(t.foreground).text_size(12).track_focus(this.handle)
+    return v_flex().id("git-graph").size_full().min_h(0).min_w(0).p(13).gap(8).rounded(10).border_1().border_color(t.border).bg(t.popover).text_color(t.foreground).text_size(TYPE.md).track_focus(this.handle)
       .on_key_down((event, cx) => { if (event.key === "escape") { closeOverlay(this.p.overlay); cx.stop_propagation(); } })
-      .child(h_flex().flex_none().gap(7).items_center().child(div().flex_1().font_semibold().text_size(15).child("Git graph"))
+      .child(h_flex().flex_none().gap(7).items_center().child(div().flex_1().font_semibold().text_size(TYPE.lg).child("Git graph"))
         .child(button("graph-branches", this.selection === "all" ? "All branches ▾" : this.selection === "HEAD" ? "Current HEAD ▾" : this.selection.replace(/^refs\/(heads|remotes|tags)\//, "") + " ▾", cx => { this.branchMenu = !this.branchMenu; cx.notify(); }, this.loading))
-        .child(button("graph-refresh", this.loading ? "Reading…" : "Refresh", cx => this.refresh(cx), this.loading)))
-      .child(div().flex_none().truncate().text_size(10.5).text_color(t.dim).tooltip(this.data?.root || this.context.cwd || "").child(`${this.context.on || "This computer"} · ${this.data?.root || this.context.cwd || "No folder"}`))
+        .child(button("graph-refresh", this.loading ? "Reading…" : "Refresh", cx => this.refresh(cx), this.loading).tooltip("Read only · refs are from the last fetch")))
+      .child(div().flex_none().truncate().text_size(TYPE.xs).text_color(t.dim).tooltip(this.data?.root || this.context.cwd || "").child(`${this.context.on || "This computer"} · ${this.data?.root || this.context.cwd || "No folder"}`))
       .when(this.branchMenu, el => el.child(v_flex().id("graph-branch-picker").max_h(220).flex_none().gap(3).overflow_y_scrollbar().child(Input.new(this.branchInput).h(30).px(7).bg(t.background).border_1().border_color(t.border)).children(choices.map(ref => button(`graph-branch-${ref.name}`, ref.label, cx => this.chooseBranch(ref.name, cx))))))
       .when(Boolean(this.error), el => el.child(div().flex_none().text_color(t.blocked).child(`${this.stale ? "Stale graph · " : ""}${this.error}`)))
       .child(div().id("graph-list-wrap").flex_1().min_h(0).min_w(0).overflow_hidden().child(v_virtual_list("graph-commits", rows.length, 32, index => `${revision}:${rows[index].hash}`, range => rows.slice(range.start, range.end).map(row => this.row(row, t))).track_scroll(this.scroll).size_full().on_item_click((key, cx) => { const prefix = `${revision}:`; if (typeof key === "string" && key.startsWith(prefix)) this.pick(key.slice(prefix.length), cx, revision); })))
       .when(!rows.length && !this.loading && !this.error, el => el.child(div().p(12).text_color(t.dim).child("This checkout has no commits in the selected view.")))
       .when(Boolean(this.selected), el => el.child(h_flex().flex_none().gap(7).items_center().child(div().flex_1().min_w(0).truncate().text_color(t.muted).child(`${this.selected.hash.slice(0, 8)} · ${this.selected.subject}`))
         .child(button("graph-copy", "Copy SHA", cx => cx.write_to_clipboard(this.selected.hash))).child(button("graph-diff", "Open commit diff", () => this.diff(), this.loading || this.stale))))
-      .child(div().flex_none().text_size(10.5).text_color(t.dim).child(`Read only · ${rows.length} commits${this.data?.limited ? " · first 200, choose a branch to narrow history" : ""}${this.data?.refsLimited ? " · branch list limited to 500" : ""} · refs are from the last fetch`));
+      .child(div().flex_none().text_size(TYPE.xs).text_color(t.dim).tooltip("Read only · refs are from the last fetch").child(`${rows.length} commits${this.data?.limited ? " · first 200, choose a branch to narrow history" : ""}${this.data?.refsLimited ? " · branch list limited to 500" : ""}`));
   }
 }

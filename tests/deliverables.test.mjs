@@ -1,3 +1,4 @@
+import { uiFunction } from "./helpers/ui-function.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import fs from "node:fs/promises";
@@ -76,7 +77,7 @@ function harness({ data = add(), captured = scope, local = new Map(), defer = fa
     const result = storage.changeDeliverables(state, request); state = result.state; return { ...storage.deliverableView(state, request), changed: result.changed };
   };
   const deps = { ...model, div: element, h_flex: element, v_flex: element, Input: { new: element }, Textarea: { new: element }, InputState: { new: input }, TextareaState: { new: input }, appHome: () => "/fixture/herdr", exec: () => { throw new Error("No CLI during native class test"); }, createDeliverablesClient: () => client, projectContext: () => captured, theme: () => ({}), shared: key => map.get(key), setShared: (key, value) => map.set(key, value), readTextFile: async () => "{}", openOverlay: value => opens.push(value), closeOverlay() {}, localStorage: { getItem: key => local.get(key) ?? null, setItem: (key, value) => local.set(key, value), removeItem: key => local.delete(key) } };
-  const source = readFileSync(new URL("../mods/sessions-plus/deliverables.js", import.meta.url), "utf8").replace(/^import .*;\n/gm, "").replace("export default class", "return class"), Role = new Function(...Object.keys(deps), source)(...Object.values(deps)), view = new Role(); view.init({ root: captured.root, on: captured.on }, cx);
+  const source = readFileSync(new URL("../mods/sessions-plus/deliverables.js", import.meta.url), "utf8").replace(/^import .*;\n/gm, "").replace("export default class", "return class"), Role = uiFunction(...Object.keys(deps), source)(...Object.values(deps)), view = new Role(); view.init({ root: captured.root, on: captured.on }, cx);
   return { view, cx, calls, opens, urls, inputs, local, queued, state: () => state, setState: value => { state = value; }, async settle() { for (let i = 0; i < 12 && tasks.length; i++) await Promise.all(tasks.splice(0)); }, render() { rendering = true; try { return view.render(cx); } finally { rendering = false; } }, click(id) { const row = allNodes(this.render()).find(row => row.attrs.id === id); assert(row, id); row.events.on_click({}, cx); } };
 }
 

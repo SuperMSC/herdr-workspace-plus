@@ -4,7 +4,6 @@ import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSy
 import { dirname, join } from "node:path";
 import { scan, preview, codexOrigin } from "../mods/sessions-plus/history.mjs";
 import { sessionKey, filterRows, historyGroup, historyTime } from "../mods/sessions-plus/model.js";
-import { inboxRows, dismissUpdate } from "../mods/sessions-plus/inbox-model.js";
 const id = "11111111-1111-4111-8111-111111111111", other = "22222222-2222-4222-8222-222222222222";
 const put = (path, rows) => { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, rows.map(row => JSON.stringify(row)).join("\n") + "\n"); };
 function fixture(t) {
@@ -87,28 +86,4 @@ test("source filtering composes with provider, directory, and ID search; groups 
   assert.equal(historyGroup(rows[0], now), "Today"); assert.equal(historyGroup(rows[1], now), "Yesterday"); assert.equal(historyGroup({ live: true }, now), "Running");
   assert.match(historyTime(rows[0], now), /Updated 11h ago · 11111111/);
   assert.equal(historyGroup({}, now), "Unknown date");
-});
-
-test("dismissed Inbox updates return on new work, status change, or reused terminal identity", () => {
-  const agents = [{ address: "t1", status: "blocked", seq: 10 }, { address: "t2", status: "idle", seq: 3 }], terminals = [{ address: "t1", created_ms: 100 }];
-  const row = inboxRows(agents, terminals)[0], dismissed = dismissUpdate(row, agents, terminals, {});
-  assert.equal(inboxRows(agents, terminals, dismissed)[0].dismissed, true);
-  assert.equal(inboxRows([{ ...agents[0], seq: 11 }], terminals, dismissed)[0].dismissed, false);
-  assert.equal(inboxRows([{ ...agents[0], status: "working" }], terminals, dismissed)[0].dismissed, false);
-  assert.equal(inboxRows(agents, [{ address: "t1", created_ms: 200 }], dismissed)[0].dismissed, false);
-  assert.equal(dismissUpdate(row, [{ ...agents[0], seq: 11 }], terminals, dismissed), null);
-  assert.deepEqual(dismissUpdate(row, agents, terminals, dismissed, true), {});
-  assert.deepEqual(inboxRows([{ address: "t2", status: "idle" }]), []);
-});
-
-test("Inbox excludes stopped terminals and never permanently dismisses missing-sequence updates", () => {
-  const agent = { address: "t1", status: "done", title: "Completed" };
-  assert.deepEqual(inboxRows([agent], [{ address: "t1", state: "finished" }]), []);
-  assert.deepEqual(inboxRows([agent], [{ address: "t1", state: "disconnected" }]), []);
-  const row = inboxRows([agent], [], {}, 1000)[0];
-  const dismissed = dismissUpdate(row, [agent], [], {}, false, 1000);
-  assert.equal(inboxRows([agent], [], dismissed, 2000)[0].dismissed, true);
-  assert.equal(inboxRows([agent], [], dismissed, 61000)[0].dismissed, false);
-  assert.equal(inboxRows([{ ...agent, title: "New task" }], [], dismissed, 2000)[0].dismissed, false);
-  assert.deepEqual(inboxRows([], [], dismissed), []);
 });

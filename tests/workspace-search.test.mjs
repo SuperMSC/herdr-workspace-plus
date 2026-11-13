@@ -1,3 +1,4 @@
+import { uiFunction } from "./helpers/ui-function.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
@@ -19,7 +20,7 @@ function element() {
 }
 function load(name, deps) {
   const source = readFileSync(new URL(`../mods/files-plus/${name}.js`, import.meta.url), "utf8").replace(/^import .*;\n/gm, "").replace("export default class", "return class");
-  return new Function(...Object.keys(deps), source)(...Object.values(deps));
+  return uiFunction(...Object.keys(deps), source)(...Object.values(deps));
 }
 const deferred = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; };
 const flush = async () => { for (let i = 0; i < 12; i++) await Promise.resolve(); };
@@ -82,6 +83,17 @@ test("production workspace search uses two workers, preserves source ordering, a
   f.render(f.view);
 });
 
+test("production search keeps fixed limits in Refresh's tooltip and active warnings in the panel", () => {
+  const f = searchFixture(), nodes = node => !node || typeof node !== "object" ? [] : [node, ...node.childNodes.flatMap(nodes)];
+  const text = node => typeof node === "string" ? node : node?.childNodes?.map(text).join("\n") || "";
+  let tree = f.render(f.view), refresh = nodes(tree).find(node => node.attrs.id === "search-refresh");
+  assert.match(refresh.attrs.tooltip, /respects ignore rules · up to 500 matches \/ 30 per file/);
+  assert.doesNotMatch(text(tree), /Read only|respects ignore rules|files up to 2 MiB/);
+  assert.match(text(tree), /0 matches · 0 files/);
+  f.view.warning = "Search stopped at 500 matches.";
+  tree = f.render(f.view); assert.match(text(tree), /Search stopped at 500 matches/);
+});
+
 test("production stale searches cannot replace a later query or launch additional old roots", async () => {
   const roots = ["/one", "/two", "/three"].map(root => ({ root, on: "server" })), f = searchFixture({ roots });
   f.view.query.set_value("old"); f.view.run(f.cx); assert.equal(f.calls.length, 2);
@@ -122,7 +134,7 @@ test("production reference captures the clicked root, machine, relative path and
   f.view.choose({ root: "/third", on: null, path: "other.js", line: 2 }, f.cx); f.focus({ cwd: "/new", on: "new-server" });
   f.reads[0].resolve("{}"); await flush();
   assert.deepEqual(f.opens[0].props.reference, { root: "/second", on: "server", relative: "path with spaces/file.js", line: 71 });
-  assert.equal(f.opens[0].props.role, "reference");
+  assert.equal(f.opens[0].props.role, "prompt-queue");
   const g = searchFixture(); g.view.choose(match, g.cx); g.view.reference(g.cx); g.view.close(); g.reads[0].resolve("{}"); await flush();
   assert.equal(g.opens.length, 0);
 });

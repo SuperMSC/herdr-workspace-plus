@@ -1,3 +1,4 @@
+import { uiFunction } from "./helpers/ui-function.mjs";
 import * as libraryModel from "../mods/files-plus/library-model.js";
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -6,7 +7,7 @@ import * as previewModel from '../mods/files-plus/preview-model.js';
 import * as searchModel from '../mods/files-plus/search-model.js';
 import * as findModel from '../mods/files-plus/file-find-model.js';
 function element() { const target = { childNodes: [], attrs: {}, events: {} }; let proxy; proxy = new Proxy(target, { get(obj, key) { if (key === 'child') return value => { obj.childNodes.push(value); return proxy; }; if (key === 'children') return values => { obj.childNodes.push(...values); return proxy; }; if (key === 'when') return (value, fn) => value ? fn(proxy) : proxy; if (key in obj) return obj[key]; if (key.startsWith('on_')) return (...args) => { obj.events[key] = args.at(-1); return proxy; }; return value => { obj.attrs[key] = value; return proxy; }; } }); return proxy; }
-function load(name, deps) { const source = readFileSync(new URL(`../mods/files-plus/${name}.js`, import.meta.url), 'utf8').replace(/^import .*;\n/gm, '').replace('export default class', 'return class'); return new Function(...Object.keys(deps), source)(...Object.values(deps)); }
+function load(name, deps) { const source = readFileSync(new URL(`../mods/files-plus/${name}.js`, import.meta.url), 'utf8').replace(/^import .*;\n/gm, '').replace('export default class', 'return class'); return uiFunction(...Object.keys(deps), source)(...Object.values(deps)); }
 function input(options = {}) { let value = options.value || ''; const events = {}; return { value: () => value, set_value: next => { value = next; }, on(event, callback) { events[event] = callback; }, emit(event, value, cx) { events[event]?.(value, cx); }, release() { this.released = true; }, focus() { this.focused = true; }, set_selected_range(range) { this.selection = range; } }; }
 const nodes = node => !node || typeof node !== 'object' ? [] : [node, ...node.childNodes.flatMap(nodes)];
 const find = (tree, id) => nodes(tree).find(node => node.attrs.id === id);

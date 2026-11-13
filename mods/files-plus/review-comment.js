@@ -1,3 +1,4 @@
+import { TYPE } from "./type-scale.js";
 import { div } from "gpui-kit";
 import { v_flex, h_flex, Editor, EditorState } from "gpui-base";
 import { shared, setShared, theme, closeOverlay } from "herdr";
@@ -26,13 +27,12 @@ export default class ReviewComment {
   render() {
     const t = theme();
     const action = (id, title, callback) => div().id(id).h(30).px(10).rounded(6).bg(t.raised).flex().items_center().cursor_pointer().hover(el => el.bg(t.hover)).on_click(callback).child(title);
-    return v_flex().id("review-comment").size_full().min_h(0).p(18).gap(10).rounded(10).border_1().border_color(t.border).bg(t.popover).text_color(t.foreground).text_size(12).track_focus(this.handle)
+    return v_flex().id("review-comment").size_full().min_h(0).p(18).gap(10).rounded(10).border_1().border_color(t.border).bg(t.popover).text_color(t.foreground).text_size(TYPE.md).track_focus(this.handle)
       .on_key_down((event, cx) => { if (event.key === "escape") { closeOverlay(this.p.overlay); cx.stop_propagation(); } })
-      .child(div().font_semibold().text_size(15).child(this.editing ? "Edit review comment" : "Add review comment"))
+      .child(div().font_semibold().text_size(TYPE.lg).child(this.editing ? "Edit review comment" : "Add review comment"))
       .child(div().text_color(t.muted).truncate().tooltip(this.anchor ? commentLabel(this.anchor) : "").child(this.anchor ? commentLabel(this.anchor) : "No selection"))
-      .when(Boolean(this.anchor?.snippet), el => el.child(div().max_h(100).overflow_y_scrollbar().p(8).bg(t.background).text_size(11).child(this.anchor.snippet)))
-      .child(div().flex_1().min_h(90).border_1().border_color(t.border).rounded(6).child(Editor.new(this.editor).size_full()))
-      .child(div().text_size(10).text_color(t.dim).child(`Saved locally as a review draft · up to ${COMMENT_LIMIT.toLocaleString()} characters`))
+      .when(Boolean(this.anchor?.snippet), el => el.child(div().max_h(100).overflow_y_scrollbar().p(8).bg(t.background).text_size(TYPE.sm).child(this.anchor.snippet)))
+      .child(div().flex_1().min_h(90).border_1().border_color(t.border).rounded(6).tooltip(`Saved locally as a review draft · up to ${COMMENT_LIMIT.toLocaleString()} characters`).child(Editor.new(this.editor).size_full()))
       .when(Boolean(this.error), el => el.child(div().text_color(t.ansi1).child(this.error)))
       .child(h_flex().flex_none().gap(8).justify_end()
         .child(action("review-comment-cancel", "Cancel", () => closeOverlay(this.p.overlay)))
