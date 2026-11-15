@@ -544,6 +544,16 @@ export default class ProjectSpaces extends View {
       .child(div().text_color(tone(t, w.status)).child(glyph(w.status)));
   }
 
+  expandSidebar() {
+    const sidebar = find(layout(), "sidebar");
+    if (!sidebar) return;
+    const saved = shared("sidebar.width"), width = Number.isFinite(saved) && saved >= 160 ? saved : 268;
+    const min = Math.max(160, Number.isFinite(sidebar.min) ? sidebar.min : 0);
+    const max = Number.isFinite(sidebar.max) && sidebar.max >= min ? sidebar.max : Infinity;
+    setShared("sidebar.collapsed", false);
+    run("layout.resize", { id: sidebar.id, px: Math.min(max, Math.max(min, width)) });
+  }
+
   render(cx) {
     const mask = privacyGuard("Projects", this.p); if (mask) return mask;
     if (this.role) return this.role.render(cx);
@@ -561,7 +571,11 @@ export default class ProjectSpaces extends View {
     // Projects a space can move to, whatever is shown now.
     this.lastProjects = this.unifiedView || st.mode === "project" ? groups : buildGroups(this.lastRows, { ...st, mode: "project" }, { home: this.home });
     const title = st.mode === "project" ? "Projects" : "Spaces", density = projectDensity(shared(DENSITY_KEY));
-    if (this.unifiedView) return this.unifiedView.render({ groups, fullGroups: groups, state: st, density, query: this.queryText, filter: this.projectFilter, collapsed, snapshots, home: this.home, popupTooltipState: this.tooltipState() }, this, cx);
+    const radius = find(layout(), "workspace-sidebar-surface")?.radius;
+    if (this.unifiedView) {
+      const content = this.unifiedView.render({ groups, fullGroups: groups, state: st, density, query: this.queryText, filter: this.projectFilter, collapsed, snapshots, home: this.home, popupTooltipState: this.tooltipState() }, this, cx);
+      return Number.isFinite(radius) ? content.rounded_t(radius).overflow_hidden() : content;
+    }
     const filteredGroups = filterProjectGroups(groups, { query: this.queryText, filter: this.projectFilter });
     const button = (id, icon, tip, action) => div().id(id).size(26).flex_none().flex().items_center().justify_center().rounded(6)
       .hover(s => s.bg(t.hover).text_color(t.foreground)).when(!this.tooltipState()?.open, el => el.tooltip(tip)).on_click(action).child(svg(chrome(icon)).size(14));
@@ -576,11 +590,13 @@ export default class ProjectSpaces extends View {
         .hover(s => s.bg(t.hover).text_color(t.foreground)).on_click(() => run("space.new"))
         .child(svg(chrome("plus")).size(12)).child(machines().some(m => m.layout === "loading") ? "Loading…" : "New space"));
     }
-    return v_flex().size_full().min_h(0).bg(t.chrome).text_size(TYPE.md).text_color(t.dim)
+    return v_flex().size_full().min_h(0).rounded_t(Number.isFinite(radius) ? radius : 0).overflow_hidden().bg(t.chrome).text_size(TYPE.md).text_color(t.dim)
       .child(h_flex().id(this.tooltipKey("space-toolbar")).h(31).pl(16).pr(10).gap(2).items_center().text_size(TYPE.sm)
         .when(!collapsed, el => el.child(div().flex_1().child(title)).child(button("space-view", "layers", "Group, sort and display", () => this.viewMenu())))
-        .when(collapsed, el => el.justify_center())
+        .when(collapsed, el => el.px(0).justify_center())
         .child(button("space-new", "plus", "New space", () => run("space.new"))))
+      .when(collapsed, el => el.child(h_flex().h(28).flex_none().justify_center().items_center()
+        .child(button("space-expand-sidebar", "chevron-right", "Expand sidebar", () => this.expandSidebar()))))
       .when(!collapsed, el => el.child(v_flex().flex_none().px(8).pb(6).gap(5)
         .child(Input.new(this.queryInput).h(28).px(7).bg(t.surface).border_1().border_color(t.input).rounded(5))
         .child(h_flex().gap(3).children([["all", "All"], ["active", "Active"], ["attention", "Needs attention"]].map(([key, label]) => div().id(`project-filter-${key}`).px(6).py(4).rounded(4).text_size(TYPE.xs).bg(this.projectFilter === key ? t.selected : t.raised).text_color(this.projectFilter === key ? t.foreground : t.dim).cursor_pointer().on_click((_event, cx) => { this.projectFilter = key; setShared(FILTER_KEY, key); cx.notify(); }).child(label))))))

@@ -29,30 +29,30 @@ export default class Actions {
     if (!item || item.disabled) return;
     closeOverlay(this.p.overlay);
     if (item.id === "notes") {
-      openOverlay({ mod: "sessions-plus", kind: "dialog", frame: "none", width: 800, height: 680,
+      openOverlay({ mod: "sessions-plus", kind: "dialog", width: 800, height: 680,
         props: { role: "notes", project: { ...this.project }, session: { ...this.target }, initial: "session" } });
       return;
     }
     if (item.id === "prompt-queue") {
-      openOverlay({ mod: "sessions-plus", kind: "dialog", frame: "none", width: 660, height: 650,
+      openOverlay({ mod: "sessions-plus", kind: "dialog", width: 660, height: 650,
         props: { role: "prompt-queue", target: { ...this.promptTarget } } });
       return;
     }
     const role = ["timeline", "gallery", "screen-picker"].includes(item.id) ? item.id : item.id === "preview" ? "preview" : item.id === "rename" ? "rename" : "trash-dialog";
     if (["timeline", "gallery", "screen-picker"].includes(item.id)) {
       const viewport = globalThis.window.viewport_size(), zoom = Number(settings().zoom) || 1;
-      openOverlay({ mod: "sessions-plus", kind: "dialog", frame: "none", width: Math.min(940, viewport.width / zoom * .93), height: Math.min(760, viewport.height / zoom * .9),
+      openOverlay({ mod: "sessions-plus", kind: "dialog", width: Math.min(940, viewport.width / zoom * .93), height: Math.min(760, viewport.height / zoom * .9),
         props: { role, target: item.id === "screen-picker" ? this.pickerTarget : { ...this.target }, node: this.p.node, stores: this.p.stores } });
       return;
     }
-    openOverlay({ mod: "sessions-plus", kind: "dialog", frame: "none", width: item.id === "preview" ? 600 : item.id === "rename" ? 420 : 460, height: item.id === "preview" ? 460 : item.id === "rename" ? 240 : 360,
+    openOverlay({ mod: "sessions-plus", kind: "dialog", width: item.id === "preview" ? 600 : item.id === "rename" ? 420 : 460, height: item.id === "preview" ? 460 : item.id === "rename" ? 240 : 360,
       props: { role, action: "trash", target: { ...this.target }, node: this.p.node, stores: this.p.stores } });
   }
 
   render() {
     const t = theme();
     return v_flex().id("sessions-actions").size_full().min_h(0).overflow_y_scrollbar().p(6).gap(4).bg(t.popover || t.surface).text_color(t.foreground).text_size(TYPE.md)
-      .track_focus(this.handle).on_key_down((event, cx) => {
+      .track_focus(this.handle).pr(16).on_key_down((event, cx) => {
         if (event.key === "escape") closeOverlay(this.p.overlay);
         else if (event.key === "down" || event.key === "up") {
           const step = event.key === "down" ? 1 : -1;

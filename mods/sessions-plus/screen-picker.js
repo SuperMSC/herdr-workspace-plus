@@ -61,7 +61,7 @@ export default class ScreenPicker {
           if (row.kind !== "url" || !row.openable || !/^https?:\/\//i.test(row.value)) throw new Error("Only a selected HTTP(S) URL without embedded credentials can open in the browser.");
           cx.open_url(row.value); this.status = "Opened the selected URL";
         } else if (kind === "reference") {
-          openOverlay({ mod: "sessions-plus", kind: "dialog", frame: "none", width: 660, height: 640, props: { role: "prompt-queue", title: "Terminal screen reference", text: screenReference(row, this.target), on: this.target.on } });
+          openOverlay({ mod: "sessions-plus", kind: "dialog", width: 660, height: 640, props: { role: "prompt-queue", title: "Terminal screen reference", text: screenReference(row, this.target), on: this.target.on } });
           this.status = "Reference opened for review before adding to pending prompts";
         } else if (kind === "file") {
           const path = row.kind === "path" ? screenPath(row.value, this.target) : null;
@@ -95,14 +95,14 @@ export default class ScreenPicker {
     const t = theme(), rows = this.filtered(), shown = rows.slice(this.page * SCREEN_LIMITS.page, (this.page + 1) * SCREEN_LIMITS.page), selected = this.selected(), disabled = this.loading || this.busy;
     const button = (id, label, callback, off = false) => div().id(id).px(8).py(5).flex_none().rounded(5).bg(t.raised).text_color(off ? t.dim : t.foreground)
       .when(!off, el => el.cursor_pointer().hover(row => row.bg(t.hover))).on_click((_event, cx) => { cx.stop_propagation(); if (!off) callback(cx); }).child(label);
-    return v_flex().id("terminal-screen-picker").size_full().min_h(0).min_w(0).p(14).gap(8).rounded(10).border_1().border_color(t.border).bg(t.popover).text_color(t.foreground).text_size(TYPE.md).track_focus(this.handle).on_key_down((event, cx) => this.key(event, cx))
+    return v_flex().id("terminal-screen-picker").size_full().min_h(0).min_w(0).p(14).gap(8).bg(t.popover).text_color(t.foreground).text_size(TYPE.md).track_focus(this.handle).on_key_down((event, cx) => this.key(event, cx))
       .child(h_flex().gap(7).items_center().child(div().flex_1().font_semibold().text_size(TYPE.lg).child("Screen picker"))
         .child(button("screen-picker-depth", this.history ? "+ 200 history lines" : "Screen only", cx => { this.history = this.history ? 0 : SCREEN_LIMITS.history; this.refresh(cx); }, disabled || !this.client))
         .child(button("screen-picker-refresh", this.loading ? "Reading…" : "Refresh", cx => this.refresh(cx), disabled || !this.client)))
       .child(div().text_size(TYPE.xs).text_color(t.dim).truncate().tooltip(`${this.target?.address || ""}\n${this.target?.cwd || ""}\nRoot: ${this.target?.root || "unverified"}`).child(this.target ? `${this.target.on || "This computer"} · ${this.target.address} · ${this.target.cwd || "Folder unknown"}` : "No captured live terminal"))
       .child(Input.new(this.input).h(32).flex_none())
       .child(h_flex().flex_1().min_h(0).min_w(0).items_stretch().gap(9)
-        .child(v_flex().w(310).h_full().flex_none().min_h(0).gap(5).overflow_y_scrollbar().children(shown.map((row, index) => div().id(`screen-picker-row-${row.id}`).px(8).py(7).rounded(5).bg(selected?.id === row.id ? t.selected : t.raised).cursor_pointer().hover(el => el.bg(t.hover)).on_click((_event, cx) => this.choose(row, cx))
+        .child(v_flex().w(310).h_full().flex_none().min_h(0).gap(5).overflow_y_scrollbar().pr(16).children(shown.map((row, index) => div().id(`screen-picker-row-${row.id}`).px(8).py(7).rounded(5).bg(selected?.id === row.id ? t.selected : t.raised).cursor_pointer().hover(el => el.bg(t.hover)).on_click((_event, cx) => this.choose(row, cx))
           .child(h_flex().gap(6).items_center().child(div().w(16).font_semibold().text_color(t.muted).child(String.fromCharCode(97 + index))).child(div().flex_1().truncate().tooltip(row.value).child(row.value)))
           .child(div().text_size(TYPE.xs).text_color(t.dim).child(`${row.kind} · screen line ${row.sourceLine}`))))
           .when(!shown.length, el => el.child(div().p(10).text_color(t.muted).child(this.loading ? "Reading the captured screen…" : "No literal URLs or paths match this snapshot."))))
@@ -115,7 +115,7 @@ export default class ScreenPicker {
         .child(button("screen-picker-file", "Preview file", cx => this.action("file", cx), disabled || this.stale || !selected?.previewable))
         .child(button("screen-picker-url", "Open URL", cx => this.action("url", cx), disabled || this.stale || !selected?.openable))
         .child(button("screen-picker-reference", "Add to pending prompts…", cx => this.action("reference", cx), disabled || this.stale || !selected)))
-      .when(Boolean(this.error), el => el.child(div().max_h(70).overflow_y_scrollbar().text_size(TYPE.sm).text_color(t.ansi1).child(this.error)))
+      .when(Boolean(this.error), el => el.child(div().max_h(70).overflow_y_scrollbar().text_size(TYPE.sm).text_color(t.ansi1).pr(16).child(this.error)))
       .when(Boolean(this.status), el => el.child(div().text_size(TYPE.xs).text_color(t.muted).child(this.status)))
       .when(Boolean(this.snapshot?.limited || this.snapshot?.truncated || this.snapshot?.lineLimited), el => el.child(div().text_size(TYPE.xs).text_color(t.blocked).child(`${this.snapshot?.limited ? "First 200 unique candidates. " : ""}${this.snapshot?.truncated ? "Screen read reached 1 MiB; incomplete final line omitted. " : ""}${this.snapshot?.lineLimited ? "Long lines or excess lines were bounded. " : ""}`)))
       .child(div().text_size(TYPE.xs).text_color(t.dim).child("a–t select · Enter copies · / searches · Page Up/Down changes page · only explicit buttons open files, URLs or a reference"));

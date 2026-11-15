@@ -31,13 +31,13 @@ export default class HunkDialog {
     const t = theme(), request = this.request;
     const button = (id, label, callback, disabled) => div().id(id).h(30).px(12).rounded(6).bg(t.raised).flex().items_center().text_color(disabled ? t.dim : t.foreground)
       .when(!disabled, el => el.cursor_pointer().hover(row => row.bg(t.hover))).on_click((_event, cx) => { if (!disabled) callback(cx); }).child(label);
-    return v_flex().id("hunk-operation").size_full().min_h(0).p(18).gap(12).rounded(10).border_1().border_color(t.border).bg(t.popover).text_color(t.foreground).text_size(TYPE.md).track_focus(this.handle)
+    return v_flex().id("hunk-operation").size_full().min_h(0).p(18).gap(12).bg(t.popover).text_color(t.foreground).text_size(TYPE.md).track_focus(this.handle)
       .on_key_down((event, cx) => { if (event.key === "escape") { if (!this.busy) closeOverlay(this.p.overlay); cx.stop_propagation(); } })
       .child(div().font_semibold().text_size(TYPE.lg).child(request.action === "stage" ? "Stage selected hunk" : "Unstage selected hunk"))
       .child(div().truncate().tooltip(request.root + "/" + request.file.path).child(request.file.path || "No file selected"))
       .child(div().text_color(t.muted).child(request.hunk.header || ""))
       .child(div().text_color(t.dim).child("Only this hunk changes in the Git index. Working files and other staged changes are kept."))
-      .child(div().flex_1().min_h(30).overflow_y_scrollbar().text_color(this.error ? t.ansi1 : t.muted).child(this.error || "Checking source versions and updating the selected hunk…"))
+      .child(div().flex_1().min_h(30).overflow_y_scrollbar().text_color(this.error ? t.ansi1 : t.muted).pr(16).child(this.error || "Checking source versions and updating the selected hunk…"))
       .child(h_flex().flex_none().gap(8).justify_end()
         .child(button("hunk-close", "Close", () => closeOverlay(this.p.overlay), this.busy))
         .child(button("hunk-retry", this.busy ? "Working…" : "Retry captured hunk", cx => this.submit(cx), this.busy || this.done || this.invalid)));

@@ -44,6 +44,6 @@ test("Tools places every feature in a bounded scrolling list without launching a
   const source=readFileSync(new URL("../mods/sessions-plus/tools.js",import.meta.url),"utf8").replace(/^import .*;\n/gm,"").replace("export default class","return class");
   const Tools=uiFunction(...Object.keys(deps),source)(...Object.values(deps)),view=new Tools();view.init({}, {focus_handle:()=>({focus(){}})});
   const tree=view.render(),nodes=flat(tree).filter(node=>typeof node==="object");
-  const scroll=nodes.find(node=>Object.hasOwn(node.attrs,"overflow_y_scrollbar"));assert(scroll);assert.equal(scroll.childNodes.length,4);
+  const scroll=nodes.find(node=>Object.hasOwn(node.attrs,"overflow_y_scrollbar"));assert(scroll);assert.equal(scroll.childNodes.length,6);
   assert.equal(overlays.length,0);nodes.find(node=>node.attrs.id==="tool-privacy").events.on_click();assert.equal(toggled,1);assert.equal(overlays.length,0);
 });

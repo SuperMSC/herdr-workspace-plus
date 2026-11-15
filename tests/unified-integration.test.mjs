@@ -8,9 +8,9 @@ function fixture(props = { unified: true }, mode = 'project') {
   const calls = [], shared = new Map([[model.STATE_KEY, { mode, groups: {}, assign: {}, folded: [] }]]);
   const spaces = [{ id: 's', name: 'Demo', folder: '/demo/repo', machine: null, active: true, status: 'working', tabs: [{ id: 'tab', name: 'Task', named: true }] }];
   const agents = [{ address: 't1', space: 's', tab: 'tab', pane: 'p', status: 'working' }], terminals = [{ address: 't1', state: 'live', created_ms: 1, argv: ['claude'], cwd: '/demo/repo' }], panes = [{ pane: 'p', terminal: 't1', tab: 'tab', cwd: '/demo/repo' }], focus = { space: 's', tab: 'tab', pane: 'p', terminal: 't1' };
-  const input = { on() {}, release() { calls.push('release'); } };
+  const input = { on() {}, release() { calls.push('release'); } }, layout = { id: 'sidebar', size: { px: 268 }, min: 44, max: 480 };
   const dependencies = { ...model, View: class {}, props: () => props, shared: key => shared.get(key), setShared: (key, value) => shared.set(key, value), privacyGuard: () => null,
-    spaces: () => spaces, agents: () => agents, terminals: () => terminals, panes: () => panes, focused: () => focus, machines: () => [], layout: () => ({ id: 'sidebar', size: { px: 268 } }), home: () => '/demo', theme: () => ({}),
+    spaces: () => spaces, agents: () => agents, terminals: () => terminals, panes: () => panes, focused: () => focus, machines: () => [], layout: () => layout, home: () => '/demo', theme: () => ({}),
     InputState: { new: () => input }, UnifiedSidebar: class { init(p) { calls.push(['init', p]); } render(frame, owner, cx) { calls.push(['render', frame, owner, cx]); return 'UNIFIED'; } close() { calls.push('close'); } },
     Menu: class { init(p) { calls.push(['menu', p]); } render() { return 'MENU'; } }, Prompt: class {}, run: (...args) => calls.push(['run', ...args]), exec: () => { throw Error('No automatic execution'); }, openMenu: (...args) => calls.push(['open-menu', ...args]), menuRows: () => 1,
   };
@@ -19,8 +19,18 @@ function fixture(props = { unified: true }, mode = 'project') {
   const source = readFileSync(new URL('../mods/project-spaces/main.js', import.meta.url), 'utf8').replace(/^import[\s\S]*?;\n/gm, '').replace('export default class', 'return class');
   const Sidebar = uiFunction(...Object.keys(dependencies), source)(...Object.values(dependencies)), sidebar = new Sidebar(), cx = { timer: { every() {} }, notify() {} };
   sidebar.init({}, cx);
-  return { sidebar, cx, calls, shared, spaces, agents, terminals, panes, focus };
+  return { sidebar, cx, calls, shared, spaces, agents, terminals, panes, focus, layout };
 }
+
+test('collapsed sidebar restores the remembered expanded width, bounds invalid values and clears native collapse state', () => {
+  for (const [saved, expected] of [[352, 352], [undefined, 268], [76, 268], [NaN, 268], ['352', 268], [900, 480]]) {
+    const f = fixture(); f.layout.size.px = 76;
+    f.shared.set('sidebar.width', saved); f.shared.set('sidebar.collapsed', true);
+    f.sidebar.expandSidebar();
+    assert.deepEqual(f.calls.filter(c => c[0] === 'run'), [['run', 'layout.resize', { id: 'sidebar', px: expected }]]);
+    assert.equal(f.shared.get('sidebar.collapsed'), false); assert.equal(f.shared.get('sidebar.width'), saved);
+  }
+});
 
 test('unified main passes one complete machine-aware snapshot and canonical project groups in both views', () => {
   for (const mode of ['project', 'status']) {

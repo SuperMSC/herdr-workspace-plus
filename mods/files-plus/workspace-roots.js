@@ -55,11 +55,11 @@ export default class WorkspaceRoots {
   close() { this.disposed = true; this.input?.release(); }
   render() {
     const t = theme(), button = (id, label, action, disabled = false) => div().id(id).h(28).px(8).rounded(5).bg(t.raised).text_color(disabled ? t.dim : t.foreground).flex().items_center().when(!disabled, el => el.cursor_pointer().hover(row => row.bg(t.hover))).on_click((_e, cx) => { if (!disabled) action(cx); }).child(label);
-    return v_flex().id("workspace-folders").size_full().min_h(0).p(16).gap(9).rounded(10).border_1().border_color(t.border).bg(t.popover).text_color(t.foreground).text_size(TYPE.md).track_focus(this.handle)
+    return v_flex().id("workspace-folders").size_full().min_h(0).p(16).gap(9).bg(t.popover).text_color(t.foreground).text_size(TYPE.md).track_focus(this.handle)
       .on_key_down((event, cx) => { if (event.key === "escape" && !this.busy) { closeOverlay(this.p.overlay); cx.stop_propagation(); } })
       .child(div().font_semibold().text_size(TYPE.lg).child("Workspace folders"))
       .child(div().text_color(t.muted).child(`Folders stay attached to this workspace, including while a linked file is focused. Up to ${ROOT_LIMIT} folders on ${this.context.on || "this computer"}.`))
-      .child(v_flex().id("workspace-folder-list").flex_1().min_h(0).gap(6).overflow_y_scrollbar().children(this.roots.map((root, index) => h_flex().id(`workspace-folder-${index}`).gap(6).py(5).items_center()
+      .child(v_flex().id("workspace-folder-list").flex_1().min_h(0).gap(6).overflow_y_scrollbar().pr(16).children(this.roots.map((root, index) => h_flex().id(`workspace-folder-${index}`).gap(6).py(5).items_center()
         .child(v_flex().flex_1().min_w(0).child(div().font_semibold().truncate().child(root.name)).child(div().text_size(TYPE.xs).text_color(t.dim).truncate().tooltip(root.path).child(root.path)))
         .child(button(`workspace-up-${index}`, "↑", cx => this.move(index, -1, cx), this.busy || index === 0))
         .child(button(`workspace-down-${index}`, "↓", cx => this.move(index, 1, cx), this.busy || index === this.roots.length - 1))

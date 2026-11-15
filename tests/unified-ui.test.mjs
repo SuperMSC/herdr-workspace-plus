@@ -31,7 +31,7 @@ function harness({on=null}={}){
   agents:()=>f.snapshots.agents,terminals:()=>f.snapshots.terminals,spaces:()=>f.snapshots.spaces,panes:()=>f.snapshots.panes,focused:()=>f.snapshots.focus,theme:()=>({working:'#147',dim:'#777',idle:'#666',raised:'#111',selected:'#225',border:'#333',hover:'#444',accent:'#5bf',background:'#050',muted:'#888',foreground:'#eee'}),shared:key=>storage.get(key),setShared(key,value){assert(!rendering);storage.set(key,value);},run(...args){assert(!rendering);calls.push(args);},setAgentOrder:value=>orders.push(value),validateUnifiedTarget,
   unifiedRows:input=>{modelCalls++;return unifiedRows(input);}};
  const Class=uiFunction(...Object.keys(deps),source)(...Object.values(deps)),view=new Class();view.init({},cx);
- const owner={lastGroups:f.groups,lastRows:f.groups.flatMap(group=>group.rows),queryInput:{},projectFilter:'all',drag:null,state:()=>state,save(value){assert(!rendering);state=value;},viewMenu(){calls.push(['menu']);},spaceMenu(row){calls.push(['space-menu',row.w.id]);},groupMenu(group){calls.push(['group-menu',group.key]);},groupHead(group,_st,_t,_index,_density,_tree,pin){return element().id('owner-group-'+group.key).child(group.name).when(Boolean(pin),el=>el.child(pin));},row(row,_group,_st,_t,_density,_tree,pin){return element().id('owner-space-'+row.w.id).child(row.w.name).when(Boolean(pin),el=>el.child(pin));}};
+ const owner={expandSidebar(){calls.push(['expand-sidebar']);},lastGroups:f.groups,lastRows:f.groups.flatMap(group=>group.rows),queryInput:{},projectFilter:'all',drag:null,state:()=>state,save(value){assert(!rendering);state=value;},viewMenu(){calls.push(['menu']);},spaceMenu(row){calls.push(['space-menu',row.w.id]);},groupMenu(group){calls.push(['group-menu',group.key]);},groupHead(group,_st,_t,_index,_density,_tree,pin){return element().id('owner-group-'+group.key).child(group.name).when(Boolean(pin),el=>el.child(pin));},row(row,_group,_st,_t,_density,_tree,pin){return element().id('owner-space-'+row.w.id).child(row.w.name).when(Boolean(pin),el=>el.child(pin));}};
  const frame=()=>({state,density:storage.get(DENSITY_KEY)||'detailed',query:owner.queryText||'',filter:owner.projectFilter,collapsed:false,groups:f.groups,fullGroups:f.groups,snapshots:f.snapshots});
  return{...f,view,owner,cx,calls,orders,storage,notifications,frame,modelCalls:()=>modelCalls,advance(ms){clock+=ms;flush();},render(patch={},elapsed=200){clock+=elapsed;const current={...frame(),...patch};let tree;for(let round=0;round<4;round++){rendering=true;try{tree=view.render(current,owner,cx);}finally{rendering=false;}if(!timers.some(timer=>timer.at<=clock))break;flush();}return tree;},open(id){const item=nodes(this.render()).find(node=>node.attrs.id===id);assert(item,`missing ${id}`);item.events.on_open_change(true,cx);},click(id,patch={}){const item=nodes(this.render(patch)).find(node=>node.attrs.id===id);assert(item,`missing ${id}`);item.events.on_click({},cx);}};
 }
@@ -187,24 +187,28 @@ test('visible tree guides are finite, per-row and event-free without changing ca
  f.view.page=9;const onAnotherPage=f.view.entityRow(row,0,f.frame(),f.cx);assert.deepEqual(nodes(onAnotherPage).filter(node=>String(node.attrs.id||'').startsWith('unified-guide-')).map(node=>node.attrs.left),[13,33]);
 });
 
-test('shell and non-agent process rows stay single-line while Unknown has an explicit status',()=>{
- const f=harness();f.render();const original=f.view.result.rows.find(row=>row.address==='t1'),row={...original,title:'zsh',taskTitle:'zsh',agent:false,kind:'terminal',status:'unknown',actualStatus:'unknown',branchStatus:'unknown',inlineMetadata:'zsh',program:{name:'zsh',shell:true}};
+test('ordinary terminals omit agent status in both densities and the collapsed rail',()=>{
+ const f=harness();f.render();const original=f.view.result.rows.find(row=>row.address==='t1'),row={...original,title:'zsh',taskTitle:'zsh',agent:false,kind:'terminal',status:'unknown',actualStatus:'unknown',branchStatus:'unknown',inlineMetadata:'zsh',program:{name:'zsh',shell:true},target:{...original.target,kind:'terminal',agent:false}};
  const tree=f.view.entityRow(row,0,f.frame(),f.cx),task=nodes(tree).find(node=>node.attrs.id===`unified-task-${row.id}`),allText=nodes(tree).flatMap(node=>node.childNodes.filter(value=>typeof value==='string')).join(' ');
  assert(!Object.hasOwn(tree.attrs,'h'));assert.equal(tree.attrs.min_h,26);assert(Object.hasOwn(tree.attrs,'items_start'));assert(Object.hasOwn(task.attrs,'truncate'));assert(!Object.hasOwn(task.attrs,'max_h'));assert(!Object.hasOwn(task.attrs,'h'));
- assert(!nodes(tree).some(node=>node.attrs.id===`unified-meta-${row.id}`));assert(allText.includes('Unknown'));assert(!allText.includes('Idle'));assert(tree.attrs.tooltip.includes('Unknown'));
+ assert(!nodes(tree).some(node=>node.attrs.id===`unified-meta-${row.id}`));assert(!allText.includes('Unknown'));assert(!allText.includes('Idle'));assert(!tree.attrs.tooltip.includes('Unknown'));
+ for(const density of ['detailed','compact'])for(const status of ['unknown','working','blocked','done','idle']){const plain=f.view.entityRow({...row,status,branchStatus:status},0,{...f.frame(),density},f.cx);assert(!nodes(plain).some(n=>n.attrs.id==='unified-status-slot-'+row.id));assert.equal(nodes(plain).find(n=>n.attrs.id==='unified-actions-'+row.id).attrs.w,19);}
+ const shellRow=f.view.result.rows.find(r=>r.address==='t3');assert(shellRow&&!shellRow.agent);const rail=nodes(f.render({collapsed:true})).find(n=>n.attrs.id==='unified-rail-'+shellRow.id);assert(rail);assert(!rail.attrs.tooltip.includes('Unknown'));assert(!Object.hasOwn(nodes(rail).find(n=>n.attrs.id==='unified-rail-status-'+shellRow.id).attrs,'bg'));
  const icon=nodes(tree).find(node=>node.attrs.id===`unified-icon-${row.id}`);assert.equal(icon.attrs.h,16);assert.equal(icon.attrs.mr,3);
  const process={...row,title:'Editor',program:{name:'Vim',shell:false,agent:false},inlineMetadata:'Vim',activityAt:1};assert(!nodes(f.view.entityRow(process,0,f.frame(),f.cx)).some(node=>node.attrs.id===`unified-meta-${row.id}`));
 });
 
-test('Idle releases the status column in both densities while retaining the pin slot and tooltip state',()=>{
+test('Idle agents show their status in both densities and the collapsed rail',()=>{
  const f=harness();f.render();const row=f.view.result.rows.find(row=>row.address==='t1');
- for(const density of ['detailed','compact']){
-  const draw=status=>f.view.entityRow({...row,status,branchStatus:status},0,{...f.frame(),density},f.cx),idle=draw('idle'),working=draw('working');
-  const slot=tree=>nodes(tree).find(node=>node.attrs.id==='unified-status-slot-'+row.id),actions=tree=>nodes(tree).find(node=>node.attrs.id==='unified-actions-'+row.id);
-  assert.equal(slot(idle),undefined);assert.equal(slot(working).attrs.w,density==='detailed'?72:13);assert.equal(actions(idle).attrs.w,19);assert.equal(actions(working).attrs.w-actions(idle).attrs.w,3+(density==='detailed'?72:13));assert.equal(nodes(idle).find(node=>node.attrs.id==='unified-agent-pin-slot-'+row.id).attrs.size,19);assert(!nodes(idle).some(node=>node.attrs.id==='unified-status-'+row.id));assert(idle.attrs.tooltip.includes('Idle'));
-  for(const status of ['working','blocked','done','unknown'])assert(nodes(draw(status)).some(node=>node.attrs.id==='unified-status-'+row.id));
+ for(const density of ['detailed','compact'])for(const status of ['idle','working','blocked','done','unknown']){
+  const tree=f.view.entityRow({...row,status,branchStatus:status},0,{...f.frame(),density},f.cx),all=nodes(tree);
+  assert.equal(all.find(n=>n.attrs.id==='unified-status-slot-'+row.id).attrs.w,density==='detailed'?72:13);
+  assert.equal(all.find(n=>n.attrs.id==='unified-actions-'+row.id).attrs.w,19+3+(density==='detailed'?72:13));
+  assert.equal(all.find(n=>n.attrs.id==='unified-agent-pin-slot-'+row.id).attrs.size,19);
+  assert(all.some(n=>n.attrs.id==='unified-status-'+row.id));
+  if(density==='detailed')assert(all.find(n=>n.attrs.id==='unified-status-text-'+row.id).childNodes.includes(status==='idle'?'Idle':status==='blocked'?'Needs you':status[0].toUpperCase()+status.slice(1)));
  }
- f.agent.status='idle';const rail=nodes(f.render({collapsed:true})).find(node=>node.attrs.id==='unified-rail-'+row.id),slot=nodes(rail).find(node=>node.attrs.id==='unified-rail-status-'+row.id);assert.equal(slot.attrs.size,6);assert(!Object.hasOwn(slot.attrs,'bg'));assert(rail.attrs.tooltip.includes('Idle'));
+ f.agent.status='idle';const rail=nodes(f.render({collapsed:true})).find(n=>n.attrs.id==='unified-rail-'+row.id),slot=nodes(rail).find(n=>n.attrs.id==='unified-rail-status-'+row.id);assert.equal(slot.attrs.size,6);assert(Object.hasOwn(slot.attrs,'bg'));assert(rail.attrs.tooltip.includes('Idle'));
 });
 
 test('Pinned and attention sections are compact separated headings rather than workspace cards',()=>{
@@ -411,4 +415,10 @@ test("hover keeps the title stable and status glyph and text share one right-ali
 test("view and filter popovers keep keyboard selection, Escape and independent close events",()=>{
  const f=harness();f.open('unified-view-menu');let tree=f.render(),view=nodes(tree).find(n=>n.attrs.id==='unified-view-menu'),menu=nodes(tree).find(n=>n.attrs.id==='unified-view-menu-items');menu.events.on_key_down({key:'down'},f.cx);menu=nodes(f.render()).find(n=>n.attrs.id==='unified-view-menu-items');menu.events.on_key_down({key:'enter'},f.cx);assert.equal(f.owner.state().mode,'status');assert.equal(f.view.toolbarMenu,null);
  f.open('unified-view-menu');tree=f.render();view=nodes(tree).find(n=>n.attrs.id==='unified-view-menu');f.open('unified-filter-menu');view.events.on_open_change(false,f.cx);assert.equal(f.view.toolbarMenu,'unified-filter-menu');menu=nodes(f.render()).find(n=>n.attrs.id==='unified-filter-menu-items');menu.events.on_key_down({key:'escape'},f.cx);assert.equal(f.view.toolbarMenu,null);assert.equal(f.owner.projectFilter,'all');assert.equal(f.calls.length,0);
+});
+
+test('collapsed unified rail keeps an expand button even when the filtered list is empty',()=>{
+ const f=harness();const normal=nodes(f.render());assert(!normal.some(n=>n.attrs.id==='unified-expand-sidebar'));
+ f.view.result={rows:[],agentOrder:[],pages:1};const tree=f.render({collapsed:true});const expand=nodes(tree).find(n=>n.attrs.id==='unified-expand-sidebar');
+ assert(expand);assert.equal(expand.attrs.accessibility_label,'Expand sidebar');expand.events.on_click({},f.cx);assert.deepEqual(f.calls,[['expand-sidebar']]);
 });

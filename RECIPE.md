@@ -125,7 +125,7 @@ Quota query failures use a 13px warning-triangle SVG after the affected agent in
 
 Refresh controls use the same `refresh.svg`, a 14px glyph centered in a 24px square button, accessible labels and hover feedback. While loading, disable the button and spin the glyph at 850ms; never replace it with a font arrow or ellipsis. Keep the quota cooldown in the tooltip. Warning SVGs sit inside plain div wrappers so native tooltips are available.
 
-Dialogs have no title close button. Open them as non-modal dialogs, so a click outside closes them as system dialogs do, and keep Escape. Use `frame: "none"` with a rounded 10px bordered root to avoid duplicate host controls. Retain Cancel as an operation action; Escape and Cancel stay disabled during pending mutations. A click outside closes only the dialog: the native operation still runs to completion.
+Dialogs have no title close button. Open them as non-modal dialogs, so a click outside closes them as system dialogs do, and keep Escape. Use Herdr's default dialog frame, matching Settings. Leave `frame` unset and let the host draw the corner radius, outer border and shadow. Every painted vertical scrollbar needs a 16px right gutter on its scroll area; apply it after other horizontal padding. Explicitly overlaid scrollbars need the same gutter on their viewport wrapper. Keep native editor scrollbars managed by the editor. Retain Cancel as an operation action; Escape and Cancel stay disabled during pending mutations. A click outside closes only the dialog: the native operation still runs to completion.
 
 ## Gallery-derived workspace features
 

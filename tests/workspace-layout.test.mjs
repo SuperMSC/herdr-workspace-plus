@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { integrateWorkspace, restoreNativeSpaces, usePaneHeader } from "../workspace-layout.mjs";
+import { integrateWorkspace, restoreNativeSpaces, usePaneHeader, useFullWidthFooter, usePanelFrames, useUnifiedSidebar, UNIFIED_SIDEBAR_META } from "../workspace-layout.mjs";
 
 function fixture() {
   return {
@@ -42,6 +42,79 @@ function parentOf(root, id) {
 function everyNode(node) {
   return [node, ...(node.children ?? []).flatMap(everyNode)];
 }
+
+function framedFixture() {
+  const layout = fixture(), sidebar = find(layout, "sidebar");
+  sidebar.background = "chrome"; sidebar.min = 44; sidebar.max = 480;
+  sidebar.children = [
+    { id: "brand", type: "block", size: { px: 46 }, window_drag: true, content: { mod: "workspace-chrome" } },
+    { id: "sidebar-lists", type: "column", children: [
+      { id: "spaces", type: "block", content: { mod: "project-spaces" }, size: { weight: 2 } },
+      { id: "agents", type: "block", content: { mod: "agents-plus" }, size: { weight: 1 } },
+    ] },
+    { id: "sidebar-footer", type: "block", size: { px: 69 }, content: { mod: "workspace-chrome", props: { footer: true } } },
+  ];
+  return useFullWidthFooter(integrateWorkspace(layout).layout).layout;
+}
+
+test('panel frames follow the terminal radius and spacing, preserve state IDs and retain exact unified-sidebar restoration', () => {
+  const original = framedFixture(), unified = useUnifiedSidebar(original).layout, before = structuredClone(unified);
+  find(unified, 'main').content.pane.radius = 14;
+  find(unified, 'work-body').padding = [12, 8];
+  find(unified, 'workspace-plus-toolbar').size.px = 44;
+  const result = usePanelFrames(unified), layout = result.layout;
+  assert(result.changed); assert.equal(find(before, 'sidebar').children.length, 3);
+  assert.equal(find(unified, 'sidebar').children.length, 3, 'source is not mutated');
+  assert.equal(find(layout, 'panel').radius, 14); assert.equal(find(layout, 'workspace-sidebar-surface').radius, 14);
+  assert.deepEqual(find(layout, 'workspace-sidebar-body').padding, [12, 0]);
+  assert.deepEqual(find(layout, 'sidebar').divider, { width: 1, color: 'border' });
+  assert.equal(find(layout, 'brand').size.px + find(layout, 'sidebar').divider.width, 44); assert.deepEqual(find(layout, 'sidebar').size, { px: 268 });
+  assert.equal(find(layout, 'workspace-sidebar-inset').size.px, 8);
+  assert.deepEqual(find(layout, 'sidebar-footer').size, find(original, 'sidebar-footer').size);
+  assert.equal(find(layout, 'sidebar-footer').content.props.panelRadius, 14);
+  assert.equal(find(layout, 'files').content.props.panelRadius, 14);
+  assert.deepEqual(layout[UNIFIED_SIDEBAR_META], unified[UNIFIED_SIDEBAR_META]);
+  assert.equal(new Set(everyNode(layout).map(n => n.id)).size, everyNode(layout).length);
+  assert.equal(usePanelFrames(layout).changed, false); assert.equal(useUnifiedSidebar(layout).changed, false);
+  const separate = useUnifiedSidebar(layout, false).layout;
+  assert.deepEqual(find(separate, 'sidebar-lists'), find(original, 'sidebar-lists'));
+  assert.deepEqual(useUnifiedSidebar(separate).layout, layout);
+});
+
+test('panel frames leave custom structures and colliding wrapper IDs untouched', () => {
+  for (const change of [
+    l => find(l, 'sidebar').children.push({ id: 'my-widget', type: 'block' }),
+    l => l.children.push({ id: 'workspace-sidebar-body', type: 'block' }),
+    l => delete find(l, 'main').content.pane.radius,
+    l => find(l, 'sidebar-footer').content.mod = 'my-footer',
+  ]) {
+    const source = framedFixture(); change(source); const result = usePanelFrames(source);
+    assert.equal(result.changed, false); assert.deepEqual(result.layout, source);
+  }
+});
+
+test('full-width migration retains IDs, sidebar width, footer height and layout metadata, and is repeatable', () => {
+  const original = integrateWorkspace(fixture()).layout;
+  original.divider = { width: 2, color: 'border' }; original.resizable = true;
+  const before = structuredClone(original), result = useFullWidthFooter(original), migrated = result.layout;
+  assert(result.changed); assert.deepEqual(original, before); assert.equal(migrated.type, 'column');
+  assert.deepEqual(migrated.children.map(n => n.id), ['workspace-body', 'status']);
+  assert.deepEqual(migrated.children[0].children.map(n => n.id), ['sidebar', 'work']);
+  assert.deepEqual(migrated.children[0].divider, before.divider); assert.equal(migrated.children[0].resizable, true);
+  assert.deepEqual(find(migrated, 'status'), find(before, 'status')); assert.deepEqual(find(migrated, 'sidebar'), find(before, 'sidebar'));
+  assert.deepEqual(migrated.traffic_lights, before.traffic_lights); assert.deepEqual(migrated.custom, before.custom);
+  assert.equal(everyNode(migrated).length, everyNode(before).length + 1);
+  assert.equal(new Set(everyNode(migrated).map(n => n.id)).size, everyNode(migrated).length);
+  assert.equal(useFullWidthFooter(migrated).changed, false);
+  const again = integrateWorkspace(migrated); assert(again.integrated); assert.equal(again.changed, false); assert.deepEqual(again.layout, migrated);
+});
+
+test('full-width migration leaves unknown layouts and misplaced or duplicate footers untouched', () => {
+  for (const change of [l => l.children.push({ id: 'custom', type: 'block' }), l => find(l, 'work').children.reverse(), l => find(l, 'sidebar').children.push(structuredClone(find(l, 'status')))]) {
+    const layout = integrateWorkspace(fixture()).layout; change(layout);
+    const result = useFullWidthFooter(layout); assert.equal(result.changed, false); assert.deepEqual(result.layout, layout);
+  }
+});
 
 test("moves the existing Sessions block into the panel stack and adds header/footer roles", () => {
   const source = fixture(), original = structuredClone(source);

@@ -83,7 +83,7 @@ export default class GithubPanel {
     cx.spawn(async cx => {
       try {
         if (await readTextFile(`${appHome()}/mods/sessions-plus/mod.json`) === null) throw new Error("Pending prompts requires the Sessions Plus companion. Run the full workspace updater first.");
-        if (!this.disposed) openOverlay({ mod: "sessions-plus", kind: "dialog", frame: "none", width: 660, height: 640, props: { role: "prompt-queue", text, title, on } });
+        if (!this.disposed) openOverlay({ mod: "sessions-plus", kind: "dialog", width: 660, height: 640, props: { role: "prompt-queue", text, title, on } });
       } catch (error) { if (!this.disposed) this.detailError = githubError(error); }
       finally { if (!this.disposed) { this.referenceBusy = false; cx.notify(); } }
     });
@@ -95,7 +95,7 @@ export default class GithubPanel {
       .when(!disabled, el => el.cursor_pointer().hover(row => row.bg(t.hover))).on_click((_event, cx) => { cx.stop_propagation(); if (!disabled) callback(cx); }).child(label);
     const tone = status => status === "failed" ? t.ansi1 : status === "passed" ? t.ansi2 : status === "pending" ? t.working : t.muted;
     const statusText = pr => `${pr.isDraft ? "Draft" : pr.state === "MERGED" ? "Merged" : pr.state === "CLOSED" ? "Closed" : "Open"} · ${pr.reviewDecision.replace(/_/g, " ").toLowerCase() || "No review decision"}`;
-    const list = v_flex().id("github-pr-list").min_h(0).gap(5).overflow_y_scrollbar().children(this.prs.map(pr => div().id(`github-pr-${pr.number}`).p(8).rounded(5).bg(this.selected === pr.number ? t.selected : t.raised).cursor_pointer().hover(row => row.bg(t.hover))
+    const list = v_flex().id("github-pr-list").min_h(0).gap(5).overflow_y_scrollbar().pr(16).children(this.prs.map(pr => div().id(`github-pr-${pr.number}`).p(8).rounded(5).bg(this.selected === pr.number ? t.selected : t.raised).cursor_pointer().hover(row => row.bg(t.hover))
       .on_click((_event, cx) => this.choose(pr.number, cx)).child(div().font_semibold().child(`#${pr.number} ${pr.title}`))
       .child(div().text_size(TYPE.xs).text_color(t.muted).child(statusText(pr)))
       .child(div().text_size(TYPE.xs).text_color(t.dim).truncate().tooltip(pr.headRefName).child(`${pr.headRefName === this.branch ? "Branch name match · " : ""}${pr.headRefName}`))));
@@ -115,7 +115,7 @@ export default class GithubPanel {
         .when(this.detailStale || this.stale, el => el.child(div().text_color(t.ansi3).child("Stale snapshot · refresh failed or newer data is loading")))
         .child(div().font_semibold().child(checks.length ? `${counts.passed} passed · ${counts.failed} failed · ${counts.pending} pending` : "No checks reported"))
         .when(Boolean(counts.skipped || counts.cancelled || counts.unknown), el => el.child(div().text_size(TYPE.xs).text_color(t.muted).child(`${counts.skipped} skipped · ${counts.cancelled} cancelled · ${counts.unknown} unknown`)));
-      const contents = v_flex().id("github-detail-scroll").flex_1().min_h(0).gap(7).overflow_y_scrollbar()
+      const contents = v_flex().id("github-detail-scroll").flex_1().min_h(0).gap(7).overflow_y_scrollbar().pr(16)
         .children(checks.map(check => h_flex().id(`github-check-${check.index}`).gap(6).items_center().flex_none()
           .child(div().flex_1().min_w(0).text_color(tone(check.status)).child(`${check.name} · ${check.state}`))
           .when(Boolean(check.url), el => el.child(button(`github-check-open-${check.index}`, "Open", cx => this.open(check.url, cx))))
@@ -137,7 +137,7 @@ export default class GithubPanel {
       .child(div().font_semibold().child(this.log.name)).when(this.log.truncated, el => el.child(div().text_color(t.ansi3).child("Failed log truncated to the first 64 KB.")))
       .child(div().flex_1().min_h(100).border_1().border_color(t.border).rounded(5).child(Editor.new(this.logEditor).size_full()));
     const body = this.width >= 680 ? h_flex().flex_1().min_h(0).min_w(0).gap(10).child(list.w(260).flex_none()).child(preview) : v_flex().flex_1().min_h(0).gap(8).child(list.max_h(175).flex_none()).child(preview);
-    return v_flex().id("github-panel").size_full().min_h(0).min_w(0).p(12).gap(8).rounded(10).bg(t.background).text_color(t.foreground).text_size(TYPE.md).track_focus(this.handle)
+    return v_flex().id("github-panel").size_full().min_h(0).min_w(0).p(12).gap(8).bg(t.background).text_color(t.foreground).text_size(TYPE.md).track_focus(this.handle)
       .on_size_change((size, cx) => { if (Math.abs(this.width - size.width) > 1) { this.width = size.width; cx.notify(); } })
       .on_key_down((event, cx) => { if (event.key === "escape" && this.p.overlay) { closeOverlay(this.p.overlay); cx.stop_propagation(); } })
       .child(h_flex().gap(7).items_center().flex_none().child(svg("mods/files-plus/github.svg").size(16).text_color(t.muted)).child(div().flex_1().font_semibold().text_size(TYPE.lg).child("Pull requests / CI"))
@@ -150,7 +150,7 @@ export default class GithubPanel {
       .child(body)
       .when(this.detailLoading && Boolean(detail), el => el.child(div().text_size(TYPE.xs).text_color(t.muted).child("Refreshing PR details…")))
       .when(this.logLoading, el => el.child(div().text_size(TYPE.xs).text_color(t.muted).child("Reading failed-step log…")))
-      .when(Boolean(this.detailError || this.logError), el => el.child(div().max_h(75).overflow_y_scrollbar().text_size(TYPE.sm).text_color(t.ansi1).child(this.detailError || this.logError)))
+      .when(Boolean(this.detailError || this.logError), el => el.child(div().max_h(75).overflow_y_scrollbar().text_size(TYPE.sm).text_color(t.ansi1).pr(16).child(this.detailError || this.logError)))
       .when(this.limited, el => el.child(div().text_size(TYPE.xs).text_color(t.ansi3).child("List limited to 40 pull requests, with the current branch first.")));
   }
 }

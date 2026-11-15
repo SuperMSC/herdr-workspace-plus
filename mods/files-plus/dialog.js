@@ -83,7 +83,7 @@ export default class Dialog {
         .when(Boolean(parent), el => el.child(div().text_size(TYPE.sm).text_color(t.dim).truncate().text_ellipsis_start().child(parent))));
 
     return v_flex().id("files-plus-dialog").track_focus(this.handle).size_full().min_h(0).px(20).pt(20).pb(18).gap(14)
-      .rounded(12).overflow_hidden().border_1().border_color(t.border).bg(t.popover).text_size(TYPE.md).text_color(t.foreground)
+      .overflow_hidden().bg(t.popover).text_size(TYPE.md).text_color(t.foreground)
       .on_key_down((event, cx) => {
         if (event.key === "escape") { if (!this.busy) closeOverlay(this.p.overlay); }
         else if (event.key === "enter" && (trash || this.immediate)) this.submit(cx);
@@ -101,7 +101,7 @@ export default class Dialog {
       .child(target)
       .when(!trash && !this.immediate, el => el.child(h_flex().h(36).px(10).flex_none().items_center().rounded(8).border_1()
         .border_color(t.input).bg(t.background).child(Input.new(this.input).w_full().h_full().text_color(t.foreground))))
-      .child(div().flex_1().min_h(0).overflow_y_scrollbar().text_size(TYPE.md).text_color(t.blocked).child(this.error || ""))
+      .child(div().flex_1().min_h(0).overflow_y_scrollbar().text_size(TYPE.md).text_color(t.blocked).pr(16).child(this.error || ""))
       .child(h_flex().flex_none().justify_end().gap(8)
         .when(!this.immediate, el => el.child(button("files-plus-cancel", "Cancel", false, () => { if (!this.busy) closeOverlay(this.p.overlay); })))
         .child(button("files-plus-confirm", label, true, (_event, cx) => this.submit(cx))));

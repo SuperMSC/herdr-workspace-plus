@@ -186,7 +186,7 @@ export default class PromptQueue {
     const targetLabel = target => `${PROVIDERS[target.provider] || "Agent"} · ${target.title || target.address}`;
     const draft = this.draft(), drafts = this.read().drafts || [];
     const live = this.targets().filter(target => !this.draftId || draft && referenceMachineMatches(draft, target)), saved = this.draftId ? [] : this.read().queues.filter(saved => !live.some(target => target.key === saved.key));
-    const chooser = v_flex().id("prompt-queue-recipients").flex_1().min_h(0).gap(5).overflow_y_scrollbar()
+    const chooser = v_flex().id("prompt-queue-recipients").flex_1().min_h(0).gap(5).overflow_y_scrollbar().pr(16)
       .child(div().font_semibold().child("Live agents"))
       .children(live.map(target => button(`prompt-recipient-${target.address}`, targetLabel(target), cx => this.choose(target, cx))))
       .when(!live.length, el => el.child(div().text_color(t.muted).child("No supported live agents. Start Claude Code, Codex, or agy first.")))
@@ -216,12 +216,12 @@ export default class PromptQueue {
       : this.choosing ? chooser : this.prepared ? v_flex().id("prompt-send-preview").flex_1().min_h(0).gap(9)
       .child(div().font_semibold().child(`Send ${this.prepared.items.length} instruction${this.prepared.items.length === 1 ? "" : "s"} to this agent`))
       .child(div().text_color(t.muted).child("The message below is sent once, only when you click Send."))
-      .child(div().id("prompt-message-preview").flex_1().min_h(0).p(10).rounded(6).bg(t.raised).overflow_y_scrollbar().child(this.prepared.message))
+      .child(div().id("prompt-message-preview").flex_1().min_h(0).p(10).rounded(6).bg(t.raised).overflow_y_scrollbar().pr(16).child(this.prepared.message))
       .child(h_flex().gap(7).justify_end()
         .child(button("prompt-preview-back", "Back", cx => { this.prepared = null; cx.notify(); }, this.busy))
         .child(button("prompt-preview-send", this.busy ? "Sending…" : "Send", cx => this.send(cx), this.busy || !current, true)))
       : v_flex().id("prompt-queue-body").flex_1().min_h(0).gap(9)
-        .child(v_flex().id("prompt-queue-items").flex_1().min_h(0).gap(7).overflow_y_scrollbar().children(queue.items.map(row))
+        .child(v_flex().id("prompt-queue-items").flex_1().min_h(0).gap(7).overflow_y_scrollbar().pr(16).children(queue.items.map(row))
           .when(!queue.items.length, el => el.child(div().p(10).text_color(t.muted).child("No instructions yet. Write one below while the agent works."))))
         .child(div().h(92).flex_none().border_1().border_color(t.border).rounded(6).p(7).child(Textarea.new(this.input).size_full()))
         .child(h_flex().gap(7).items_center()
@@ -236,7 +236,7 @@ export default class PromptQueue {
           .child(h_flex().gap(7).justify_end()
             .child(button("prompt-clear-cancel", "Keep", cx => { this.confirmClear = false; cx.notify(); }))
             .child(button("prompt-clear-confirm", "Clear queue", cx => this.clear(cx))))));
-    return v_flex().id("prompt-queue").size_full().min_h(0).p(16).gap(10).rounded(10).overflow_hidden().border_1().border_color(t.border)
+    return v_flex().id("prompt-queue").size_full().min_h(0).p(16).gap(10).overflow_hidden()
       .bg(t.popover).text_color(t.foreground).text_size(TYPE.md)
       .track_focus(this.handle).on_key_down((event, cx) => {
         if (event.key === "escape" && !this.busy) { closeOverlay(this.p.overlay); cx.stop_propagation(); }
@@ -249,9 +249,9 @@ export default class PromptQueue {
         .child(div().truncate().text_size(TYPE.xs).text_color(t.muted).tooltip(this.target.cwd).child([this.target.machine || "This computer", this.target.cwd, this.target.sessionId?.slice(0, 8) || this.target.address].filter(Boolean).join(" · ")))
         .when(!current, el => el.child(div().text_size(TYPE.sm).text_color(t.blocked).child("This captured agent is unavailable or its session changed. Choose a live agent to send.")))
         .when(Boolean(current) && current.status === "blocked", el => el.child(button("prompt-open-agent", "Agent needs you · open it", () => run("agent.focus", { terminal: current.address }))))))
-      .when(drafts.length > 0 && !this.draftId, el => el.child(v_flex().flex_none().max_h(120).gap(4).overflow_y_scrollbar().children(drafts.map(item => button(`prompt-draft-${item.id}`, item.title, cx => this.openDraft(item.id, cx), this.busy || Boolean(this.prepared))))))
+      .when(drafts.length > 0 && !this.draftId, el => el.child(v_flex().flex_none().max_h(120).gap(4).overflow_y_scrollbar().pr(16).children(drafts.map(item => button(`prompt-draft-${item.id}`, item.title, cx => this.openDraft(item.id, cx), this.busy || Boolean(this.prepared))))))
       .child(body)
-      .when(Boolean(this.error), el => el.child(div().max_h(65).overflow_y_scrollbar().text_size(TYPE.sm).text_color(t.ansi1).child(this.error)));
+      .when(Boolean(this.error), el => el.child(div().max_h(65).overflow_y_scrollbar().text_size(TYPE.sm).text_color(t.ansi1).pr(16).child(this.error)));
   }
 
   close() { this.input?.release(); }

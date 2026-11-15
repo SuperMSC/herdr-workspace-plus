@@ -6,6 +6,7 @@ import * as previewModel from '../mods/files-plus/preview-model.js';
 import * as editorModel from '../mods/files-plus/editor-model.js';
 import * as markdownModel from '../mods/files-plus/markdown-model.js';
 import * as mermaidModel from '../mods/files-plus/mermaid-model.js';
+import * as markdownEditModel from '../mods/files-plus/markdown-edit-model.js';
 
 function element() {
   const node = { childNodes: [], attrs: {}, events: {} };
@@ -44,6 +45,11 @@ function harness() {
       return blocks.map(block => { try { if (!block.closed) throw new Error('Unclosed Mermaid fence.'); mermaidModel.validateDiagram(block.source); return { media: { path: 'test.svg', width: 300, height: 120 } }; } catch (error) { return { error: error.message }; } });
     }
   };
+  dependencies.Input = { new: element };
+  dependencies.InputState = dependencies.EditorState;
+  Object.assign(dependencies, markdownEditModel);
+  const editSource = readFileSync(new URL('../mods/files-plus/markdown-editor.js', import.meta.url), 'utf8').replace(/^import .*;\n/gm, '').replace('export default class', 'return class');
+  dependencies.MarkdownEditor = uiFunction(...Object.keys(dependencies), editSource)(...Object.values(dependencies));
   const Preview = uiFunction(...Object.keys(dependencies), source)(...Object.values(dependencies));
   return { Preview, cx, files, drafts, navigated, opened, editors, timers,
     view() { const view = new Preview({ editable: true, id: 'p', onNavigate: target => navigated.push(target) }); view.open('/r', 'a.md', null, cx); return view; },
@@ -67,6 +73,34 @@ test('Contents, heading links, relative Markdown links and Back use captured fil
   f.click(view, 'preview-back-document'); await f.settle(); assert.equal(view.path, 'a.md');
   view.followMarkdown('../../private.md', f.cx); assert.match(view.linkError, /outside/); assert.equal(view.path, 'a.md');
   view.followMarkdown('https://example.com', f.cx); assert.deepEqual(f.opened, ['https://example.com']);
+});
+
+test('preview block and cell editing share the full-file draft, Save and external conflict path', async () => {
+  const f = harness(), original = '# Title\r\n\r\nParagraph\r\n\r\n| Name | Value |\r\n| --- | --- |\r\n| one | two |\r\n';
+  f.files['/r/a.md'] = original; const view = f.view(); await f.settle();
+  f.click(view, 'preview-edit-blocks'); await f.settle(); assert(view.blockEditor); assert.equal(view.mode, 'preview');
+  let paragraph = markdownEditModel.editableMarkdownBlocks(view.code.value()).find(b => b.kind === 'paragraph');
+  f.click(view, 'markdown-block-action-' + paragraph.start); view.blockEditor.editor.type('Changed\n');
+  assert.equal(view.code.value(), original.replace('Paragraph', 'Changed')); assert.equal(f.files['/r/a.md'], original);
+  f.click(view, 'markdown-block-action-' + paragraph.start);
+  const table = markdownEditModel.editableMarkdownBlocks(view.code.value()).find(b => b.kind === 'table');
+  f.click(view, 'markdown-block-action-' + table.start); assert.equal(view.blockEditor.inputs[1][1].value(), 'two');
+  view.blockEditor.inputs[1][1].type('new|cell');
+  const draft = original.replace('Paragraph', 'Changed').replace('two', 'new\\|cell'); assert.equal(view.code.value(), draft);
+  for (const fn of f.timers.splice(0)) fn(f.cx); await f.settle(); assert.equal(f.drafts.at(-1).text, draft);
+  f.files['/r/a.md'] = original + '\r\nExternal edit';
+  f.click(view, 'preview-edit-save'); await f.settle(); assert(view.conflict); assert.equal(f.files['/r/a.md'], original + '\r\nExternal edit');
+  f.click(view, 'preview-edit-mode'); assert.equal(view.blockEditor, null); assert.equal(view.code.value(), draft);
+  f.files['/r/a.md'] = original; f.click(view, 'preview-edit-save'); await f.settle(); assert.equal(f.files['/r/a.md'], draft); assert.equal(view.dirty(), false);
+});
+
+test('clean external reload drops a stale block selection and empty Markdown has one editable block', async () => {
+  const f = harness(); f.files['/r/a.md'] = ''; const view = f.view(); await f.settle();
+  f.click(view, 'preview-edit-blocks'); await f.settle(); f.click(view, 'markdown-block-action-0');
+  assert.equal(nodes(f.render(view)).filter(n => n.attrs.id === 'markdown-block-action-0').length, 1);
+  f.files['/r/a.md'] = '# From disk\n'; view.checkDisk(f.cx); await f.settle();
+  assert.equal(view.blockEditor.active, null); assert.equal(view.code.value(), '# From disk\n');
+  f.click(view, 'preview-edit-done'); assert.equal(view.blockEditor, null);
 });
 
 test('missing linked files retain Back, and dirty navigation persists the original draft without saving it', async () => {

@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { spawn } from "node:child_process";
 import { claudeCredential, claudeQuota, fetchClaude, codexQuota, agyQuota, supportsAgyUsage } from "../mods/sessions-plus/quota.mjs";
-import { claudeWindows, codexWindows, agyWindows, resetTime, percentage, resetLabel, quotaWarning } from "../mods/sessions-plus/quota-model.js";
+import { claudeWindows, codexWindows, agyWindows, resetTime, percentage, resetLabel, quotaWarning, quotaPace, paceLabel } from "../mods/sessions-plus/quota-model.js";
 import { PROVIDERS } from "../mods/sessions-plus/model.js";
 
 const agyReply = { status: "SUCCESS", command: { name: "usage", data: { groups: [{ name: "Gemini", buckets: [
@@ -185,7 +185,7 @@ function quotaFixture(state = {}, { deferredSpawn = false } = {}) {
   const source = readFileSync(new URL("../mods/sessions-plus/quota.js", import.meta.url), "utf8")
     .replace(/^import .*;\n/gm, "").replace("export default class", "return class");
   const dependencies = {
-    PROVIDERS, percentage, resetLabel, quotaWarning, div: quotaElement, svg: quotaElement, h_flex: quotaElement, v_flex: quotaElement,
+    PROVIDERS, percentage, resetLabel, quotaWarning, quotaPace, paceLabel, div: quotaElement, svg: quotaElement, h_flex: quotaElement, v_flex: quotaElement,
     Date: class extends Date { static now() { return now; } },
     theme: () => ({ selected: "selected", surface: "surface" }), window: () => ({ platform: "macos" }), appHome: () => "/fixture/herdr",
     shared: key => state[key], setShared: (key, value) => { state[key] = value; },

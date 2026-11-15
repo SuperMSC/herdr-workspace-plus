@@ -48,7 +48,7 @@ export default class Deliverables {
   back(cx) { if (this.busy) return; try { if (this.form) { this.keepForm(cx); if (this.error) return; this.cleanUnchangedForm(); this.form = null; } this.error = ""; this.conflict = false; } catch (error) { this.error = String(error.message || error); } cx.notify(); }
   restore(draft, cx) {
     if (draft.scope.key === this.scope?.key) this.openForm(null, cx, draft);
-    else openOverlay({ mod: "sessions-plus", kind: "dialog", frame: "none", width: 800, height: 700, props: { role: "deliverables", root: draft.scope.root, on: draft.scope.on, restoreId: draft.id } });
+    else openOverlay({ mod: "sessions-plus", kind: "dialog", width: 800, height: 700, props: { role: "deliverables", root: draft.scope.root, on: draft.scope.on, restoreId: draft.id } });
   }
   discard(draft, cx) { try { this.writeDrafts(removeDeliverableDraft(this.drafts(), draft.id, deliverableDraftRevision(draft))); this.confirmDraft = null; this.error = ""; } catch (error) { this.error = String(error.message || error); } cx.notify(); }
   request(action, extra = {}) { return this.client({ action, scope: this.scope, filter: this.filter, page: this.page, query: this.queryText, ...extra }); }
@@ -126,7 +126,7 @@ export default class Deliverables {
         .child(h_flex().gap(5).items_center().children([["unread", `Unread ${data.counts.unread}`], ["all", `Active ${data.counts.all}`], ["archived", `Archived ${data.counts.archived}`]].map(([filter, label]) => button(`delivery-filter-${filter}`, label, cx => { this.filter = filter; this.page = 0; this.load(cx); }, this.busy, this.filter === filter)))
           .child(div().flex_1()).child(button("delivery-add", "Add file / URL", cx => this.openForm(null, cx), this.busy || !this.scope)))
         .child(h_flex().gap(6).child(Input.new(this.query).h(30).px(7).flex_1().min_w(0).border_1().border_color(t.input).rounded(5)).child(button("delivery-refresh", this.loading ? "Loading…" : "Refresh", cx => this.load(cx), this.loading || this.busy)))
-        .child(v_flex().id("delivery-items").flex_1().min_h(0).gap(7).overflow_y_scrollbar().children(data.items.map(item => v_flex().id(`delivery-${item.id}`).gap(5).p(9).rounded(6).bg(t.raised)
+        .child(v_flex().id("delivery-items").flex_1().min_h(0).gap(7).overflow_y_scrollbar().pr(16).children(data.items.map(item => v_flex().id(`delivery-${item.id}`).gap(5).p(9).rounded(6).bg(t.raised)
           .child(h_flex().gap(6).items_center().child(div().flex_1().min_w(0).truncate().font_semibold().child(`${item.read ? "✓" : "●"} ${item.title}`))
             .child(button(`delivery-open-${item.id}`, item.kind === "url" ? "Open URL" : "Open file", cx => this.open(item, cx), this.opening))
             .child(button(`delivery-edit-${item.id}`, "Edit", cx => this.openForm(item, cx), this.busy)))
@@ -139,12 +139,12 @@ export default class Deliverables {
         .child(h_flex().gap(7).items_center().child(div().flex_1().text_size(TYPE.xs).text_color(t.dim).child(`${data.total} matching · page ${data.page + 1}/${data.pages} · 20 per page`))
           .child(button("delivery-previous", "Previous", cx => { this.page = Math.max(0, data.page - 1); this.load(cx); }, data.page === 0 || this.loading || this.busy))
           .child(button("delivery-next", "Next", cx => { this.page = data.page + 1; this.load(cx); }, data.page + 1 >= data.pages || this.loading || this.busy)))
-        .when(drafts.length > 0, el => el.child(v_flex().max_h(120).gap(4).overflow_y_scrollbar().child(div().text_size(TYPE.xs).text_color(t.dim).child("Saved forms · restoring keeps the original"))
+        .when(drafts.length > 0, el => el.child(v_flex().max_h(120).gap(4).overflow_y_scrollbar().pr(16).child(div().text_size(TYPE.xs).text_color(t.dim).child("Saved forms · restoring keeps the original"))
           .children(drafts.map(draft => h_flex().gap(6).items_center().child(div().flex_1().truncate().tooltip(`${draft.scope.on || "This computer"} · ${draft.scope.root}`).child(draft.title || draft.location || "Untitled form"))
             .child(button(`delivery-restore-${draft.id}`, draft.scope.key === this.scope.key ? "Restore copy" : "Open project", cx => this.restore(draft, cx), this.busy))
             .child(button(`delivery-discard-${draft.id}`, this.confirmDraft === draft.id ? "Confirm discard" : "Discard", cx => { if (this.confirmDraft === draft.id) this.discard(draft, cx); else { this.confirmDraft = draft.id; cx.notify(); } }, this.busy))))));
     }
-    return v_flex().id("deliverables").size_full().min_h(0).p(14).gap(9).rounded(10).border_1().border_color(t.border).bg(t.popover).text_color(t.foreground).text_size(TYPE.md).track_focus(this.handle)
+    return v_flex().id("deliverables").size_full().min_h(0).p(14).gap(9).bg(t.popover).text_color(t.foreground).text_size(TYPE.md).track_focus(this.handle)
       .on_key_down((event, cx) => { if (event.key === "escape" && !this.busy) { closeOverlay(this.p.overlay); cx.stop_propagation(); } })
       .on_drop((event, cx) => this.drop(event.paths, cx))
       .child(div().font_semibold().text_size(TYPE.lg).child("Deliverables to review"))

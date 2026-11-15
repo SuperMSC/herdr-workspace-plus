@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { PROVIDERS } from "../mods/sessions-plus/model.js";
-import { claudeWindows, codexWindows, durationLabel, percentage, resetLabel, quotaWarning } from "../mods/sessions-plus/quota-model.js";
+import { claudeWindows, codexWindows, durationLabel, percentage, resetLabel, quotaWarning, quotaPace, paceLabel } from "../mods/sessions-plus/quota-model.js";
 
 function element() {
   const node = { childNodes: [], attributes: {}, events: {}, slots: {} };
@@ -41,7 +41,7 @@ function fixture(state = {}) {
     window: () => ({ platform: "macos" }), appHome: () => "/fixture/herdr",
     shared: key => state[key], setShared: (key, value) => { state[key] = value; },
     providerIcon: (provider, size) => element().id(`icon-${provider}`).size(size),
-    PROVIDERS, durationLabel, percentage, quotaWarning, resetLabel: value => resetLabel(value, now),
+    PROVIDERS, durationLabel, percentage, quotaWarning, quotaPace, paceLabel, resetLabel: value => resetLabel(value, now),
     Date: class extends Date { static now() { return now; } },
     exec: (program, args) => new Promise(resolve => calls.push({ program, args, provider: args[1], resolve })),
   };
@@ -95,7 +95,7 @@ test("multi-window summary selects the lowest remaining window and the mode chan
   const remaining = f.bar.summaries("remaining").find(item => item.provider === "claude");
   assert.equal(remaining.text, "20%"); assert.equal(remaining.row.label, "7d");
   assert.doesNotMatch(remaining.tooltip, /Bar:|lowest remaining window/);
-  assert.equal(remaining.tooltip.split("\n").length, 3);
+  assert.equal(remaining.tooltip.split("\n").length, 5);
   assert.match(remaining.tooltip, /5h: 90%.*Resets/);
   assert.match(remaining.tooltip, /7d: 20%.*Resets/);
   f.click("quota-used");
@@ -338,7 +338,7 @@ test("single Codex tooltip shows its window only once and keeps named quota pool
   const windows = codexWindows({ rateLimits: { limitId: "codex", secondary: { usedPercent: 42, windowDurationMins: 10080, resetsAt: 1800100000 } } });
   await f.finish({ codex: { windows } });
   const tooltip = f.bar.summaries("remaining").find(item => item.provider === "codex").tooltip;
-  assert.equal(tooltip.split("\n").length, 2);
+  assert.equal(tooltip.split("\n").length, 3);
   assert.match(tooltip, /^Codex · Remaining\n7d: 58% · Resets in /);
   assert.equal((tooltip.match(/7d/g) || []).length, 1);
   assert.equal(codexWindows({ rateLimits: { limitName: "Review", primary: { usedPercent: 20, windowDurationMins: 300 } } })[0].label, "Review · 5h");

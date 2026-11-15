@@ -49,11 +49,11 @@ export default class WorkspaceBrowser {
     for (const [key, browser] of this.children) browser.pause?.(this.roots.length > 1 && folded.has(key), cx);
   }
   manage() {
-    openOverlay({ mod: "files-plus", kind: "dialog", frame: "none", width: 620, height: 460, props: { role: "workspace-roots", context: { ...this.context } } });
+    openOverlay({ mod: "files-plus", kind: "dialog", width: 620, height: 460, props: { role: "workspace-roots", context: { ...this.context } } });
   }
   search() {
     const viewport = globalThis.window.viewport_size(), zoom = settings().zoom || 1;
-    openOverlay({ mod: "files-plus", kind: "dialog", frame: "none", width: Math.min(1050, viewport.width / zoom * .92), height: Math.min(800, viewport.height / zoom * .88),
+    openOverlay({ mod: "files-plus", kind: "dialog", width: Math.min(1050, viewport.width / zoom * .92), height: Math.min(800, viewport.height / zoom * .88),
       props: { role: "search", root: this.roots[0]?.path, on: this.context.on ?? null, roots: this.roots.map(root => ({ root: root.path, name: root.name, on: this.context.on ?? null })) } });
   }
   foldState() {
@@ -77,7 +77,7 @@ export default class WorkspaceBrowser {
   }
   navigation(t) {
     const folded = this.folded(), rowHeight = shared("project-spaces.density.v1") === "compact" ? 26 : 28; let remaining = 5000;
-    return v_flex().id("workspace-navigation").flex_1().min_h(0).min_w(0).overflow_y_scrollbar().px(6).py(4).children(this.roots.map((root, index) => {
+    return v_flex().id("workspace-navigation").flex_1().min_h(0).min_w(0).overflow_y_scrollbar().px(6).py(4).pr(16).children(this.roots.map((root, index) => {
       const key = rootKey(root.path, this.context.on), browser = this.children.get(key), closed = folded.has(key);
       browser.mode = this.main.mode; browser.filterQuery = this.main.filterQuery || ""; browser.rowHeight = rowHeight;
       const entries = closed ? [] : browser.visibleEntries(), visible = entries.slice(0, remaining); remaining -= visible.length;

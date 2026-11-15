@@ -28,7 +28,7 @@ function fixture({ spaces = [], agents = [], bindings = [], platform = "macos", 
     terminals: () => [], shared: key => state.values[key], setShared: (key, value) => { state.values[key] = value; }, layout: () => state.tree,
     div: element, svg: element, h_flex: element, theme: () => ({}),
     spaces: () => state.spaces, agents: () => state.agents.map((agent, index) => ({ address: `t${index}`, ...agent })), keys: () => state.bindings,
-    window: () => ({ platform: state.platform }), run: (...args) => calls.push(args),
+    window: () => ({ platform: state.platform }), run: (...args) => calls.push(args), openOverlay: spec => calls.push(['overlay', spec]),
     Resources: class {
       init(p, cx) { resources.push({ props: p, cx }); }
       render() { return element().id("fixture-resources").child("324 MB · 3"); }
@@ -42,7 +42,7 @@ function fixture({ spaces = [], agents = [], bindings = [], platform = "macos", 
   const source = readFileSync(new URL("../mods/sessions-plus/footer.js", import.meta.url), "utf8")
     .replace(/^import .*;\n/gm, "").replace("export default class", "return class");
   const Footer = uiFunction(...Object.keys(dependencies), source)(...Object.values(dependencies));
-  const footer = new Footer(), cx = { notify() {} };
+  const footer = new Footer(), cx = { notify() {}, spawn() {} };
   footer.init(props, cx);
   return { footer, state, calls, initialized, instances, resources, cx, render: () => footer.render(), renders: () => renders };
 }
@@ -112,30 +112,28 @@ test("the footer initializes one embedded StatusBar and forwards helper properti
 });
 
 
-test("the agent count expands a collapsed unified sidebar and selects Needs attention", () => {
+test("the agent count opens a dialog without expanding or changing the unified sidebar", () => {
   const f = fixture({ agents: [{ address: "t1", status: "blocked", seq: 4 }], unified: true, hidden: true, width: 76 });
   f.state.values["sidebar.width"] = 310;
   const control = find(f.render(), "workspace-agents");
-  assert.equal(control.attributes.tooltip, "Show agents that need attention");
+  assert.equal(control.attributes.tooltip, "Open agents in a dialog");
   control.events.on_click();
-  assert.deepEqual(f.calls, [["layout.show", { id: "sidebar" }], ["layout.resize", { id: "sidebar", px: 310 }]]);
-  assert.equal(f.state.values[FILTER_KEY], "attention");
+  assert.equal(f.calls.length, 1); assert.equal(f.calls[0][0], 'overlay'); assert.equal(f.calls[0][1].mod, 'sessions-plus');
+  assert.deepEqual(f.calls[0][1].props, { role: 'live-agents' }); assert.equal(f.calls[0][1].kind, 'dialog');
+  assert.equal(f.state.values[FILTER_KEY], undefined); assert.equal(f.state.tree.hidden, true); assert.equal(f.state.tree.size.px, 76);
 });
 
-test("the agent count is an explained no-op without the unified sidebar and rechecks layout at click time", () => {
-  const f = fixture(); let control = find(f.render(), "workspace-agents");
-  assert.match(control.attributes.tooltip, /Enable the unified sidebar/); control.events.on_click();
-  assert.deepEqual(f.calls, []); assert.deepEqual(f.state.values, {});
-  const g = fixture({ unified: true, width: 44 }); g.state.values["sidebar.width"] = NaN;
-  find(g.render(), "workspace-agents").events.on_click(); assert.deepEqual(g.calls, [["layout.resize", { id: "sidebar", px: 268 }]]);
-  g.state.tree.children = []; g.calls.length = 0; g.state.values = {};
-  find(g.render(), "workspace-agents").events.on_click(); assert.deepEqual(g.calls, []); assert.deepEqual(g.state.values, {});
+test("agents and the launcher remain accessible without the unified sidebar", () => {
+  const f = fixture(); find(f.render(), "workspace-agents").events.on_click();
+  assert.equal(f.calls[0][1].props.role, 'live-agents'); assert.deepEqual(f.state.values, {});
+  find(f.render(), 'workspace-launcher-button').events.on_click();
+  assert.equal(f.calls[1][1].props.role, 'launcher');
 });
 
 test("resource use sits before the command hint and shares the footer's props", () => {
   const f = fixture({ props: { node: "/opt/node" } }), tree = f.render();
   const ids = tree.children.map(child => child.attributes.id);
-  assert.deepEqual(ids.slice(-2), ["workspace-resources", "workspace-commands"]);
+  assert.deepEqual(ids.slice(-3), ["workspace-resources", "workspace-launcher-button", "workspace-commands"]);
   assert.match(text(find(tree, "workspace-resources")), /324 MB/);
   assert.equal(f.resources.length, 1); assert.equal(f.resources[0].props.node, "/opt/node");
 });

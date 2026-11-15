@@ -24,6 +24,9 @@ export default class FilesPlus extends View {
     this.role.init(pr, cx);
   }
 
-  render(cx) { return privacyGuard("Files & Changes", this.p) || this.role.render(cx); }
+  render(cx) {
+    const content = privacyGuard("Files & Changes", this.p) || this.role.render(cx);
+    return Number.isFinite(this.p.panelRadius) && !this.p.overlay ? content.rounded(this.p.panelRadius).overflow_hidden() : content;
+  }
   close(cx) { this.role?.close?.(cx); }
 }

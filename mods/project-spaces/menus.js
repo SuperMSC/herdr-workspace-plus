@@ -30,7 +30,7 @@ function pinItem(kind, id, title, current) {
 
 /** Open the rename / new-project dialog. */
 export function openPrompt(props) {
-  openOverlay({ mod: MOD, kind: "dialog", frame: "none", width: 400, height: 214, props: { role: "prompt", ...props } });
+  openOverlay({ mod: MOD, kind: "dialog", width: 400, height: 214, props: { role: "prompt", ...props } });
 }
 
 /** Open a menu role at the pointer, sized to its rows. */
@@ -54,8 +54,8 @@ function spaceItems(p) {
   if (p.unified === true) items.push(pinItem("space", s.id, "directory", () => liveSpace(s, spaces())));
   const folder = p.auto?.folder || s.folder;
   if (folder) {
-    items.push({ label: "Project notes", icon: "file-text", act: () => openOverlay({ mod: "sessions-plus", kind: "dialog", frame: "none", width: 800, height: 680, props: { role: "notes", project: { root: folder, on: s.machine ?? null }, initial: "project" } }) });
-    items.push({ label: "Project commands", icon: "terminal", act: () => openOverlay({ mod: "sessions-plus", kind: "dialog", frame: "none", width: 820, height: 680, props: { role: "commands", context: { root: folder, on: s.machine ?? null } } }) });
+    items.push({ label: "Project notes", icon: "file-text", act: () => openOverlay({ mod: "sessions-plus", kind: "dialog", width: 800, height: 680, props: { role: "notes", project: { root: folder, on: s.machine ?? null }, initial: "project" } }) });
+    items.push({ label: "Project commands", icon: "terminal", act: () => openOverlay({ mod: "sessions-plus", kind: "dialog", width: 820, height: 680, props: { role: "commands", context: { root: folder, on: s.machine ?? null } } }) });
   }
   if (p.git) {
     items.push({ label: "New worktree", icon: "git-branch", act: () => openOverlay({ mod: "worktree", kind: "dialog", width: 440, height: 260, props: { space: s.id, action: "new" } }) });
@@ -86,8 +86,8 @@ function groupItems(p) {
   }));
   if (g.folder) items.push({ label: "New space here", icon: "plus", act: () => run("space.new", { folder: g.folder, machine: g.machine ?? "" }) });
   if (g.folder) {
-    items.push({ label: "Project notes", icon: "file-text", act: () => openOverlay({ mod: "sessions-plus", kind: "dialog", frame: "none", width: 800, height: 680, props: { role: "notes", project: { root: g.folder, on: g.machine ?? null }, initial: "project" } }) });
-    items.push({ label: "Project commands", icon: "terminal", act: () => openOverlay({ mod: "sessions-plus", kind: "dialog", frame: "none", width: 820, height: 680, props: { role: "commands", context: { root: g.folder, on: g.machine ?? null } } }) });
+    items.push({ label: "Project notes", icon: "file-text", act: () => openOverlay({ mod: "sessions-plus", kind: "dialog", width: 800, height: 680, props: { role: "notes", project: { root: g.folder, on: g.machine ?? null }, initial: "project" } }) });
+    items.push({ label: "Project commands", icon: "terminal", act: () => openOverlay({ mod: "sessions-plus", kind: "dialog", width: 820, height: 680, props: { role: "commands", context: { root: g.folder, on: g.machine ?? null } } }) });
   }
   items.push({ label: "Rename project…", icon: "square-pen", act: () => openPrompt({ action: "rename-group", key: g.key, value: g.name, title: "Rename project" }) });
   items.push({ swatches: true, key: g.key });

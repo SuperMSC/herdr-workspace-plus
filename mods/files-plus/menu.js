@@ -42,7 +42,7 @@ export default class Menu {
         try {
           if (await readTextFile(`${appHome()}/mods/sessions-plus/mod.json`) === null) throw new Error("Pending prompts requires the Sessions Plus companion. Run the full workspace updater first.");
           closeOverlay(this.p.overlay);
-          openOverlay({ mod: "sessions-plus", kind: "dialog", frame: "none", width: 660, height: 540, props: { role: "prompt-queue", reference: { root: target.root, relative: target.relative, dir: target.dir, on: target.on ?? null } } });
+          openOverlay({ mod: "sessions-plus", kind: "dialog", width: 660, height: 540, props: { role: "prompt-queue", reference: { root: target.root, relative: target.relative, dir: target.dir, on: target.on ?? null } } });
         } catch (error) { this.error = String(error.message || error); }
         finally { this.busy = false; cx.notify(); }
       });
@@ -54,7 +54,7 @@ export default class Menu {
       closeOverlay(this.p.overlay);
     } else if (["createFile", "createFolder", "rename", "trash", "stage", "unstage"].includes(action)) {
       closeOverlay(this.p.overlay);
-      openOverlay({ mod: "files-plus", kind: "dialog", frame: "none", width: 440, height: ["trash", "stage", "unstage"].includes(action) ? 240 : 272,
+      openOverlay({ mod: "files-plus", kind: "dialog", width: 440, height: ["trash", "stage", "unstage"].includes(action) ? 240 : 272,
         props: { role: "dialog", action, target } });
     } else {
       this.busy = true;
@@ -87,7 +87,7 @@ export default class Menu {
         cx.stop_propagation(); cx.notify();
       })
       .child(div().h(22).flex_none().px(8).pt(2).truncate().text_size(TYPE.sm).text_color(t.dim).child(this.target?.name ?? "Files"))
-      .child(v_flex().id("files-plus-menu-items").flex_1().min_h(0).overflow_y_scrollbar().children(this.items.map((item, i) => v_flex().flex_none()
+      .child(v_flex().id("files-plus-menu-items").flex_1().min_h(0).overflow_y_scrollbar().pr(16).children(this.items.map((item, i) => v_flex().flex_none()
         .when(item.separator, el => el.child(div().mx(8).my(3).h(1).bg(t.border)))
         .child(h_flex().id(`files-plus-${item.id}`).h(30).px(8).rounded(6).items_center().cursor_pointer()
           .text_color(item.danger ? t.ansi1 : t.foreground)
@@ -96,6 +96,6 @@ export default class Menu {
           .on_click((_event, cx) => this.choose(i, cx)).child(div().flex_1().child(item.label))
           .when(item.checked === true, el => el.child(div().flex_none().child("✓")))))))
       .child(div().h(22).flex_none().overflow_y_scrollbar().px(8).pt(3).text_size(TYPE.xs)
-        .text_color(this.error ? t.ansi1 : t.dim).child(this.error || (this.busy ? "Working…" : hint)));
+        .text_color(this.error ? t.ansi1 : t.dim).pr(16).child(this.error || (this.busy ? "Working…" : hint)));
   }
 }

@@ -4,7 +4,7 @@ import { h_flex, Popover } from "gpui-base";
 import { theme, shared, setShared } from "herdr";
 import { PROVIDERS } from "./model.js";
 import { providerIcon } from "./icons.js";
-import { durationLabel, percentage, resetLabel, quotaWarning } from "./quota-model.js";
+import { durationLabel, percentage, resetLabel, quotaWarning, quotaPace, paceLabel } from "./quota-model.js";
 import Quota from "./quota.js";
 
 export default class StatusBar {
@@ -37,13 +37,13 @@ export default class StatusBar {
       if (!row) return [];
       const windows = data.windows.filter(item => item?.unlimited || (Number.isFinite(item?.remaining) && Number.isFinite(item?.used)));
       const label = mode === "used" ? "Used" : "Remaining", stale = data.state === "stale";
-      const details = windows.map(item => `${item.label}: ${percentage(item, mode)}${item.unlimited ? "" : ` · ${resetLabel(item.resetAt)}${!Number.isFinite(item.resetAt) && item.minutes === 300 ? " · Showing default 5h" : ""}`}`);
+      const details = windows.map(item => `${item.label}: ${percentage(item, mode)}${item.unlimited ? "" : ` · ${resetLabel(item.resetAt)}${!Number.isFinite(item.resetAt) && item.minutes === 300 ? " · Showing default 5h" : ""}\n${paceLabel(item, Date.now(), stale)}`}`);
       const tooltip = [`${PROVIDERS[provider]} · ${label}${stale ? " · Stale" : ""}`, ...details, warning].filter(Boolean).join("\n");
       const format = withPercentage => windows.slice(0, 2).map(item => item.unlimited ? "∞" : [
         Number.isFinite(item.minutes) && item.minutes > 0 ? durationLabel(item.minutes) : "",
         withPercentage ? percentage(item, mode) : "", this.countdown(item.resetAt, item.minutes),
       ].filter(Boolean).join(" ")).join(" · ");
-      return [{ provider, row, text: row.unlimited ? "∞" : percentage(row, mode), compact: format(true), brief: format(false), extra: Math.max(0, windows.length - 2), stale, warning, tooltip }];
+      return [{ provider, row, pace: quotaPace(row, Date.now(), stale), text: row.unlimited ? "∞" : percentage(row, mode), compact: format(true), brief: format(false), extra: Math.max(0, windows.length - 2), stale, warning, tooltip }];
     });
   }
 
@@ -92,8 +92,8 @@ export default class StatusBar {
       .children((collapsed ? [] : summaries).map(item => h_flex().id(`quota-status-${item.provider}`).h(24).line_height("16px").px(5).gap(6).flex_none().items_center().rounded(5)
         .hover(el => el.bg(t.hover)).tooltip(item.tooltip)
         .child(providerIcon(item.provider, 15))
-        .when(bars && item.row && !item.row.unlimited, el => el.child(div().w(32).h(5).flex_none().rounded(3).bg(t.raised).overflow_hidden()
-          .child(div().h_full().w(`${Math.max(0, Math.min(100, item.row[mode]))}%`).rounded(3).bg(item.stale ? t.ansi3 : t.dim))))
+        .when(bars && item.row && !item.row.unlimited, el => el.child(div().w(32).h(5).flex_none().overflow_hidden().rounded(3).bg(t.raised)
+          .child(div().h_full().w(`${Math.max(0, Math.min(100, item.row[mode]))}%`).rounded(3).bg(item.stale || item.pace?.state === "ahead" ? t.ansi3 : t.dim))))
         .when(!minimal, el => el.child(div().id(`quota-status-label-${item.provider}`).h(24).line_height("16px").flex().items_center().whitespace_nowrap().text_color(item.stale ? t.ansi3 : t.muted).child(label(item))))
         .when(Boolean(item.warning), el => el.child(div().id(`quota-status-warning-${item.provider}`).size(13).flex_none().text_color(t.ansi3).tooltip(item.warning).accessibility_label(`${PROVIDERS[item.provider]}: ${item.warning}`).child(svg("mods/sessions-plus/warning.svg").size(13))))))
       .when(collapsed || (!summaries.length && !loading), el => el.child(div().text_color(t.muted).tooltip("Open quota details").child("Quota")))

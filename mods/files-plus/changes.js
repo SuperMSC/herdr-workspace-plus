@@ -170,12 +170,12 @@ export default class Changes {
     if (row) this.selectReviewLine(row, side, null, cx);
     try {
       const anchor = anchorFor(this.selectedFile(), this.reviewVersion, this.rawRows || [], this.reviewSelection);
-      openOverlay({ mod: "files-plus", kind: "dialog", frame: "none", width: 620, height: 420, props: { role: "review-comment", context: this.reviewContext(), anchor } });
+      openOverlay({ mod: "files-plus", kind: "dialog", width: 620, height: 420, props: { role: "review-comment", context: this.reviewContext(), anchor } });
     } catch (error) { this.note = String(error.message || error); cx.notify(); }
   }
   openReview() {
     if (!this.root) return;
-    openOverlay({ mod: "files-plus", kind: "dialog", frame: "none", width: 900, height: 720, props: { role: "review", context: this.reviewContext(), versions: { ...this.reviewVersions } } });
+    openOverlay({ mod: "files-plus", kind: "dialog", width: 900, height: 720, props: { role: "review", context: this.reviewContext(), versions: { ...this.reviewVersions } } });
   }
   markViewed(cx) {
     const file = this.selectedFile();
@@ -218,7 +218,7 @@ export default class Changes {
     if (captured && (captured.context !== this.context || captured.root !== this.root || captured.path !== file.path || captured.section !== file.section || captured.version !== data.version || captured.index !== selected.index || captured.patch !== selected.patch)) {
       this.note = "The displayed hunk changed. Refresh and select it again."; cx.notify(); return;
     }
-    openOverlay({ mod: "files-plus", kind: "dialog", frame: "none", width: 600, height: 330,
+    openOverlay({ mod: "files-plus", kind: "dialog", width: 600, height: 330,
       props: { role: "hunk", request: { root: this.root, on: null, action: file.section === "staged" ? "unstage" : "stage", file: { ...data.file }, version: data.version, hunk: { ...selected } } } });
   }
   hunkToolbar(t) {
@@ -309,13 +309,13 @@ export default class Changes {
 
   openCommit(commit) {
     if (!this.root) return;
-    openOverlay({ mod: "files-plus", kind: "dialog", frame: "none", width: 1100, height: 760, props: { role: "changes", source: { cwd: this.root, on: this.on }, expanded: true, showFiles: true, listMode: this.listMode, diffMode: this.diffMode, selection: { commit: commit.hash, parents: commit.parents, subject: commit.subject } } });
+    openOverlay({ mod: "files-plus", kind: "dialog", width: 1100, height: 760, props: { role: "changes", source: { cwd: this.root, on: this.on }, expanded: true, showFiles: true, listMode: this.listMode, diffMode: this.diffMode, selection: { commit: commit.hash, parents: commit.parents, subject: commit.subject } } });
   }
 
   expand() {
     if (this.page === "history" && !this.props.expanded) { if (this.selectedCommit) this.openCommit(this.selectedCommit); return; }
     const file = this.selectedFile(); if (!file || !this.root) return;
-    openOverlay({ mod: "files-plus", kind: "dialog", frame: "none", width: 1100, height: 760, props: { role: "changes", source: { cwd: this.root, on: this.on }, expanded: true, listMode: this.listMode, diffMode: this.diffMode, selection: { path: file.path, section: file.section, commit: file.commit, parents: file.parents, subject: this.selectedCommit?.subject } } });
+    openOverlay({ mod: "files-plus", kind: "dialog", width: 1100, height: 760, props: { role: "changes", source: { cwd: this.root, on: this.on }, expanded: true, listMode: this.listMode, diffMode: this.diffMode, selection: { path: file.path, section: file.section, commit: file.commit, parents: file.parents, subject: this.selectedCommit?.subject } } });
   }
 
   menu(file, cx) {
@@ -365,7 +365,7 @@ export default class Changes {
     const source = this.sourceLocation(), root = this.root || source.cwd;
     if (!root) return;
     const viewport = globalThis.window.viewport_size(), zoom = Number(settings().zoom) || 1;
-    openOverlay({ mod: "files-plus", kind: "dialog", frame: "none", width: Math.min(1120, viewport.width / zoom * .94), height: Math.min(820, viewport.height / zoom * .9), props: { role, root, on: source.on ?? null } });
+    openOverlay({ mod: "files-plus", kind: "dialog", width: Math.min(1120, viewport.width / zoom * .94), height: Math.min(820, viewport.height / zoom * .9), props: { role, root, on: source.on ?? null } });
   }
 
   fileRow(file, t) {
@@ -413,13 +413,13 @@ export default class Changes {
       const visible = this.listMode === "tree" ? fileTree(group, this.collapsed) : group;
       rows.push(...visible.map(file => this.fileRow(file, t)));
     }
-    return v_flex().id("changes-list").flex_1().min_h(0).overflow_y_scrollbar().p(5).border_b(1).border_color(t.border).children(rows)
+    return v_flex().id("changes-list").flex_1().min_h(0).overflow_y_scrollbar().p(5).border_b(1).border_color(t.border).pr(16).children(rows)
       .when(!files.length, e => e.child(div().px(8).py(5).text_color(t.dim).child(this.error || (this.page === "history" ? this.commitLoading ? "Loading commit files…" : this.selectedCommit ? "No file changes in this commit" : "Select a commit" : this.loading ? "Loading changes…" : this.root ? "No uncommitted changes" : "No folder"))));
   }
 
   historyList(t) {
     const full = !this.props.expanded;
-    return v_flex().id("git-history").when(full, e => e.flex_1().min_h(0)).when(!full, e => e.flex_none().h(165).border_b(1).border_color(t.border)).overflow_y_scrollbar().p(5)
+    return v_flex().id("git-history").when(full, e => e.flex_1().min_h(0)).when(!full, e => e.flex_none().h(165).border_b(1).border_color(t.border)).overflow_y_scrollbar().p(5).pr(16)
       .children(this.commits.map(commit => v_flex().id(`git-commit-${commit.hash}`).flex_none().px(7).py(5).rounded(5).cursor_pointer()
         .when(this.selectedCommit?.hash === commit.hash, e => e.bg(t.selected)).hover(e => e.bg(t.hover))
         .on_click((_e, cx) => { if (full) this.showCommit(commit, cx); else this.selectCommit(commit, cx); }).child(div().truncate().child(commit.subject || "(no subject)"))
@@ -523,7 +523,7 @@ export default class Changes {
     const t = theme(); this.compact = shared("project-spaces.density.v1") === "compact";
     const loading = Boolean(this.loading || this.historyLoading);
     const branch = this.branch.name || (this.root ? "Branch unavailable" : "No repository"), counts = this.branch.upstream ? `↑${this.branch.ahead} ↓${this.branch.behind}` : "No upstream";
-    return v_flex().id("changes").size_full().min_h(0).min_w(0).rounded(this.props.expanded ? 10 : 0).overflow_hidden().bg(this.props.expanded ? t.background : t.chrome).when(this.props.expanded, el => el.border_1().border_color(t.border)).text_color(t.foreground).text_size(TYPE.md).track_focus(this.handle)
+    return v_flex().id("changes").size_full().min_h(0).min_w(0).overflow_hidden().bg(this.props.expanded ? t.background : t.chrome).text_color(t.foreground).text_size(TYPE.md).track_focus(this.handle)
       .on_key_down((e, cx) => { if (e.key === "escape" && this.typing) { this.typing = false; this.handle.focus(); cx.stop_propagation(); cx.notify(); } })
       .child(v_flex().id("git-context-header").flex_none().px(8).pt(6).pb(5).gap(3)
         .child(h_flex().h(23).gap(6).items_center()

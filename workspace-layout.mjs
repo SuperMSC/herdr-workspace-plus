@@ -61,7 +61,10 @@ export function integrateWorkspace(source) {
   const headerEntry = named("tabs"), footerEntry = named("status"), panelEntry = named("panel"), bodyEntry = named("panel-body");
   if (!headerEntry || !footerEntry || !panelEntry || !bodyEntry) return unchanged();
   const header = barShape(headerEntry, "tabs", "toolbar", all), footer = footerShape(footerEntry, all);
-  if (!header || !footer || header.owner !== footer.owner) return unchanged();
+  if (!header || !footer) return unchanged();
+  const fullWidth = layout.type === "column" && footer.owner === layout &&
+    layout.children?.some(child => child.type === "row" && child.children?.includes(header.owner) && child.children?.some(node => node.id === "sidebar"));
+  if (header.owner !== footer.owner && !fullWidth) return unchanged();
   const panel = panelEntry.node, body = bodyEntry.node;
   if (panel.type !== "column" || body.type !== "stack" || bodyEntry.parent !== panel) return unchanged();
   if (!nodes(header.owner).some(item => item.node === panel) || !Array.isArray(panel.children) || !Array.isArray(body.children)) return unchanged();
@@ -134,6 +137,94 @@ export function integrateWorkspace(source) {
     changed = true;
   }
   return { layout, changed, integrated: true };
+}
+
+/** Move a recognized workspace footer below both columns, preserving every block identity. */
+export function useFullWidthFooter(source) {
+  const layout = structuredClone(source), unchanged = () => ({ layout, changed: false });
+  if (!object(layout) || layout.type !== "row" || layout.children?.length !== 2) return unchanged();
+  const sidebar = layout.children.find(node => node.id === "sidebar" && node.type === "column");
+  const work = layout.children.find(node => node.id === "work" && node.type === "column");
+  if (!sidebar || !work) return unchanged();
+  const all = nodes(layout), entries = all.filter(({ node }) => node.id === "status");
+  if (entries.length !== 1) return unchanged();
+  const footer = footerShape(entries[0], all), bar = footer?.wrapper ?? footer?.native;
+  if (!footer?.integrated || footer.owner !== work || work.children.at(-1) !== bar) return unchanged();
+  const ids = new Set(all.map(({ node }) => node.id));
+  let id = "workspace-body", suffix = 1;
+  while (ids.has(id)) id = `workspace-body-${suffix++}`;
+  const body = { id, type: "row", size: { weight: 1 }, min: 0, children: layout.children };
+  for (const key of ["divider", "resizable", "gap"]) if (Object.hasOwn(layout, key)) body[key] = layout[key];
+  work.children = work.children.slice(0, -1);
+  layout.type = "column"; layout.children = [body, bar]; layout.divider = { width: 0 }; layout.resizable = false; layout.gap = 0;
+  return { layout, changed: true };
+}
+
+const SIDEBAR_BODY = "workspace-sidebar-body", SIDEBAR_SURFACE = "workspace-sidebar-surface", SIDEBAR_INSET = "workspace-sidebar-inset";
+
+function framedSidebar(all, sidebar, lists) {
+  const body = all.filter(({ node }) => node.id === SIDEBAR_BODY);
+  const surface = all.filter(({ node }) => node.id === SIDEBAR_SURFACE);
+  return body.length === 1 && surface.length === 1 && body[0].parent === sidebar &&
+    (body[0].node.type === "column" && body[0].node.children?.length === 1 ||
+      body[0].node.type === "row" && body[0].node.children?.length === 2 && body[0].node.children[0].id === SIDEBAR_INSET) &&
+    surface[0].parent === body[0].node && surface[0].node.type === "column" &&
+    surface[0].node.children?.includes(lists);
+}
+
+/** Give the known sidebar and panel the terminal pane's radius and body spacing. */
+export function usePanelFrames(source) {
+  const layout = structuredClone(source), unchanged = () => ({ layout, changed: false });
+  if (!object(layout)) return unchanged();
+  const ids = nodes(layout).map(({ node }) => node.id).filter(id => typeof id === "string");
+  if (new Set(ids).size !== ids.length) return unchanged();
+  const all = nodes(layout), named = id => {
+    const found = all.filter(({ node }) => node.id === id);
+    return found.length === 1 ? found[0] : null;
+  };
+  const sidebar = named("sidebar"), lists = named("sidebar-lists"), brand = named("brand"), footer = named("sidebar-footer");
+  const body = named("work-body"), panel = named("panel"), main = named("main"), tabs = named("tabs");
+  const radius = main?.node.content?.pane?.radius;
+  if (!sidebar || !lists || !brand || !footer || !body || !panel || !tabs ||
+      sidebar.node.type !== "column" || lists.node.type !== "column" || body.node.type !== "row" ||
+      panel.node.type !== "column" || panel.parent !== body.node || main?.parent !== body.node ||
+      !Number.isFinite(radius) || radius < 0 || brand.parent !== sidebar.node ||
+      brand.node.content?.mod !== "workspace-chrome" ||
+      !(footer.node.content?.mod === "workspace-chrome" && footer.node.content.props?.footer === true ||
+        footer.node.content?.mod === "sessions-plus" && footer.node.content.props?.role === "sidebar-footer")) return unchanged();
+  const wrapped = framedSidebar(all, sidebar.node, lists.node);
+  if (wrapped ? sidebar.node.children?.length !== 2 || lists.parent?.children?.length !== 2 || footer.parent !== lists.parent
+      : sidebar.node.children?.length !== 3 || lists.parent !== sidebar.node || footer.parent !== sidebar.node ||
+        all.some(({ node }) => [SIDEBAR_BODY, SIDEBAR_SURFACE, SIDEBAR_INSET].includes(node.id))) return unchanged();
+  const header = tabs.parent?.type === "row" ? tabs.parent : tabs.node;
+  if (header === tabs.parent && !header.children?.some(node => node.content?.mod === "sessions-plus" && node.content.props?.role === "toolbar")) return unchanged();
+  const before = JSON.stringify(layout), padding = body.node.padding ?? 0;
+  const [vertical, horizontal] = Array.isArray(padding) ? padding : [padding, padding];
+  let inset, surface;
+  if (wrapped) { inset = named(SIDEBAR_BODY).node; surface = named(SIDEBAR_SURFACE).node; }
+  else {
+    surface = { id: SIDEBAR_SURFACE, type: "column", size: { weight: 1 }, min: 0,
+      background: sidebar.node.background ?? "chrome", divider: { width: 0 }, resizable: false, children: [lists.node, footer.node] };
+    inset = { id: SIDEBAR_BODY, type: "column", size: { weight: 1 }, min: 0, divider: { width: 0 }, resizable: false, children: [surface] };
+    sidebar.node.children = [brand.node, inset];
+  }
+  // The work body's left padding already supplies the gutter beside the terminal.
+  inset.type = "row"; inset.padding = [vertical, 0];
+  inset.children = [{ id: SIDEBAR_INSET, type: "column", size: { px: horizontal }, min: 0, max: horizontal, children: [] }, surface];
+  surface.radius = radius;
+  footer.node.content = { ...footer.node.content, mod: "sessions-plus", props: { ...footer.node.content.props, role: "sidebar-footer", panelRadius: radius } };
+  sidebar.node.background = layout.background ?? "canvas";
+  // Match the native Tabs bottom rule without shifting either body downward.
+  sidebar.node.divider = { width: 1, color: "border" };
+  sidebar.node.resizable = false;
+  if (Number.isFinite(header.size?.px)) brand.node.size = { ...brand.node.size, px: Math.max(0, header.size.px - 1) };
+  panel.node.radius = radius;
+  panel.node.background ??= surface.background;
+  for (const { node } of nodes(panel.node)) if (node.type === "block" && ["files-plus", "sessions-plus"].includes(node.content?.mod)) {
+    node.content.props = { ...node.content.props, panelRadius: radius };
+  }
+  if (sidebar.parent?.type === "row") sidebar.parent.divider = { ...sidebar.parent.divider, width: 0 };
+  return { layout, changed: JSON.stringify(layout) !== before };
 }
 
 /** Restore native Spaces after the retired addon; preserve IDs, props, geometry and custom mods. */
@@ -228,7 +319,9 @@ export function useUnifiedSidebar(source, on = true) {
   if (typeof on !== "boolean" || !object(source)) throw new Error("Unified sidebar requires a layout object and a boolean choice.");
   const layout = structuredClone(source), all = nodes(layout), matches = id => all.filter(row => row.node.id === id);
   const lists = matches("sidebar-lists"), sidebars = matches("sidebar");
-  if (lists.length !== 1 || sidebars.length !== 1 || lists[0].parent !== sidebars[0].node || lists[0].node.type !== "column" || sidebars[0].node.type !== "column") throw new Error("This layout has no unique recognized sidebar/sidebar-lists column. No sidebar was changed.");
+  if (lists.length !== 1 || sidebars.length !== 1 ||
+      (lists[0].parent !== sidebars[0].node && !framedSidebar(all, sidebars[0].node, lists[0].node)) ||
+      lists[0].node.type !== "column" || sidebars[0].node.type !== "column") throw new Error("This layout has no unique recognized sidebar/sidebar-lists column. No sidebar was changed.");
   const container = lists[0].node, backup = layout[UNIFIED_SIDEBAR_META];
   const result = (changed, unified, restorable = false) => ({ layout, changed, found: true, unified, restorable });
   if (Object.hasOwn(layout, UNIFIED_SIDEBAR_META)) {

@@ -72,7 +72,7 @@ export default class FileFind {
   content(t, width, fontSize = 12) {
     const result = this.result, active = this.active, selected = result.matches[active];
     const columns = Math.max(20, Math.floor((width - 90) / (fontSize * 0.6))), rowHeight = Math.max(24, Math.ceil(fontSize * 1.8));
-    return v_flex().id("file-find-source").relative().flex_1().min_h(0).min_w(0).overflow_hidden()
+    return v_flex().id("file-find-source").relative().pr(16).flex_1().min_h(0).min_w(0).overflow_hidden()
       .on_mouse_down("left", () => this.handle.focus())
       .child(v_virtual_list("file-find-lines", result.lines.length, rowHeight, index => String(index), range =>
         result.lines.slice(range.start, range.end).map((line, index) => {

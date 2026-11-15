@@ -5,7 +5,7 @@ import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { cloneLayout } from "./install.mjs";
-import { integrateWorkspace, restoreNativeSpaces, useProjectSpaces, useAgentsPlus, usePaneHeader, useUnifiedSidebar, hasUnifiedSidebar } from "./workspace-layout.mjs";
+import { integrateWorkspace, useFullWidthFooter, usePanelFrames, restoreNativeSpaces, useProjectSpaces, useAgentsPlus, usePaneHeader, useUnifiedSidebar, hasUnifiedSidebar } from "./workspace-layout.mjs";
 import { DISPLAY_NAME, installedLayoutName } from "./layout-name.mjs";
 
 const packageRoot = dirname(fileURLToPath(import.meta.url));
@@ -117,8 +117,10 @@ export function update({
       const integration = integrateWorkspace(next);
       if (!integration.integrated) throw new Error("This custom layout cannot be integrated automatically. Update without --integrate-layout to keep its existing interface.");
       const nativeSpaces = restoreNativeSpaces(integration.layout), header = usePaneHeader(nativeSpaces.layout);
-      next = header.layout;
-      changed = changed || integration.changed || nativeSpaces.changed || header.changed;
+      const fullWidth = useFullWidthFooter(header.layout);
+      const frames = usePanelFrames(fullWidth.layout);
+      next = frames.layout;
+      changed = changed || integration.changed || nativeSpaces.changed || header.changed || fullWidth.changed || frames.changed;
     }
     if (projects !== undefined) {
       const switched = useProjectSpaces(next, projects);

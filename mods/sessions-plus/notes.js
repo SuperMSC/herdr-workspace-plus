@@ -183,7 +183,7 @@ export default class Notes {
     try {
       this.keepDraft();
       const value = this.fields(); if (!value.body.trim()) throw new Error("Write a note before adding it to pending prompts.");
-      openOverlay({ mod: "sessions-plus", kind: "dialog", frame: "none", width: 660, height: 640, props: { role: "prompt-queue", text: `Notes: ${value.title}\n\n${value.body}`, title: value.title, on: this.scope.on ?? null } });
+      openOverlay({ mod: "sessions-plus", kind: "dialog", width: 660, height: 640, props: { role: "prompt-queue", text: `Notes: ${value.title}\n\n${value.body}`, title: value.title, on: this.scope.on ?? null } });
     } catch (error) { this.error = String(error.message || error); cx.notify(); }
   }
   async close() {
@@ -205,7 +205,7 @@ export default class Notes {
     const list = v_flex().id("notes-list").flex_1().min_h(0).gap(7)
       .child(Input.new(this.query).w_full().h(32).flex_none())
       .child(h_flex().flex_none().gap(7).items_center().child(button("notes-show-archived", this.showArchived ? "Hide archived" : "Show archived", cx => { this.showArchived = !this.showArchived; cx.notify(); })).child(div().text_size(TYPE.xs).text_color(t.muted).child(`${this.store.notes.length}/${NOTES_LIMITS.notes} saved contexts`)))
-      .child(v_flex().id("notes-results").flex_1().min_h(0).gap(5).overflow_y_scrollbar()
+      .child(v_flex().id("notes-results").flex_1().min_h(0).gap(5).overflow_y_scrollbar().pr(16)
         .children(notes.map(note => div().id("notes-entry-" + note.key).p(9).rounded(6).bg(t.raised).cursor_pointer().hover(row => row.bg(t.hover)).on_click((_event, cx) => this.choose(note.scope, cx))
           .child(div().font_semibold().truncate().child(`${note.archived ? "Archived · " : ""}${note.title}`))
           .child(div().text_size(TYPE.xs).text_color(t.muted).truncate().tooltip(note.scope.folder).child(`${note.scope.type} · ${note.scope.label}${note.scope.on ? " · " + note.scope.on : ""}`))
@@ -219,7 +219,7 @@ export default class Notes {
         .child(div().flex_1().text_size(TYPE.xs).text_color(t.blocked).child("An unsaved draft is available from a closed or another view."))
         .child(button(`notes-recover-${draft.owner}`, "Restore draft", cx => this.restoreDraft(draft, cx), busy))))
       .child(div().flex_1().min_h(100).border_1().border_color(t.border).rounded(6).child(Editor.new(this.editor).size_full()))
-      .when(this.showVersions && Boolean(this.note?.versions.length), el => el.child(v_flex().max_h(120).overflow_y_scrollbar().flex_none().gap(4)
+      .when(this.showVersions && Boolean(this.note?.versions.length), el => el.child(v_flex().max_h(120).overflow_y_scrollbar().flex_none().gap(4).pr(16)
         .children(this.note.versions.map(version => button(`notes-version-${version.revision}`, `Restore saved version ${version.revision} · ${new Date(version.updated).toLocaleString()}`, cx => this.restoreVersion(version, cx), busy || this.conflict)))))
       .child(h_flex().flex_none().gap(6).flex_wrap()
         .child(button("notes-save", this.saving ? "Saving…" : "Save", cx => this.save(cx), busy))
@@ -232,7 +232,7 @@ export default class Notes {
       .when(this.removeArmed, el => el.child(div().text_size(TYPE.xs).text_color(t.blocked).child("Removal frees this saved slot. Latest text stays in recovery; older saved versions are removed.")))
       .when(this.conflict, el => el.child(button("notes-reload", this.confirmReload ? "Confirm reload · discard this view's draft" : "Reload saved note…", cx => this.reloadSaved(cx), busy)))
       .child(div().flex_none().text_size(TYPE.xs).text_color(t.muted).child(`${this.status}${this.dirty() ? " · Unsaved changes" : ""} · ${this.fields().body.length.toLocaleString()}/${NOTES_LIMITS.body.toLocaleString()} characters`));
-    return v_flex().id("workspace-notes").size_full().min_h(0).min_w(0).p(14).gap(9).rounded(10).overflow_hidden().border_1().border_color(t.border).bg(t.popover).text_color(t.foreground).text_size(TYPE.md)
+    return v_flex().id("workspace-notes").size_full().min_h(0).min_w(0).p(14).gap(9).overflow_hidden().bg(t.popover).text_color(t.foreground).text_size(TYPE.md)
       .track_focus(this.handle).on_key_down((event, cx) => {
         if (event.key === "s" && (event.modifiers?.platform || event.modifiers?.control)) { this.save(cx); cx.stop_propagation(); }
         else if (event.key === "escape") { closeOverlay(this.p.overlay); cx.stop_propagation(); }
@@ -244,6 +244,6 @@ export default class Notes {
         .child(button("notes-all", "All notes", cx => this.all(cx), this.saving, this.showAll)))
       .child(div().flex_none().text_size(TYPE.xs).text_color(t.muted).truncate().tooltip(this.scope.folder || this.scope.label).child(`${this.scope.type} · ${this.scope.label}${this.scope.on ? " · " + this.scope.on : ""}`))
       .child(this.loading ? div().flex_1().p(12).text_color(t.muted).child("Loading saved notes…") : this.loadFailed ? div().flex_1().p(12).text_color(t.muted).child("Saved notes could not be opened. Existing notes and recovery drafts were left unchanged. Use Refresh to try again.") : this.showAll ? list : editor)
-      .when(Boolean(this.error || recoveryError), el => el.child(div().flex_none().max_h(75).overflow_y_scrollbar().text_size(TYPE.sm).text_color(t.ansi1).child(this.error || recoveryError)));
+      .when(Boolean(this.error || recoveryError), el => el.child(div().flex_none().max_h(75).overflow_y_scrollbar().text_size(TYPE.sm).text_color(t.ansi1).pr(16).child(this.error || recoveryError)));
   }
 }

@@ -102,11 +102,11 @@ export default class TrashDialog {
     const files = v_flex().flex_1().min_h(0).rounded(8).border_1().border_color(t.border).overflow_hidden()
       .child(h_flex().flex_none().h(26).px(12).items_center().border_b_1().border_color(t.border).bg(t.surface)
         .text_size(TYPE.sm).text_color(t.dim).child(status || `${this.files.length} file${this.files.length === 1 ? "" : "s"}`))
-      .child(v_flex().id("session-trash-files").flex_1().min_h(0).px(12).py(6).gap(3).overflow_y_scrollbar().text_size(TYPE.sm).text_color(t.muted)
+      .child(v_flex().id("session-trash-files").flex_1().min_h(0).px(12).py(6).gap(3).overflow_y_scrollbar().text_size(TYPE.sm).text_color(t.muted).pr(16)
         .children(this.files.map(file => div().truncate().text_ellipsis_start().child(file))));
 
-    return v_flex().id("session-trash-dialog").size_full().min_h(0).px(20).pt(20).pb(18).gap(14).rounded(12).overflow_hidden()
-      .border_1().border_color(t.border).bg(t.popover).text_color(t.foreground).text_size(TYPE.md)
+    return v_flex().id("session-trash-dialog").size_full().min_h(0).px(20).pt(20).pb(18).gap(14).overflow_hidden()
+      .bg(t.popover).text_color(t.foreground).text_size(TYPE.md)
       .track_focus(this.handle).on_key_down((event, cx) => {
         if (event.key === "escape") { if (!this.busy) closeOverlay(this.p.overlay); }
         else if (event.key === "enter") this.submit(cx);
@@ -125,7 +125,7 @@ export default class TrashDialog {
       .when(!trash && Boolean(this.target.message), el => el.child(div().flex_none().text_size(TYPE.sm).text_color(t.muted).child(this.target.message)))
       .when(trash, el => el.child(files))
       .when(!trash, el => el.child(div().flex_1().min_h(0).text_size(TYPE.sm).text_color(t.dim).child(status)))
-      .when(Boolean(this.error), el => el.child(div().flex_none().max_h(54).overflow_y_scrollbar().text_size(TYPE.md).text_color(t.blocked).child(this.error)))
+      .when(Boolean(this.error), el => el.child(div().flex_none().max_h(54).overflow_y_scrollbar().text_size(TYPE.md).text_color(t.blocked).pr(16).child(this.error)))
       .child(h_flex().flex_none().gap(8).justify_end()
         .child(button("session-trash-cancel", "Cancel", false, () => { if (!this.busy) closeOverlay(this.p.overlay); }))
         .child(button("session-trash-confirm", label, true, (_event, cx) => this.submit(cx))));

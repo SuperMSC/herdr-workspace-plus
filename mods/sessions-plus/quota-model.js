@@ -63,3 +63,19 @@ export function resetLabel(value, now = Date.now()) {
   const date = new Date(value), clock = `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
   return `Resets in ${relative} · ${date.getMonth() + 1}/${date.getDate()} ${clock}`;
 }
+
+// A time benchmark, not a prediction. Expired, stale or unknown windows have no pace reading.
+export function quotaPace(row, now = Date.now(), stale = false) {
+  if (stale || row?.unlimited || !finite(row?.used) || row.used < 0 || row.used > 100 ||
+    !finite(row.resetAt) || !finite(row.minutes) || row.minutes <= 0 || !finite(now)) return null;
+  const duration = row.minutes * 60000, left = row.resetAt - now;
+  if (left <= 0 || left > duration || !finite(duration)) return null;
+  const elapsed = 100 * (1 - left / duration), difference = row.used - elapsed;
+  return { elapsed, difference, state: difference > 10 ? "ahead" : difference < -10 ? "under" : "steady" };
+}
+export function paceLabel(row, now = Date.now(), stale = false) {
+  const pace = quotaPace(row, now, stale);
+  if (!pace) return "Pace unavailable";
+  const label = pace.state === "ahead" ? "Using faster than time elapsed" : pace.state === "under" ? "Using slower than time elapsed" : "Near the time benchmark";
+  return `${label} · ${Math.round(pace.elapsed)}% time elapsed / ${Number(row.used.toFixed(1))}% used`;
+}

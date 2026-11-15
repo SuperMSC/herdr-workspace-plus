@@ -62,12 +62,12 @@ test("unified task trailing columns reserve status width only for visible states
  const row={id:'agent:t1',kind:'agent',agent:true,title:'herdr.app 最新版本与 agent 工作区',program:{name:'Codex',agent:true},metadata:'',target:{kind:'agent',address:'t1'}},cx={notify(){},stop_propagation(){}};
  const draw=(status,density,overrides={})=>view.entityRow({...row,status,branchStatus:status,...overrides},0,{density},cx),find=(tree,prefix)=>nodes(tree).find(node=>node.attrs.id===prefix+row.id);
  for(const density of ['detailed','compact'])for(const status of ['idle',null,'working','blocked','done','unknown']){
-  view.hovered=null;const before=draw(status,density),actions=find(before,'unified-actions-'),pin=find(before,'unified-agent-pin-slot-'),slot=find(before,'unified-status-slot-'),statusWidth=['working','blocked','done','unknown'].includes(status)?density==='detailed'?72:13:0;
+  view.hovered=null;const before=draw(status,density),actions=find(before,'unified-actions-'),pin=find(before,'unified-agent-pin-slot-'),slot=find(before,'unified-status-slot-'),statusWidth=['idle','working','blocked','done','unknown'].includes(status)?density==='detailed'?72:13:0;
   assert.equal(actions.attrs.w,19+(statusWidth?3+statusWidth:0));assert.equal(slot?.attrs.w||0,statusWidth);assert.equal(actions.childNodes.length,statusWidth?2:1);assert.equal(pin.attrs.size,19);assert.equal(pin.childNodes.length,0);
   before.events.on_hover(true,cx);const hovered=draw(status,density);assert.equal(find(hovered,'unified-actions-').attrs.w,actions.attrs.w);assert.equal(find(hovered,'unified-agent-pin-slot-').attrs.size,19);assert.equal(find(hovered,'unified-agent-pin-slot-').childNodes.length,1);
   hovered.events.on_hover(false,cx);const after=draw(status,density);assert.equal(find(after,'unified-actions-').attrs.w,actions.attrs.w);assert.equal(find(after,'unified-agent-pin-slot-').childNodes.length,0);
  }
  for(const density of ['detailed','compact']){
-  const shell=draw('unknown',density,{kind:'terminal',agent:false,program:{name:'zsh',shell:true,agent:false},target:{kind:'terminal',address:'t1'}});assert.equal(find(shell,'unified-status-slot-').attrs.w,density==='detailed'?72:13);assert(find(shell,'unified-status-'));if(density==='detailed')assert(strings(find(shell,'unified-status-')).includes('Unknown'));
+  const shell=draw('unknown',density,{kind:'terminal',agent:false,program:{name:'zsh',shell:true,agent:false},target:{kind:'terminal',address:'t1'}});assert.equal(find(shell,'unified-status-slot-'),undefined);assert.equal(find(shell,'unified-status-'),undefined);assert.equal(find(shell,'unified-actions-').attrs.w,19);assert(!strings(shell).includes('Unknown'));
  }
 });

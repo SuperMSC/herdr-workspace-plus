@@ -75,7 +75,7 @@ export default class Search {
     cx.spawn(async cx => {
       try {
         if (await readTextFile(`${appHome()}/mods/sessions-plus/mod.json`) === null) throw new Error("Pending prompts requires the Sessions Plus companion. Run the full workspace updater first.");
-        if (!this.disposed) openOverlay({ mod: "sessions-plus", kind: "dialog", frame: "none", width: 660, height: 540, props: { role: "prompt-queue", reference } });
+        if (!this.disposed) openOverlay({ mod: "sessions-plus", kind: "dialog", width: 660, height: 540, props: { role: "prompt-queue", reference } });
       } catch (error) { if (!this.disposed) this.error = String(error.message || error); }
       finally { this.referenceBusy = false; if (!this.disposed) cx.notify(); }
     });
@@ -85,7 +85,7 @@ export default class Search {
   chip(id, label, active, action, t, tooltip) { return div().id(`search-${id}`).px(7).py(5).rounded(5).flex_none().cursor_pointer().bg(active ? t.selected : t.surface).hover(s => s.bg(t.hover)).tooltip(tooltip || label).on_click(action).child(label); }
   render(cx) {
     const t = theme(), groups = groupedMatches(this.matches), empty = !this.query.value().trim(), loading = Boolean(this.loading);
-    return v_flex().id('project-search').size_full().min_h(0).min_w(0).rounded(10).overflow_hidden().border_1().border_color(t.border).bg(t.background).text_color(t.foreground).text_size(TYPE.md).p(12).gap(8)
+    return v_flex().id('project-search').size_full().min_h(0).min_w(0).overflow_hidden().bg(t.background).text_color(t.foreground).text_size(TYPE.md).p(12).gap(8)
       .child(h_flex().flex_none().gap(8).items_center().child(div().font_semibold().text_size(TYPE.lg).child(this.roots?.length > 1 ? 'Workspace search' : 'Project search')).child(div().flex_1().min_w(0).truncate().text_color(t.dim).tooltip(this.roots?.map(source => source.root).join(' · ') || this.root || '').child(this.roots?.length > 1 ? `${this.roots.length} folders` : this.root || 'No folder')))
       .child(h_flex().flex_none().gap(5).items_center().child(Input.new(this.query).h(32).flex_1().min_w(80).px(8).rounded(5).bg(t.surface).border_1().border_color(t.input))
         .child(this.chip('content', 'Content', this.mode === 'content', (_e, cx) => { this.mode = 'content'; this.schedule(cx); }, t))
@@ -104,7 +104,7 @@ export default class Search {
       .child(h_flex().flex_none().gap(6).child(Input.new(this.include).h(28).flex_1().min_w(0).px(8).rounded(5).bg(t.surface)).child(Input.new(this.exclude).h(28).flex_1().min_w(0).px(8).rounded(5).bg(t.surface)))
       .when(Boolean(this.error || this.warning), el => el.child(div().flex_none().text_color(t.blocked).child(this.error || this.warning)))
       .child(h_flex().id('search-panes').flex_1().min_h(0).min_w(0).items_stretch().overflow_hidden().gap(10)
-        .child(v_flex().id('search-results').flex_1().h_full().min_w(0).min_h(0).overflow_y_scrollbar()
+        .child(v_flex().id('search-results').flex_1().h_full().min_w(0).min_h(0).overflow_y_scrollbar().pr(16)
           .when(Boolean(this.selected), el => el.max_w(350))
           .when(!groups.length, el => el.child(div().p(10).text_color(t.dim).child(empty ? 'Enter text to search this folder. File filters accept comma-separated globs.' : this.loading ? 'Searching…' : this.error ? '' : 'No matches')))
           .children(groups.map(group => v_flex().flex_none().min_w(0).mb(6)

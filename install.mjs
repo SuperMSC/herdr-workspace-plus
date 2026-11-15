@@ -4,7 +4,7 @@ import { constants, closeSync, copyFileSync, lstatSync, mkdirSync, openSync, rea
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { integrateWorkspace, restoreNativeSpaces, useProjectSpaces, useAgentsPlus, usePaneHeader, useUnifiedSidebar, hasUnifiedSidebar } from "./workspace-layout.mjs";
+import { integrateWorkspace, useFullWidthFooter, usePanelFrames, restoreNativeSpaces, useProjectSpaces, useAgentsPlus, usePaneHeader, useUnifiedSidebar, hasUnifiedSidebar } from "./workspace-layout.mjs";
 import { DISPLAY_NAME, installedLayoutName } from "./layout-name.mjs";
 
 const packageRoot = dirname(fileURLToPath(import.meta.url));
@@ -101,7 +101,7 @@ export function cloneLayout(source, { sessions = false, projects = false, agents
   reveal(layout);
   if (sessions) {
     attachSessions(layout, preferred);
-    return integrateWorkspace(layout).layout;
+    return usePanelFrames(useFullWidthFooter(integrateWorkspace(layout).layout).layout).layout;
   }
   return layout;
 }

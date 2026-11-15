@@ -165,7 +165,7 @@ export default class Browser {
   search(cx) {
     if (this.onWorkspaceSearch) return this.onWorkspaceSearch(cx);
     const viewport = globalThis.window.viewport_size(), zoom = settings().zoom || 1;
-    openOverlay({ mod: "files-plus", kind: "dialog", frame: "none", width: Math.min(1050, viewport.width / zoom * 0.92), height: Math.min(800, viewport.height / zoom * 0.88), props: { role: "search", root: this.root, on: this.on } });
+    openOverlay({ mod: "files-plus", kind: "dialog", width: Math.min(1050, viewport.width / zoom * 0.92), height: Math.min(800, viewport.height / zoom * 0.88), props: { role: "search", root: this.root, on: this.on } });
   }
 
   menu(relative, dir, cx, preferences = false) {
@@ -428,7 +428,7 @@ export default class Browser {
     const crumbMax = Math.min(180, Math.max(24, (this.width - 24 - (this.file ? 28 : 0)) / visibleCrumbs.length - 4));
     const tree = navigation ? navigation(t, cx) : v_flex().id("files-navigation").flex_1().min_w(0).min_h(0)
       .when(this.mode !== "tree", el => el.child(this.libraryHeader(t, library[this.mode].length)))
-      .child(v_flex().id("files-tree-" + this.mode + "-" + this.browseFolder).flex_1().min_h(0).overflow_y_scrollbar().px(6).py(4).on_mouse_down("right", (_e, cx) => this.menu(this.browseFolder, true, cx)).children(entries.map(entry => this.row(entry, t)))
+      .child(v_flex().id("files-tree-" + this.mode + "-" + this.browseFolder).flex_1().min_h(0).overflow_y_scrollbar().px(6).py(4).pr(16).on_mouse_down("right", (_e, cx) => this.menu(this.browseFolder, true, cx)).children(entries.map(entry => this.row(entry, t)))
         .when(!entries.length || Boolean(this.error && this.mode === "tree"), el => el.child(div().p(8).text_size(TYPE.md).text_color(t.dim).child(String(this.filterQuery || "").trim() && !entries.length ? "No matching files in this tree." : this.mode === "tree" ? this.error || (this.loading ? "Loading files…" : this.root ? "No files" : "No folder") : this.mode === "recent" ? "Files you open will appear here." : "Use the pin beside a preview path to keep a file here.")))
         .when(this.limited && this.mode === "tree", el => el.child(div().p(8).text_size(TYPE.sm).text_color(t.dim).child("File list limited to 500 entries per folder and 5,000 total"))));
     return v_flex().id("files").size_full().min_h(0).min_w(0).overflow_hidden().bg(t.chrome).text_color(t.foreground).text_size(TYPE.md).track_focus(this.handle)

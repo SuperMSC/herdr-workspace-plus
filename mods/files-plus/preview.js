@@ -12,10 +12,12 @@ import FileFind from './file-find.js';
 import { markdownStructure, markdownBlocks, resolveMarkdownLink, HISTORY_LIMIT } from './markdown-model.js';
 import { diagramLook } from './mermaid-model.js';
 import { renderDiagrams } from './mermaid.js';
+import MarkdownEditor from './markdown-editor.js';
 const LANG = { ts: 'js', tsx: 'js', mts: 'js', cts: 'js', jsx: 'js', mjs: 'js', toml: 'yaml', jsonc: 'json', svelte: 'html', vue: 'html', md: 'markdown' };
 export default class Preview {
   constructor({ editable = false, id = null, onNavigate = null } = {}) { this.onNavigate = onNavigate; this.history = []; this.expanded = new Set(['$']); this.width = 320; this.mode = 'preview'; this.fontSize = 12; this.editable = editable; this.id = id; }
   clear() {
+    this.blockEditor?.close(); this.blockEditor = null;
     this.request = {}; this.code?.release(); this.code = null; this.path = null; this.data = null; this.error = null; this.loading = false; this.find?.clear();
     this.editing = false; this.base = null; this.conflict = null; this.external = false; this.draft = null; this.draftChecked = false; this.armed = null; this.saving = false; this.status = '';
     this.markdownRequest = {}; this.markdownBlocks = null; this.headings = []; this.anchor = null; this.contents = false; this.markdownBusy = false; this.markdownLook = null; this.linkError = null;
@@ -84,7 +86,7 @@ export default class Preview {
     setShared(DIRTY_KEY, next);
   }
   // Edit from the file as it is on disk now, not from a preview that may be stale or cut short.
-  startEdit(cx, draft = null) {
+  startEdit(cx, draft = null, blocks = false) {
     if (this.blocker() || this.editing || this.saving) return;
     const path = this.path, request = this.request;
     this.status = 'Opening…'; cx.notify();
@@ -94,10 +96,11 @@ export default class Preview {
         if (this.disposed || this.path !== path || this.request !== request) return;
         if (text === null) { this.status = ''; this.error = 'This file is no longer available'; return; }
         if (text.length > 400000) { this.status = 'Files over 400 KB open read only'; return; }
-        this.base = draft ? draft.base : text; this.editing = true; this.mode = 'source'; this.line = null; this.status = '';
+        this.base = draft ? draft.base : text; this.editing = true; this.mode = blocks ? 'preview' : 'source'; this.line = null; this.status = '';
         this.find?.clear(); this.data = { ...this.data, text, truncated: false };
         this.createEditor();
         if (draft) { this.code.set_value(draft.text); if (draft.base !== text) this.external = true; }
+        if (blocks && this.data.kind === 'markdown') this.blockEditor = new MarkdownEditor(this);
         this.draft = null; this.markDirty(this.dirty());
       } catch (error) { this.status = `Cannot edit: ${String(error.message ?? error)}`; }
       finally { cx.notify(); }
@@ -142,12 +145,14 @@ export default class Preview {
     cx.notify();
   }
   reload(cx) {
+    this.blockEditor?.close(); this.blockEditor = null;
     const root = this.root, path = this.path;
     this.editing = false; this.conflict = null; this.external = false; this.base = null; this.status = ''; this.data = null;
     this.markDirty(false); dropDraft(root, path); this.refresh(cx); cx.notify();
   }
   finish(cx) {
     if (this.dirty()) { this.confirm('discard', cx, () => this.reload(cx)); return; }
+    this.blockEditor?.close(); this.blockEditor = null;
     this.editing = false; this.conflict = null; this.external = false; this.status = ''; this.markDirty(false);
     this.createEditor(); this.refresh(cx); cx.notify();
   }
@@ -158,7 +163,7 @@ export default class Preview {
       try {
         const disk = await readTextFile(this.absolute());
         if (!this.editing || this.path !== path || disk === this.base) return;
-        if (disk !== null && !this.dirty()) { this.base = disk; this.code.set_value(disk); this.data = { ...this.data, text: disk }; }
+        if (disk !== null && !this.dirty()) { this.blockEditor?.close(); this.base = disk; this.code.set_value(disk); this.data = { ...this.data, text: disk }; }
         else this.external = true;
       } catch { /* Checked again on the next refresh. */ }
       finally { this.checking = false; cx.notify(); }
@@ -255,13 +260,13 @@ export default class Preview {
     const blocks = this.markdownBlocks || [{ text: this.data.text }];
     const found = this.anchor ? blocks.findIndex(block => block.heading?.slug === this.anchor) : 0, start = Math.max(0, found);
     const body = v_flex().id('markdown-navigation').flex_1().min_h(0).min_w(0);
-    if (this.contents) body.child(v_flex().id('markdown-contents').h(Math.min(180, this.headings.length * 28)).flex_none().overflow_y_scrollbar().border_b(1).border_color(t.border)
+    if (this.contents) body.child(v_flex().id('markdown-contents').h(Math.min(180, this.headings.length * 28)).flex_none().overflow_y_scrollbar().border_b(1).border_color(t.border).pr(16)
       .children(this.headings.map(heading => div().id('markdown-heading-' + heading.slug).h(28).flex_none().pl(10 + (heading.level - 1) * 12).pr(8).text_size(TYPE.sm).truncate().tooltip(heading.title).cursor_pointer().hover(s => s.bg(t.hover))
         .on_click((_e, cx) => this.followMarkdown('#' + encodeURIComponent(heading.slug), cx)).child(heading.title))));
     if (this.anchor) body.child(this.button('whole-document', '↑ Whole document', false, (_e, cx) => this.followMarkdown('#', cx), t).flex_none());
     if (this.headingsLimited || this.diagramsLimited) body.child(div().px(10).py(4).flex_none().text_size(TYPE.xs).text_color(t.dim).child(this.headingsLimited ? 'Contents limited to 200 headings.' : 'Only the first 24 Mermaid diagrams are rendered; later diagrams remain source.'));
     if (this.markdownBusy) body.child(div().px(10).py(4).flex_none().text_size(TYPE.xs).text_color(t.dim).child('Rendering diagrams…'));
-    return body.child(v_flex().id('markdown-document-' + this.path + '-' + (this.anchor || 'top')).flex_1().min_h(0).min_w(0).overflow_y_scrollbar().p(12).gap(10)
+    return body.child(v_flex().id('markdown-document-' + this.path + '-' + (this.anchor || 'top')).flex_1().min_h(0).min_w(0).overflow_y_scrollbar().p(12).gap(10).pr(16)
       .children(blocks.slice(start).map((block, offset) => {
         const index = start + offset;
         if (block.diagram && block.media) return div().id('markdown-diagram-' + index).w_full().h(block.media.height).flex_none().overflow_x_scrollbar()
@@ -301,12 +306,14 @@ export default class Preview {
         .child(this.button('font-larger', 'A+', false, (_e, cx) => this.setFontSize(this.fontSize + 1, cx), t).disabled(this.fontSize >= 24).tooltip('Increase text size').accessibility_label('Increase text size'))))
       .when(typeof data.text === 'string' && !this.editing, row => row.child(this.button('find', 'Find', this.find.visible, (_e, cx) => this.find.show(cx), t).tooltip('Find in file · ⌘F / Ctrl+F').accessibility_label('Find in file')))
       .when(this.editing, row => row
+        .when(kind === 'markdown', row => row.child(this.button('edit-mode', this.blockEditor ? 'Edit source' : 'Edit blocks', Boolean(this.blockEditor), (_e, cx) => { if (this.blockEditor) { this.blockEditor.close(); this.blockEditor = null; } else this.blockEditor = new MarkdownEditor(this); cx.notify(); }, t)))
         .child(div().text_size(TYPE.xs).text_color(this.status === 'Saved' ? t.done : dirty ? t.working : t.dim).child(this.status || (dirty ? 'Unsaved changes' : 'Editing')))
         .child(this.button('edit-done', this.armed === 'discard' ? 'Discard changes?' : 'Done', false, (_e, cx) => this.finish(cx), t).when(this.armed === 'discard', el => el.text_color(t.blocked)).tooltip(dirty ? 'Stop editing (asks before discarding changes)' : 'Stop editing'))
         .child(div().id('preview-edit-save').px(9).py(4).rounded(5).text_size(TYPE.sm).font_medium().bg(t.solid).text_color(t.solid_foreground)
           .when(!dirty || this.saving, el => el.opacity(0.45).cursor_default()).when(dirty && !this.saving, el => el.cursor_pointer().hover(s => s.opacity(0.88)))
           .tooltip('Save · ⌘S / Ctrl+S').on_click((_e, cx) => this.save(cx)).child(this.saving ? 'Saving…' : 'Save')))
       .when(!this.editing && !blocker, row => row.child(this.button('edit', this.status || 'Edit', false, (_e, cx) => this.startEdit(cx), t).tooltip('Edit this file')))
+      .when(kind === 'markdown' && !this.editing && !blocker, row => row.child(this.button('edit-blocks', 'Edit blocks', false, (_e, cx) => this.startEdit(cx, null, true), t).tooltip('Edit paragraphs, lists and table cells in the preview')))
       .when(!this.editing && Boolean(blocker), row => row.child(div().text_size(TYPE.xs).text_color(t.dim).tooltip(blocker === 'Read only' ? '' : blocker).child(this.loading ? 'Refreshing…' : data.truncated ? 'First 400 KB' : 'Read only')))
       .child(div().id('preview-refresh').w(24).h(24).p(0).flex_none().flex().items_center().justify_center().rounded(4)
         .text_color(loading ? t.accent : t.muted).disabled(loading).tooltip(loading ? 'Refreshing file…' : 'Refresh file preview').accessibility_label('Refresh file preview')
@@ -339,6 +346,7 @@ export default class Preview {
       return body.child(h_flex().px(10).gap(8).items_center().child(div().text_size(TYPE.sm).text_color(t.muted).child(`Line ${excerpt.selected}`)).child(this.button('whole-file', 'Whole file', false, (_e, cx) => { this.line = null; cx.notify(); }, t)))
         .child(v_flex().id('matched-line-preview').flex_1().min_h(0).overflow_scroll().children(excerpt.rows.map(row => h_flex().min_h(Math.ceil(this.fontSize * 1.8)).flex_none().px(8).gap(10).bg(row.line === excerpt.selected ? t.selected : t.background).child(div().w(44).flex_none().text_right().text_size(TYPE.sm).text_color(t.dim).child(String(row.line))).child(div().min_w(0).text_size(this.fontSize).child(row.text || ' ')))));
     }
+    if (this.editing && this.blockEditor) return body.child(this.blockEditor.render(t));
     if (this.editing || this.mode === 'source' || kind === 'source' || this.parseError) return body.child(this.code ? Editor.new(this.code).flex_1().min_h(0) : div().p(10).child('No text preview'));
     if (kind === 'markdown') return body.child(this.renderMarkdown(t));
     if (kind === 'json') {

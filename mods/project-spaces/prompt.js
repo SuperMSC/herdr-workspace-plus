@@ -48,8 +48,8 @@ export default class Prompt {
       .border_1().border_color(primary ? t.solid : t.input).bg(primary ? t.solid : t.raised)
       .text_color(primary ? t.solid_foreground : t.foreground).text_size(TYPE.md).hover(s => s.opacity(0.88)).on_click(callback).child(label);
     const hint = this.p.action === "rename-group" ? "Leave empty to use the folder or repository name." : "The space moves into the new project.";
-    return v_flex().id("project-spaces-prompt").size_full().min_h(0).p(18).gap(10).rounded(10).overflow_hidden()
-      .border_1().border_color(t.border).bg(t.popover).text_color(t.foreground).text_size(TYPE.md)
+    return v_flex().id("project-spaces-prompt").size_full().min_h(0).p(18).gap(10).overflow_hidden()
+      .bg(t.popover).text_color(t.foreground).text_size(TYPE.md)
       .track_focus(this.handle).on_key_down((e, cx) => { if (e.key === "escape") { closeOverlay(this.p.overlay); cx.stop_propagation(); } })
       .child(h_flex().items_center().child(div().flex_1().font_semibold().text_size(TYPE.lg).child(this.p.title ?? "Project"))
         .child(div().text_size(TYPE.sm).text_color(t.dim).child("Esc")))

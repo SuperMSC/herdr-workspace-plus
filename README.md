@@ -4,6 +4,20 @@
 
 Native Herdr mods for files, Git changes, saved agent sessions, project navigation and account quota. The personal layout is named **Agent-Workspace**; runtime mod IDs remain `files-plus`, `sessions-plus`, `project-spaces` and `agents-plus`.
 
+## 0.14.0
+
+- The footer spans the whole window, beneath both the sidebar and work area. New installs use it; existing supported layouts migrate with `node update.mjs --integrate-layout`.
+- Dialog lists reserve space for native scrollbars so row controls and text remain accessible.
+- Ordinary terminals such as Bash and zsh have no agent-status badge; real agents show their status, including Idle.
+- Sidebars use the terminal pane's corner radius and body spacing. The collapsed project rail has an expand button that restores its previous width. Plugin dialogs use Herdr's native frame, matching Settings.
+- **N agents** opens a dialog with search, status filters, pinning and terminal navigation. It keeps sidebar visibility, width and filter unchanged, including without the optional Agents Plus sidebar.
+- **Launch** opens a searchable launcher for live agents, spaces, saved commands, project presets and tools. Saved commands and presets open for review before execution. **Start an agent…** chooses a space, then an installed agent on that machine. Run `node configure-launcher.mjs` to add **Cmd+Option+P** on macOS (**Ctrl+Shift+Space** elsewhere), scoped to this layout; existing conflicting bindings are retained.
+- Quota details compare used quota with elapsed time; amber indicates use more than ten percentage points ahead of time. This is a time benchmark, not a forecast; expired, stale and unknown windows have no pace reading. Progress bars have no added vertical lines.
+- **Launch → Git overview** (also **Sessions → Tools**) scans local space/preset folders, with **Add folder** for other roots. It shows branch, worktree/index changes, conflicts, stash, ahead/behind and interrupted operations. It uses local refs without fetching. Limits: 12 roots, depth 4, 4,000 folders, 150 repositories and 20 seconds; partial scans are labeled.
+- Markdown previews offer **Edit blocks** for paragraphs, lists and table cells. Changes share the source editor's draft, Save and conflict handling; **Close block** only exits the current block. Unsupported or large tables use a block source editor. Limits: 300 visible blocks and table grids up to 40 content rows, 20 columns and 300 cells. Use **Edit source** for the whole file.
+
+These adaptations were informed by [Orca](https://github.com/VladTemp27/herdr-orca), [Usage Limits](https://github.com/nozikov/herdr-usage-limits), [ATD Launcher](https://github.com/doanhthong/herdr-atd-launcher), [Kanso Markdown Panel](https://github.com/jlopezlira/herdr-kanso/tree/main/markdown-panel) and [Git Dash](https://github.com/dougcunha/herdr-mods/tree/main/git-dash-app).
+
 ## 0.13.0
 
 - Sidebar: single-line task titles with full tooltips, useful activity times, relative folder paths, quieter project colors, consistent indentation and pin counts. Idle badges are hidden and unused status columns release their space; pin slots remain stable.
@@ -43,7 +57,7 @@ The updater installs the current local source, replaces edits inside installed m
 | Option | Use |
 | --- | --- |
 | `--files-only` | Install/update Files and Changes; leave existing Sessions untouched. |
-| `--integrate-layout` | Explicitly migrate a supported older split-panel layout to top-bar Sessions, footer status and the file-preview pane header. |
+| `--integrate-layout` | Explicitly migrate a supported layout to top-bar Sessions, a full-width footer and the file-preview pane header. |
 | `--project-spaces` / `--native-spaces` | Enable project grouping or return to native Spaces. |
 | `--agents-plus` / `--native-agents` | Enable configurable agent pin groups or return to native Agents. |
 | `--unified-sidebar` / `--separate-sidebar` | Merge the two supported sidebar blocks or restore their recorded original structure. |

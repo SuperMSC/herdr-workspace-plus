@@ -9,6 +9,7 @@ import Quota from "./quota.js";
 import Toolbar from "./toolbar.js";
 import StatusBar from "./statusbar.js";
 import Footer from "./footer.js";
+import SidebarFooter from "./sidebar-footer.js";
 import Actions from "./actions.js";
 import TrashDialog from "./trash-dialog.js";
 import Preview from "./preview.js";
@@ -21,6 +22,9 @@ import Timeline from "./timeline.js";
 import SessionGallery from "./gallery.js";
 import Deliverables from "./deliverables.js";
 import ScreenPicker from "./screen-picker.js";
+import LiveAgents from "./live-agents.js";
+import Launcher from "./launcher.js";
+import GitOverview from "./git-overview.js";
 import { promptTargets } from "./prompt-queue-model.js";
 import { createTrashClient } from "./trash-client.js";
 import { providerIcon } from "./icons.js";
@@ -34,7 +38,7 @@ function location() {
 export default class SessionsPlus extends View {
   init(p, cx) {
     this.p = props() ?? p ?? {};
-    const Role = this.p.role === "timeline" ? Timeline : this.p.role === "gallery" ? SessionGallery : this.p.role === "deliverables" ? Deliverables : this.p.role === "screen-picker" ? ScreenPicker : this.p.role === "tools" ? WorkspaceTools : this.p.role === "presets" ? WorkspacePresets : this.p.role === "notes" ? Notes : this.p.role === "commands" ? Commands : this.p.role === "prompt-queue" ? PromptQueue : this.p.role === "preview" ? Preview : this.p.role === "rename" ? Rename : this.p.role === "actions" ? Actions : this.p.role === "trash-dialog" ? TrashDialog : this.p.role === "toolbar" ? Toolbar : this.p.role === "statusbar" ? StatusBar : this.p.role === "footer" ? Footer : null;
+    const Role = this.p.role === "sidebar-footer" ? SidebarFooter : this.p.role === "live-agents" ? LiveAgents : this.p.role === "launcher" ? Launcher : this.p.role === "git-overview" ? GitOverview : this.p.role === "timeline" ? Timeline : this.p.role === "gallery" ? SessionGallery : this.p.role === "deliverables" ? Deliverables : this.p.role === "screen-picker" ? ScreenPicker : this.p.role === "tools" ? WorkspaceTools : this.p.role === "presets" ? WorkspacePresets : this.p.role === "notes" ? Notes : this.p.role === "commands" ? Commands : this.p.role === "prompt-queue" ? PromptQueue : this.p.role === "preview" ? Preview : this.p.role === "rename" ? Rename : this.p.role === "actions" ? Actions : this.p.role === "trash-dialog" ? TrashDialog : this.p.role === "toolbar" ? Toolbar : this.p.role === "statusbar" ? StatusBar : this.p.role === "footer" ? Footer : null;
     if (Role) { this.role = new Role(); this.role.init(this.p, cx); return; }
     this.history = []; this.warnings = []; this.error = ""; this.query = ""; this.provider = "all"; this.source = "all";
     this.all = false; this.visible = 60; this.loading = false; this.busy = new Set();
@@ -138,18 +142,18 @@ export default class SessionsPlus extends View {
   openPrompts(row = null) {
     const focus = focused(), address = row?.address || focus?.shown || focus?.agent || focus?.terminal;
     const target = promptTargets(agents(), terminals(), panes()).find(target => target.address === address) || null;
-    openOverlay({ mod: "sessions-plus", kind: "dialog", frame: "none", width: 660, height: 650,
+    openOverlay({ mod: "sessions-plus", kind: "dialog", width: 660, height: 650,
       props: { role: "prompt-queue", target } });
   }
 
   openNotes(row = null) {
     const current = location(), on = row ? row.remote && row.address?.includes("/") ? row.address.slice(0, row.address.lastIndexOf("/")) : null : current.on;
-    openOverlay({ mod: "sessions-plus", kind: "dialog", frame: "none", width: 800, height: 680,
+    openOverlay({ mod: "sessions-plus", kind: "dialog", width: 800, height: 680,
       props: { role: "notes", project: { root: row?.cwd || current.cwd, on }, session: row || undefined, initial: row ? "session" : "project" } });
   }
   openCommands() {
     const current = location();
-    openOverlay({ mod: "sessions-plus", kind: "dialog", frame: "none", width: 820, height: 680, props: { role: "commands", context: { root: current.cwd, on: current.on } } });
+    openOverlay({ mod: "sessions-plus", kind: "dialog", width: 820, height: 680, props: { role: "commands", context: { root: current.cwd, on: current.on } } });
   }
 
   openWorkspaceTool(role) {
@@ -159,7 +163,7 @@ export default class SessionsPlus extends View {
     const focus = focused(), address = focus?.shown || focus?.agent || focus?.terminal;
     const live = terminals().find(item => item.address === address && item.state === "live");
     const target = live ? { ...live, on: live.address.includes("/") ? live.address.slice(0, live.address.lastIndexOf("/")) : null } : null;
-    openOverlay({ mod: "sessions-plus", kind: "dialog", frame: "none", width: Math.min(940, viewport.width / zoom * .93), height: Math.min(role === "presets" ? 780 : 730, viewport.height / zoom * .9), props: { role, context: { root: current.cwd, on: current.on }, target, node: this.p?.node } });
+    openOverlay({ mod: "sessions-plus", kind: "dialog", width: Math.min(940, viewport.width / zoom * .93), height: Math.min(role === "presets" ? 780 : 730, viewport.height / zoom * .9), props: { role, context: { root: current.cwd, on: current.on }, target, node: this.p?.node } });
   }
 
   actionsRow(row) {
@@ -171,7 +175,7 @@ export default class SessionsPlus extends View {
 
   restoreRow(row) {
     if (row.restorable !== true) return;
-    openOverlay({ mod: "sessions-plus", kind: "dialog", frame: "none", width: 460, height: 250,
+    openOverlay({ mod: "sessions-plus", kind: "dialog", width: 460, height: 250,
       props: { role: "trash-dialog", action: "restore", target: { ...row }, node: this.p.node, stores: this.p.stores } });
   }
 
@@ -179,7 +183,10 @@ export default class SessionsPlus extends View {
     const mask = privacyGuard("Sessions", this.p); if (mask) return mask;
     if (this.role) return this.role.render(cx);
     this.consumeChange(cx);
-    if (this.p.role === "sessions") return this.renderSessions(cx);
+    if (this.p.role === "sessions") {
+      const content = this.renderSessions(cx);
+      return Number.isFinite(this.p.panelRadius) ? content.rounded(this.p.panelRadius).overflow_hidden() : content;
+    }
     const t = theme();
     const tab = (page, label) => div().id(`sessions-page-${page}`).px(10).py(6).rounded(5).cursor_pointer()
       .text_color(this.page === page ? t.foreground : t.muted).bg(this.page === page ? t.selected : t.surface)
@@ -259,7 +266,7 @@ export default class SessionsPlus extends View {
       if (current.cwd !== menuContext.cwd || (current.on ?? null) !== (menuContext.on ?? null)) { this.error = "The project changed. Reopen Workspace tools for its current folder."; cx.notify(); return; }
       item.action(cx); cx.notify();
     };
-    return v_flex().id("sessions-tools-menu").w(220).max_h(340).min_h(0).overflow_y_scrollbar().p(5).gap(2).rounded(6).border_1().border_color(t.border).bg(t.popover || t.surface).text_color(t.foreground).text_size(TYPE.md)
+    return v_flex().id("sessions-tools-menu").w(220).max_h(340).min_h(0).overflow_y_scrollbar().p(5).gap(2).rounded(6).border_1().border_color(t.border).bg(t.popover || t.surface).text_color(t.foreground).text_size(TYPE.md).pr(16)
       .on_key_down((event, cx) => {
         const key = String(event.key || "").toLowerCase();
         if (["down", "arrowdown", "up", "arrowup"].includes(key)) {
@@ -343,15 +350,15 @@ export default class SessionsPlus extends View {
       .when(this.provider !== "all" || this.source !== "all", el => el.child(h_flex().id("sessions-active-filters").px(9).pb(5).gap(8).min_w(0).flex_none()
         .when(this.provider !== "all", el => el.child(chip("sessions-agent-filter", PROVIDERS[this.provider] || "Agent", () => { this.provider = "all"; })))
         .when(this.source !== "all", el => el.child(chip("sessions-source-filter", ORIGINS[this.source] || "Source", () => { this.source = "all"; })))))
-      .child(v_flex().id("sessions-list").flex_1().min_h(0).min_w(0).px(6).gap(2).overflow_y_scrollbar()
+      .child(v_flex().id("sessions-list").flex_1().min_h(0).min_w(0).px(6).gap(2).overflow_y_scrollbar().pr(16)
         .children(rows.slice(0, this.visible).flatMap((row, index, visibleRows) => {
           const group = historyGroup(row), first = index === 0 || historyGroup(visibleRows[index - 1]) !== group;
           return [...(first ? [div().px(7).pt(7).pb(3).font_medium().text_size(TYPE.xs).text_color(t.muted).child(group)] : []), rowView(row)];
         }))
         .when(!rows.length, el => el.child(div().p(12).text_color(t.muted).child(this.loading ? "Reading local session history…" : context.remote && !this.all ? "Choose All folders for local history and remote live sessions." : "No sessions here. Try All folders or another search.")))
         .when(rows.length > this.visible, el => el.child(smallButton("sessions-more", "Show more", (_e, cx) => { this.visible += 60; cx.notify(); }))))
-      .when(Boolean(this.error), el => el.child(div().p(9).max_h(70).overflow_y_scrollbar().text_size(TYPE.sm).text_color(t.ansi1).child(this.error)))
-      .when(this.warnings.length > 0 || this.limited, el => el.child(div().p(9).max_h(55).overflow_y_scrollbar().text_size(TYPE.xs).text_color(t.muted).child([...this.warnings, ...(this.limited ? ["Showing recent history; scan limit reached."] : [])].join(" "))))
+      .when(Boolean(this.error), el => el.child(div().p(9).max_h(70).overflow_y_scrollbar().text_size(TYPE.sm).text_color(t.ansi1).pr(16).child(this.error)))
+      .when(this.warnings.length > 0 || this.limited, el => el.child(div().p(9).max_h(55).overflow_y_scrollbar().text_size(TYPE.xs).text_color(t.muted).pr(16).child([...this.warnings, ...(this.limited ? ["Showing recent history; scan limit reached."] : [])].join(" "))))
       .when(!rows.length, el => el.child(div().id("sessions-empty-hint").px(9).py(5).flex_none().text_size(TYPE.xs).text_color(t.dim).child(window()?.platform === "macos" ? "Local history · Right-click for session actions" : "Live sessions · Local history requires macOS")));
   }
 
@@ -365,7 +372,7 @@ export default class SessionsPlus extends View {
         .child(button("sessions-trash-refresh", svg("mods/sessions-plus/refresh.svg").size(14).flex_none().when(this.trashLoading, el => el.spin(850)), (_event, cx) => this.refreshTrash(cx))
           .size(24).p(0).rounded(4).flex_none().flex().items_center().justify_center().text_color(this.trashLoading ? t.accent : t.muted).disabled(this.trashLoading).when(this.trashLoading, el => el.cursor_default())
           .tooltip(this.trashLoading ? "Refreshing Trash…" : this.trashError ? "Retry refreshing Trash" : "Refresh Trash").accessibility_label("Refresh Trash")))
-      .child(v_flex().id("sessions-trash-list").flex_1().min_h(0).px(8).gap(5).overflow_y_scrollbar()
+      .child(v_flex().id("sessions-trash-list").flex_1().min_h(0).px(8).gap(5).overflow_y_scrollbar().pr(16)
         .children(this.trashEntries.map(row => v_flex().id(`session-trash-${row.token}`).px(9).py(8).gap(5).rounded(7).bg(t.raised)
           .child(div().truncate().child(shared(NAMES)?.[row.key] || row.title || row.id))
           .child(h_flex().gap(5).items_center()
@@ -375,7 +382,7 @@ export default class SessionsPlus extends View {
           .when(Boolean(row.message) || row.restorable !== true || row.status === "recovery", el => el.child(div().text_size(TYPE.sm).text_color(t.muted)
             .child(row.message || (row.location === "missing" ? "Session files are no longer in Trash." : row.restorable !== true ? "This session cannot currently be restored." : "An interrupted operation needs recovery. Restore will recover the remaining files."))))))
         .when(!this.trashEntries.length, el => el.child(div().p(12).text_color(t.muted).child(this.trashLoading ? "Reading Session Trash…" : this.trashError ? "Could not read Session Trash. Try again." : "No sessions in Trash."))))
-      .when(Boolean(this.trashError), el => el.child(div().p(10).max_h(80).overflow_y_scrollbar().text_color(t.ansi1).child(this.trashError)))
+      .when(Boolean(this.trashError), el => el.child(div().p(10).max_h(80).overflow_y_scrollbar().text_color(t.ansi1).pr(16).child(this.trashError)))
       .when(!this.trashEntries.length, el => el.child(div().px(10).py(8).text_size(TYPE.xs).text_color(t.dim).child("Only sessions moved by Sessions Plus appear here. Emptying the macOS Trash removes their history permanently.")));
   }
   async close(cx) { this.input?.release(); await this.role?.close?.(cx); }

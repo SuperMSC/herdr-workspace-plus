@@ -4,7 +4,7 @@ import { v_flex, h_flex } from "gpui-base";
 import { appHome, exec, theme, shared, setShared, window } from "herdr";
 import { PROVIDERS } from "./model.js";
 import { providerIcon } from "./icons.js";
-import { percentage, resetLabel, quotaWarning } from "./quota-model.js";
+import { percentage, resetLabel, quotaWarning, quotaPace, paceLabel } from "./quota-model.js";
 
 export default class Quota {
   init(p, cx) {
@@ -81,11 +81,13 @@ export default class Quota {
             .child(div().whitespace_nowrap().text_size(TYPE.xs).text_color(stale ? t.ansi3 : t.dim).child(loading ? "Updating…" : timestamp ? `${stale ? "Stale · " : "Updated "}${updated}` : ""))
             .when(Boolean(warning), el => el.child(div().id(`quota-warning-${provider}`).size(13).flex_none().text_color(t.ansi3).tooltip(warning).accessibility_label(`${PROVIDERS[provider]}: ${warning}`).child(svg("mods/sessions-plus/warning.svg").size(13))))))
         .children((data?.windows ?? []).map(row => {
-          const value = row[mode], color = row.used >= 90 ? t.ansi1 : row.used >= 75 ? t.ansi3 : t.accent;
+          const pace = quotaPace(row, Date.now(), stale);
+          const value = row[mode], color = row.used >= 90 ? t.ansi1 : row.used >= 75 || pace?.state === "ahead" ? t.ansi3 : t.accent;
           return v_flex().gap(4)
             .child(h_flex().gap(6).justify_between().child(div().flex_1().min_w(0).truncate().text_size(TYPE.sm).child(row.label)).child(div().flex_none().font_semibold().child(percentage(row, mode))))
-            .when(!row.unlimited, el => el.child(div().w_full().h(5).rounded(3).bg(t.raised)
+            .when(!row.unlimited, el => el.child(div().w_full().h(5).overflow_hidden().rounded(3).bg(t.raised).tooltip(paceLabel(row, Date.now(), stale))
               .child(div().w(`${Math.max(0, Math.min(100, value ?? 0))}%`).h(5).rounded(3).bg(color))))
+            .when(Boolean(pace), el => el.child(div().text_size(TYPE.xs).text_color(pace?.state === "ahead" ? t.ansi3 : t.dim).child(paceLabel(row, Date.now(), stale))))
             .when(!row.unlimited, el => el.child(div().text_size(TYPE.xs).text_color(t.dim).child(resetLabel(row.resetAt))));
         }))
         .when(Boolean(data?.message), el => el.child(div().text_size(TYPE.sm).text_color(stale ? t.ansi3 : t.muted).child(data.message)));
@@ -103,7 +105,7 @@ export default class Quota {
         .child(h_flex().gap(4).children(Object.keys(PROVIDERS).map(provider => button(`quota-show-${provider}`,
           h_flex().items_center().gap(4).child(div().child(hidden.has(provider) ? "○" : "✓")).child(providerIcon(provider, 14)).child(div().min_w(0).truncate().child(provider === "claude" ? "Claude" : PROVIDERS[provider])),
           !hidden.has(provider), (_e, cx) => this.toggleProvider(provider, cx)).flex_1().min_w(0))))))
-      .child(v_flex().id("quota-cards").flex_1().min_h(0).overflow_y_scrollbar().p(8).gap(9).children(available.map(card))
+      .child(v_flex().id("quota-cards").flex_1().min_h(0).overflow_y_scrollbar().p(8).gap(9).pr(16).children(available.map(card))
         .when(!available.length, el => el.child(div().p(10).text_color(t.muted).child(!visible.length ? "All agents are hidden. Open Agents to show account quota." : loading ? "Reading account quota…" : "No account quota to show."))))
       .child(div().px(10).py(7).text_size(TYPE.xs).text_color(t.dim).flex_none().child(window()?.platform === "macos" ? this.p.statusbar ? "Local accounts · Refreshes every 5 min" : "Local accounts · Refreshes every 5 min while Status is shown" : "Account quota currently requires macOS"));
   }

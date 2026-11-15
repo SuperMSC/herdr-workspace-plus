@@ -109,7 +109,7 @@ export default class Resources {
     const terminals = s.terminals.map(row => ({ label: row.label, note: row.processes > 1 ? `×${row.processes}` : "", cpu: row.cpu, memory: row.memory }));
     return v_flex().size_full().min_h(0).text_size(TYPE.sm)
       .child(header).child(summary).child(columns)
-      .child(v_flex().id("resources-list").flex_1().min_h(0).overflow_y_scrollbar()
+      .child(v_flex().id("resources-list").flex_1().min_h(0).overflow_y_scrollbar().pr(16)
         .child(this.section(t, "herdr", "Herdr", null, s.herdr.cpu, s.herdr.memory, herdr))
         .child(this.section(t, "terminals", "Terminals", s.terminals.length, s.terminalCpu, s.terminalMemory, terminals)))
       .child(div().flex_none().px(10).py(6).border_t(1).border_color(t.border).text_size(TYPE.xs).text_color(t.dim)
