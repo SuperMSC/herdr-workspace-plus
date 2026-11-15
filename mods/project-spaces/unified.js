@@ -8,7 +8,7 @@ import { DIRECTORY_PINS_KEY, normalizeDirectoryPins, setDirectoryPin } from "./d
 import { unifiedRows, validateUnifiedTarget } from "./unified-model.js";
 const chrome = name => `mods/workspace-chrome/${name}.svg`;
 const label = (value, limit = 500) => String(value ?? "").replace(/[\x00-\x1f\x7f]/g, " ").slice(0, limit);
-const TREE_STEP = 20;
+const TREE_STEP = 20, ROW_GAP = 2;
 const CONTROL = { height: 24, radius: 4, glyph: 14 };
 const treeDepth = row => Math.min(4, Math.max(0, Number.isFinite(row.displayDepth) ? row.displayDepth : row.depth || 0));
 const statusName = status => ({ blocked: "Needs you", done: "Done", working: "Working", idle: "Idle" }[status] || "Unknown");
@@ -149,9 +149,12 @@ export default class UnifiedSidebar {
     const minutes = Math.floor((now - row.activityAt) / 60000), duration = minutes < 1 ? "<1m" : minutes < 60 ? `${minutes}m` : minutes < 1440 ? `${Math.floor(minutes / 60)}h` : `${Math.floor(minutes / 1440)}d`;
     return { label: row.activityKind === "working" ? duration : duration + " ago", tooltip: row.activityKind === "working" ? "Tab working for " + duration : "Tab activity " + duration + " ago" };
   }
-  guides(row, t) {
-    const depth = treeDepth(row);
-    return Array.from({ length: depth }, (_, level) => div().id(`unified-guide-${row.id}-${level}`).absolute().left(13 + level * TREE_STEP).top(0).bottom(0).w(0).border_l(1).border_color(t.dim).opacity(0.5));
+  guides(row, t, index) {
+    const depth = treeDepth(row), previous = this.result?.rows?.[index - 1];
+    const previousDepth = previous ? treeDepth(previous) : 0;
+    const gap = ROW_GAP + this.projectGap(row, index);
+    // Join only guide levels present in both adjacent visible rows.
+    return Array.from({ length: depth }, (_, level) => div().id(`unified-guide-${row.id}-${level}`).absolute().left(13 + level * TREE_STEP).top(previousDepth > level ? -gap : 0).bottom(0).w(0).border_l(1).border_color(t.dim).opacity(0.5));
   }
   entityRow(row, index, frame, cx, directoryPin = null) {
     const t = theme(), density = frame.density || "detailed", detailed = density !== "compact", target = row.target, disabled = Boolean(target?.disabled), program = this.program(row), depth = treeDepth(row);
@@ -187,7 +190,7 @@ export default class UnifiedSidebar {
       .bg(row.focused ? t.selected : "#00000000").text_color(disabled ? t.dim : t.foreground).when(row.kind === "space", el => el.rounded(4)).cursor_pointer().hover(el => el.bg(row.focused ? t.selected : t.hover))
       .on_click((_event, cx) => this.navigate(row, cx))
       .on_hover((on, cx) => this.hoverRow(row, on, cx))
-      .children(this.guides(row, t)).child(folding).child(div().id("unified-icon-" + row.id).w(18).h(16).mr(3).flex_none().flex().items_center().justify_center().child(icon))
+      .children(this.guides(row, t, index)).child(folding).child(div().id("unified-icon-" + row.id).w(18).h(16).mr(3).flex_none().flex().items_center().justify_center().child(icon))
       .child(v_flex().flex_1().min_w(0).gap(2)
         .child(div().id("unified-task-" + row.id).min_w(0).truncate().line_height("16px").text_size(TYPE.md).font_weight(400).when(row.kind === "space", el => el.font_semibold().text_size(TYPE.md)).child(task))
         .when(Boolean(metadataLine), el => el.child(metadataLine)))
@@ -203,10 +206,10 @@ export default class UnifiedSidebar {
     const st = { ...frame.state, mode: "project" }, t = theme(), depth = treeDepth(row), pin = this.directoryPin(row, owner, cx), spacing = this.projectGap(row, index);
     if (row.kind === "group" && row.sourceGroup && canonical.groups.has(row.sourceGroup.key) && frame.state.mode !== "status") {
       const joining = owner.drag?.kind === "space" && owner.over?.kind === "group" && owner.over.id === row.sourceGroup.key;
-      return v_flex().id(`unified-group-${row.id}`).relative().w_full().min_w(0).flex_none().bg(joining ? t.selected : "#00000000").rounded(4).when(joining, el => el.border_1().border_color(t.accent)).when(!joining, el => el.hover(el => el.bg(t.hover))).mt(spacing).pl(depth * TREE_STEP).on_hover((on, cx) => this.hoverRow(row, on, cx)).children(this.guides(row, t)).child(owner.groupHead({ ...row.sourceGroup, folded: row.folded, onFold: cx => this.fold(row, cx) }, st, t, index, frame.density, true, pin));
+      return v_flex().id(`unified-group-${row.id}`).relative().w_full().min_w(0).flex_none().bg(joining ? t.selected : "#00000000").rounded(4).when(joining, el => el.border_1().border_color(t.accent)).when(!joining, el => el.hover(el => el.bg(t.hover))).mt(spacing).pl(depth * TREE_STEP).on_hover((on, cx) => this.hoverRow(row, on, cx)).children(this.guides(row, t, index)).child(owner.groupHead({ ...row.sourceGroup, folded: row.folded, onFold: cx => this.fold(row, cx) }, st, t, index, frame.density, true, pin));
     }
     if (row.kind === "space" && row.sourceSpace?.auto?.key && row.sourceGroup && canonical.groups.has(row.sourceGroup.key) && canonical.spaces.has(row.sourceSpace.w?.id) && frame.state.mode !== "status") {
-      return h_flex().id(`unified-space-${row.id}`).relative().w_full().min_w(0).flex_none().bg("#00000000").rounded(4).hover(el => el.bg(t.hover)).mt(spacing).pl(4 + depth * TREE_STEP).pr(SIDEBAR_COLUMNS.inset).gap(5).items_start().children(this.guides(row, t))
+      return h_flex().id(`unified-space-${row.id}`).relative().w_full().min_w(0).flex_none().bg("#00000000").rounded(4).hover(el => el.bg(t.hover)).mt(spacing).pl(4 + depth * TREE_STEP).pr(SIDEBAR_COLUMNS.inset).gap(5).items_start().children(this.guides(row, t, index))
         .on_hover((on, cx) => this.hoverRow(row, on, cx))
         .child(div().w(18).h(18).mt(frame.density === "compact" ? 4 : 3).flex_none().rounded(4).flex().items_center().justify_center().text_color(t.dim).when(Boolean(row.foldable), el => el.cursor_pointer().hover(el => el.bg(t.hover)).on_click((_event, cx) => { cx.stop_propagation(); this.fold(row, cx); }).child(svg(chrome(row.folded ? "chevron-right" : "chevron-down")).size(10))))
         .child(div().flex_1().min_w(0).child(owner.row(row.sourceSpace, row.sourceGroup, st, t, frame.density, true, pin)));
@@ -219,7 +222,7 @@ export default class UnifiedSidebar {
         .when(Boolean(row.status), el => el.child(div().size(5).rounded(3).bg(t[row.status] || t.dim))))
       .child(div().flex_1().font_semibold().child(row.title || row.name || "Workspaces"))
       .when(Boolean(row.count ?? row.childCount), el => el.child(div().text_size(TYPE.xs).child(String(row.count ?? row.childCount))));
-    if (row.kind === "group") return h_flex().id(this.tooltipKey(`unified-readonly-group-${row.id}`)).relative().w_full().min_w(0).min_h(28).mt(spacing).pl(4 + depth * TREE_STEP).pr(SIDEBAR_COLUMNS.inset).gap(5).flex_none().items_center().bg("#00000000").rounded(4).hover(el => el.bg(t.hover)).children(this.guides(row, t))
+    if (row.kind === "group") return h_flex().id(this.tooltipKey(`unified-readonly-group-${row.id}`)).relative().w_full().min_w(0).min_h(28).mt(spacing).pl(4 + depth * TREE_STEP).pr(SIDEBAR_COLUMNS.inset).gap(5).flex_none().items_center().bg("#00000000").rounded(4).hover(el => el.bg(t.hover)).children(this.guides(row, t, index))
       .on_hover((on, cx) => this.hoverRow(row, on, cx))
       .when(Boolean(row.foldable), el => el.cursor_pointer().on_click((_event, cx) => this.fold(row, cx)))
       .when(Boolean(row.sourceGroup) && canonical.groups.has(row.groupKey), el => el.on_mouse_down("right", (_event, cx) => { cx.stop_propagation(); owner.groupMenu(row.sourceGroup); }))
@@ -288,7 +291,7 @@ export default class UnifiedSidebar {
         .when(frame.filter !== "all", el => el.child(h_flex().id("unified-filter-chip").min_w(0).h(22).px(5).gap(4).items_center().text_size(TYPE.xs).text_color(t.accent)
           .child(div().truncate().child(frame.filter === "active" ? "Active" : "Needs attention"))
           .child(iconButton("unified-clear-filter", chrome("x"), "Clear filter", cx => changeFilter("all", cx)))))))
-      .child(v_flex().id("unified-sidebar-rows").flex_1().min_h(0).px(collapsed ? 3 : 6).gap(2).overflow_y_scrollbar()
+      .child(v_flex().id("unified-sidebar-rows").flex_1().min_h(0).px(collapsed ? 3 : 6).gap(ROW_GAP).overflow_y_scrollbar()
         .on_mouse_up("left", (_event, cx) => { if (owner.drag) { owner.drag = owner.over = null; cx.notify(); } }).children(body)
         .when(!rows.length, el => el.child(div().px(8).py(12).text_size(TYPE.sm).text_color(t.dim).child(this.result ? "No matching workspaces or agents" : "Preparing workspace…"))))
       .when((result.pages || 1) > 1, el => el.child(h_flex().id(this.tooltipKey("unified-page-controls")).flex_none().px(6).py(5).gap(4).items_center()

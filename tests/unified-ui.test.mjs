@@ -187,6 +187,30 @@ test('visible tree guides are finite, per-row and event-free without changing ca
  f.view.page=9;const onAnotherPage=f.view.entityRow(row,0,f.frame(),f.cx);assert.deepEqual(nodes(onAnotherPage).filter(node=>String(node.attrs.id||'').startsWith('unified-guide-')).map(node=>node.attrs.left),[13,33]);
 });
 
+test('tree guide spans meet across row spacing and restart at project and section boundaries',()=>{
+ for(const density of ['detailed','compact'])for(const mode of ['project','status'])for(const pinned of [false,true]){
+  const f=harness();f.groups[0].custom=true;f.agent.pinned=pinned;
+  const tree=f.render({density,state:{...f.owner.state(),mode}}),list=nodes(tree).find(n=>n.attrs.id==='unified-sidebar-rows'),rows=f.view.result.rows;
+  assert.equal(list.childNodes.length,rows.length);let y=0,previous=new Map(),joined=0,restarted=0;
+  for(let i=0;i<rows.length;i++){
+   const row=rows[i],el=list.childNodes[i],height=29+(i%3)*17;
+   y+=(i?list.attrs.gap:0)+(el.attrs.mt||0);const current=new Map();
+   for(const guide of nodes(el).filter(n=>String(n.attrs.id||'').startsWith('unified-guide-'+row.id+'-'))){
+    const start=y+(guide.attrs.top||0),end=y+height-(guide.attrs.bottom||0);
+    if(previous.has(guide.attrs.left)){assert.equal(start,previous.get(guide.attrs.left),'same ancestor guide must have no blank pixels between rows');joined++;}
+    else{assert.equal(start,y,'a new ancestor guide must not extend into its parent header or a different branch');restarted++;}
+    current.set(guide.attrs.left,end);
+   }
+   if(['section','group'].includes(row.kind)&&row.depth===0)assert.equal(current.size,0,'project and section headings break unrelated branches');
+   previous=current;y+=height;
+  }
+  assert(joined>0);assert(restarted>0);
+  const firstWithGuide=rows.findIndex(row=>row.depth>0),row=rows[firstWithGuide];
+  f.view.result={...f.view.result,rows:[row]};
+  assert(f.view.guides(row,{},0).every(guide=>guide.attrs.top===0),'a fresh page must not connect beyond its first visible row');
+ }
+});
+
 test('ordinary terminals omit agent status in both densities and the collapsed rail',()=>{
  const f=harness();f.render();const original=f.view.result.rows.find(row=>row.address==='t1'),row={...original,title:'zsh',taskTitle:'zsh',agent:false,kind:'terminal',status:'unknown',actualStatus:'unknown',branchStatus:'unknown',inlineMetadata:'zsh',program:{name:'zsh',shell:true},target:{...original.target,kind:'terminal',agent:false}};
  const tree=f.view.entityRow(row,0,f.frame(),f.cx),task=nodes(tree).find(node=>node.attrs.id===`unified-task-${row.id}`),allText=nodes(tree).flatMap(node=>node.childNodes.filter(value=>typeof value==='string')).join(' ');

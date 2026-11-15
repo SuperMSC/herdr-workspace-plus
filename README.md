@@ -4,6 +4,10 @@
 
 Native Herdr mods for files, Git changes, saved agent sessions, project navigation and account quota. The personal layout is named **Agent-Workspace**; runtime mod IDs remain `files-plus`, `sessions-plus`, `project-spaces` and `agents-plus`.
 
+## 0.14.1
+
+- Connect sidebar tree guides across row spacing while preserving project, section and page boundaries in Detailed and Compact views.
+
 ## 0.14.0
 
 - The footer spans the whole window, beneath both the sidebar and work area. New installs use it; existing supported layouts migrate with `node update.mjs --integrate-layout`.
