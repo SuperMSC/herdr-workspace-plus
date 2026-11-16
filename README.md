@@ -4,6 +4,11 @@
 
 Native Herdr mods for files, Git changes, saved agent sessions, project navigation and account quota. The personal layout is named **Agent-Workspace**; runtime mod IDs remain `files-plus`, `sessions-plus`, `project-spaces` and `agents-plus`.
 
+## 0.14.2
+
+- Replace numbered items in the collapsed unified sidebar with centered folder, tab and program icons. Highlight the focused item with a subtle background and side marker.
+- Move agent status dots to icon corners, separate the expand/new-space controls, and keep empty states and pagination compact at narrow widths.
+
 ## 0.14.1
 
 - Connect sidebar tree guides across row spacing while preserving project, section and page boundaries in Detailed and Compact views.

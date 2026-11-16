@@ -217,7 +217,7 @@ test('ordinary terminals omit agent status in both densities and the collapsed r
  assert(!Object.hasOwn(tree.attrs,'h'));assert.equal(tree.attrs.min_h,26);assert(Object.hasOwn(tree.attrs,'items_start'));assert(Object.hasOwn(task.attrs,'truncate'));assert(!Object.hasOwn(task.attrs,'max_h'));assert(!Object.hasOwn(task.attrs,'h'));
  assert(!nodes(tree).some(node=>node.attrs.id===`unified-meta-${row.id}`));assert(!allText.includes('Unknown'));assert(!allText.includes('Idle'));assert(!tree.attrs.tooltip.includes('Unknown'));
  for(const density of ['detailed','compact'])for(const status of ['unknown','working','blocked','done','idle']){const plain=f.view.entityRow({...row,status,branchStatus:status},0,{...f.frame(),density},f.cx);assert(!nodes(plain).some(n=>n.attrs.id==='unified-status-slot-'+row.id));assert.equal(nodes(plain).find(n=>n.attrs.id==='unified-actions-'+row.id).attrs.w,19);}
- const shellRow=f.view.result.rows.find(r=>r.address==='t3');assert(shellRow&&!shellRow.agent);const rail=nodes(f.render({collapsed:true})).find(n=>n.attrs.id==='unified-rail-'+shellRow.id);assert(rail);assert(!rail.attrs.tooltip.includes('Unknown'));assert(!Object.hasOwn(nodes(rail).find(n=>n.attrs.id==='unified-rail-status-'+shellRow.id).attrs,'bg'));
+ const shellRow=f.view.result.rows.find(r=>r.address==='t3');assert(shellRow&&!shellRow.agent);const rail=nodes(f.render({collapsed:true})).find(n=>n.attrs.id==='unified-rail-'+shellRow.id);assert(rail);assert(!rail.attrs.tooltip.includes('Unknown'));assert(!nodes(rail).some(n=>n.attrs.id==='unified-rail-status-'+shellRow.id));
  const icon=nodes(tree).find(node=>node.attrs.id===`unified-icon-${row.id}`);assert.equal(icon.attrs.h,16);assert.equal(icon.attrs.mr,3);
  const process={...row,title:'Editor',program:{name:'Vim',shell:false,agent:false},inlineMetadata:'Vim',activityAt:1};assert(!nodes(f.view.entityRow(process,0,f.frame(),f.cx)).some(node=>node.attrs.id===`unified-meta-${row.id}`));
 });
@@ -232,7 +232,7 @@ test('Idle agents show their status in both densities and the collapsed rail',()
   assert(all.some(n=>n.attrs.id==='unified-status-'+row.id));
   if(density==='detailed')assert(all.find(n=>n.attrs.id==='unified-status-text-'+row.id).childNodes.includes(status==='idle'?'Idle':status==='blocked'?'Needs you':status[0].toUpperCase()+status.slice(1)));
  }
- f.agent.status='idle';const rail=nodes(f.render({collapsed:true})).find(n=>n.attrs.id==='unified-rail-'+row.id),slot=nodes(rail).find(n=>n.attrs.id==='unified-rail-status-'+row.id);assert.equal(slot.attrs.size,6);assert(Object.hasOwn(slot.attrs,'bg'));assert(rail.attrs.tooltip.includes('Idle'));
+ f.agent.status='idle';const rail=nodes(f.render({collapsed:true})).find(n=>n.attrs.id==='unified-rail-'+row.id),slot=nodes(rail).find(n=>n.attrs.id==='unified-rail-status-'+row.id);assert(Object.hasOwn(slot.attrs,'bg'));assert(rail.attrs.tooltip.includes('Idle'));
 });
 
 test('Pinned and attention sections are compact separated headings rather than workspace cards',()=>{
@@ -445,4 +445,25 @@ test('collapsed unified rail keeps an expand button even when the filtered list 
  const f=harness();const normal=nodes(f.render());assert(!normal.some(n=>n.attrs.id==='unified-expand-sidebar'));
  f.view.result={rows:[],agentOrder:[],pages:1};const tree=f.render({collapsed:true});const expand=nodes(tree).find(n=>n.attrs.id==='unified-expand-sidebar');
  assert(expand);assert.equal(expand.attrs.accessibility_label,'Expand sidebar');expand.events.on_click({},f.cx);assert.deepEqual(f.calls,[['expand-sidebar']]);
+});
+
+test('collapsed rail selects the focused terminal before its workspace and falls back to a folded workspace',()=>{
+ for(const on of [null,'server']){
+  const f=harness({on});let tree=f.render({collapsed:true});
+  const selected=tree=>nodes(tree).filter(n=>String(n.attrs.id||'').startsWith('unified-rail-selected-')).map(n=>n.attrs.id);
+  let row=f.view.result.rows.find(r=>r.address===f.terminal.address);assert.deepEqual(selected(tree),['unified-rail-selected-'+row.id]);
+  f.agent.focused=true;f.snapshots.focus={...f.snapshots.focus,terminal:f.snapshots.terminals[2].address,tab:f.space.tabs[1].id};tree=f.render({collapsed:true});
+  row=f.view.result.rows.find(r=>r.address===f.snapshots.terminals[2].address);assert.deepEqual(selected(tree),['unified-rail-selected-'+row.id]);
+  const workspace=f.view.result.rows.find(r=>r.target?.kind==='space');f.view.folded.add(workspace.id);tree=f.render({collapsed:true});assert.deepEqual(selected(tree),['unified-rail-selected-'+workspace.id]);
+  assert.equal(f.calls.length,0);assert.equal(f.storage.size,0);
+ }
+});
+
+test('collapsed rail keeps captured navigation validation and disables unavailable targets',()=>{
+ for(const on of [null,'server']){
+  const f=harness({on}),tree=f.render({collapsed:true}),row=f.view.result.rows.find(r=>r.address===f.terminal.address);
+  const control=nodes(tree).find(n=>n.attrs.id==='unified-rail-'+row.id);assert(control.attrs.accessibility_label.includes(row.title));control.events.on_click({},f.cx);assert.equal(f.calls[0][0],'pane.focus');assert.equal(f.calls[0][1].terminal,f.terminal.address);
+  f.calls.length=0;f.terminal.created_ms++;control.events.on_click({},f.cx);assert.equal(f.calls.length,0);assert(f.view.error);
+  const disabled=f.view.railRow({...row,target:{...row.target,disabled:true,reason:'Unavailable workspace'}},false,f.frame());assert(disabled.attrs.disabled);assert(!disabled.events.on_click);assert(disabled.attrs.tooltip.includes('Unavailable workspace'));
+ }
 });

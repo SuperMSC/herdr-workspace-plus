@@ -236,6 +236,24 @@ export default class UnifiedSidebar {
       .when(row.kind === "space", el => el.mt(spacing))
       .when(row.kind === "space" && Boolean(row.sourceSpace?.auto) && canonical.spaces.has(row.spaceId), el => el.on_mouse_down("right", (_event, cx) => { cx.stop_propagation(); owner.spaceMenu(row.sourceSpace); }));
   }
+  railRow(row, selected, frame) {
+    const t = theme(), target = row.target, disabled = Boolean(target.disabled), program = this.program(row);
+    const title = label(row.title || row.taskTitle || "Workspace item", 2048);
+    const details = [title, this.metadata(row, true, frame.home), row.agent ? statusName(row.status) : "", target.reason].filter(Boolean).join("\n");
+    let icon = svg(chrome(target.kind === "space" ? "folder" : target.kind === "tab" ? "layers" : "terminal")).size(16);
+    if (program?.icon) icon = program.tint ? svg(program.icon).size(16) : image(program.icon).size(16);
+    return div().id(this.tooltipKey("unified-rail-" + row.id)).w_full().h(32).flex_none().flex().items_center().justify_center()
+      .role("button").accessibility_label(details).selected(selected).disabled(disabled).text_color(disabled ? t.dim : selected ? t.foreground : t.muted)
+      .when(!this.popupTooltipState?.open, el => el.tooltip(details))
+      .when(disabled, el => el.opacity(0.4).cursor_default())
+      .when(!disabled, el => el.cursor_pointer().on_click((_event, cx) => this.navigate(row, cx)))
+      .child(div().id("unified-rail-tile-" + row.id).relative().size(28).flex_none().flex().items_center().justify_center().rounded(7)
+        .bg(selected ? t.selected : "#00000000").border_1().border_color(selected ? t.border : "#00000000")
+        .when(!disabled, el => el.hover(el => el.bg(selected ? t.selected : t.hover).text_color(t.foreground)))
+        .child(icon)
+        .when(selected, el => el.child(div().id("unified-rail-selected-" + row.id).absolute().left(-5).top(8).w(2).h(10).rounded(1).bg(t.accent)))
+        .when(Boolean(row.agent), el => el.child(div().id("unified-rail-status-" + row.id).absolute().right(-1).bottom(-1).size(8).rounded(4).border_1().border_color(t.chrome).bg(t[row.status] || t.dim))));
+  }
   render(frame, owner, cx) {
     this.popupTooltipState = frame.popupTooltipState || null;
     this.request(frame, owner, cx);
@@ -273,12 +291,18 @@ export default class UnifiedSidebar {
     const viewControl = normalButton("unified-view", div().child(view === "status" ? "Status" : "Projects"), null).accessibility_label("Workspace view").child(svg(chrome("chevron-down")).size(10));
     const filterControl = normalButton("unified-filter", div().child("Filter"), null).accessibility_label("Filter workspaces and tasks").when(frame.filter !== "all", el => el.text_color(t.accent)).child(svg(chrome("chevron-down")).size(10));
     const allMode = this.foldMode === "collapse" ? "expand" : "collapse";
-    const body = collapsed ? rows.filter(row => row.target).map((row, index) => h_flex().id(this.tooltipKey(`unified-rail-${row.id}`)).h(28).flex_none().px(4).gap(4).justify_center().items_center().rounded(5).cursor_pointer().hover(el => el.bg(t.hover)).when(!this.popupTooltipState?.open, el => el.tooltip([row.title, this.metadata(row, true), row.target?.kind === "terminal" && !row.agent ? "" : statusName(row.status)].filter(Boolean).join("\n")))
-      .on_click((_event, cx) => this.navigate(row, cx)).child(div().text_size(TYPE.xs).child(String(index + 1))).child(div().id("unified-rail-status-" + row.id).size(6).rounded(3).when(row.agent, el => el.bg(t[row.status] || t.dim)))) : rows.map((row, index) => this.draw(row, index, frame, owner, cx, canonical));
+    const railRows = collapsed ? rows.filter(row => row.target) : [], focus = this.snapshots(frame).focus;
+    const selectable = row => !row.target.disabled;
+    const selected = railRows.find(row => selectable(row) && row.target.address && row.target.address === focus?.terminal)
+      || railRows.find(row => selectable(row) && row.focused)
+      || railRows.find(row => selectable(row) && row.target.kind === "tab" && row.target.tab === focus?.tab)
+      || railRows.find(row => selectable(row) && row.target.kind === "space" && (focus?.space ? row.target.space === focus.space : row.active));
+    const body = collapsed ? railRows.map(row => this.railRow(row, row === selected, frame)) : rows.map((row, index) => this.draw(row, index, frame, owner, cx, canonical));
     return v_flex().id("unified-sidebar").size_full().min_h(0).min_w(0).bg(t.chrome).text_color(t.foreground).text_size(TYPE.md).track_focus(this.handle)
-      .when(collapsed, el => el.child(v_flex().id(this.tooltipKey("unified-rail-controls")).flex_none().py(4).items_center().gap(4)
-        .child(iconButton("unified-expand-sidebar", chrome("chevron-right"), "Expand sidebar", () => owner.expandSidebar()))
-        .child(iconButton("unified-new-space", chrome("plus"), "New space", () => run("space.new")))))
+      .when(collapsed, el => el.child(v_flex().id(this.tooltipKey("unified-rail-controls")).flex_none().pt(7).pb(5).items_center().gap(4)
+        .child(iconButton("unified-expand-sidebar", chrome("panel-left"), "Expand sidebar", () => owner.expandSidebar()).size(28).rounded(7))
+        .child(iconButton("unified-new-space", chrome("plus"), "New space", () => run("space.new")).size(28).rounded(7))
+        .child(div().w(20).h(1).mt(3).bg(t.border))))
       .when(!collapsed, el => el.child(v_flex().id(this.tooltipKey("unified-controls")).flex_none().px(7).pt(8).pb(5).gap(4)
         .child(div().id("unified-search").h(28).min_w(0).flex_none().px(7).bg(t.surface).border_1().border_color(t.input).rounded(6).child(Input.new(owner.queryInput).w_full().h_full()))
         .child(h_flex().id("unified-toolbar").w_full().min_w(0).h(28).gap(3).items_center()
@@ -291,12 +315,15 @@ export default class UnifiedSidebar {
         .when(frame.filter !== "all", el => el.child(h_flex().id("unified-filter-chip").min_w(0).h(22).px(5).gap(4).items_center().text_size(TYPE.xs).text_color(t.accent)
           .child(div().truncate().child(frame.filter === "active" ? "Active" : "Needs attention"))
           .child(iconButton("unified-clear-filter", chrome("x"), "Clear filter", cx => changeFilter("all", cx)))))))
-      .child(v_flex().id("unified-sidebar-rows").flex_1().min_h(0).px(collapsed ? 3 : 6).gap(ROW_GAP).overflow_y_scrollbar()
+      .child(v_flex().id("unified-sidebar-rows").flex_1().min_h(0).min_w(0).px(collapsed ? 2 : 6).gap(ROW_GAP).overflow_y_scrollbar()
         .on_mouse_up("left", (_event, cx) => { if (owner.drag) { owner.drag = owner.over = null; cx.notify(); } }).children(body)
-        .when(!rows.length, el => el.child(div().px(8).py(12).text_size(TYPE.sm).text_color(t.dim).child(this.result ? "No matching workspaces or agents" : "Preparing workspace…"))))
-      .when((result.pages || 1) > 1, el => el.child(h_flex().id(this.tooltipKey("unified-page-controls")).flex_none().px(6).py(5).gap(4).items_center()
+        .when(!rows.length && !collapsed, el => el.child(div().px(8).py(12).text_size(TYPE.sm).text_color(t.dim).child(this.result ? "No matching workspaces or agents" : "Preparing workspace…")))
+        .when(collapsed && !railRows.length, el => el.child(div().id("unified-rail-empty").h(32).flex().items_center().justify_center().text_color(t.dim).accessibility_label(this.result ? "No matching workspaces or agents" : "Preparing workspace…")
+          .when(!this.popupTooltipState?.open, el => el.tooltip(this.result ? "No matching workspaces or agents" : "Preparing workspace…"))
+          .child(svg(chrome(this.result ? "folder" : "spinner")).size(16)))))
+      .when((result.pages || 1) > 1, el => el.child((collapsed ? v_flex() : h_flex()).id(this.tooltipKey("unified-page-controls")).flex_none().px(collapsed ? 0 : 6).py(5).gap(4).items_center()
         .child(iconButton("unified-prev", chrome("chevron-left"), "Previous page", cx => { this.page = Math.max(0, this.page - 1); this.cacheKey = null; cx.notify(); }, this.page <= 0))
-        .child(div().flex_1().text_center().text_size(TYPE.xs).text_color(t.dim).child(`${this.page + 1}/${result.pages}`))
+        .child(div().when(!collapsed, el => el.flex_1()).text_center().text_size(TYPE.xs).text_color(t.dim).child(`${this.page + 1}/${result.pages}`))
         .child(iconButton("unified-next", chrome("chevron-right"), "Next page", cx => { this.page++; this.cacheKey = null; cx.notify(); }, this.page + 1 >= result.pages))))
       .when(Boolean(this.error), el => el.child(div().px(8).py(5).max_h(70).overflow_y_scrollbar().text_size(TYPE.xs).text_color(t.ansi1).child(this.error)))
       .when(Boolean(result.warnings?.length) && !collapsed, el => el.child(div().px(8).py(5).max_h(60).overflow_y_scrollbar().text_size(TYPE.xs).text_color(t.dim).child(result.warnings.join("\n"))));
