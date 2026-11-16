@@ -34,7 +34,7 @@ export default class LiveAgents {
       .child(div().font_semibold().text_size(TYPE.lg).child(`Agents · ${all.length}`))
       .child(Input.new(this.input).w_full())
       .child(h_flex().flex_wrap().gap(4).children(['all', 'blocked', 'done', 'working', 'idle'].map(status => button('agents-filter-' + status,
-        `${status === 'all' ? 'All' : LABEL[status]} ${status === 'all' ? all.length : all.filter(a => a.status === status).length}`, this.filter === status, cx => { this.filter = status; cx.notify(); }))))
+        `${status === 'all' ? 'All' : LABEL[status]} · ${status === 'all' ? all.length : all.filter(a => a.status === status).length}`, this.filter === status, cx => { this.filter = status; cx.notify(); }))))
       .child(v_flex().id('live-agents-list').flex_1().min_h(0).gap(4).overflow_y_scrollbar().pr(16).children(rows.flatMap(row => {
         const group = row.pinned ? 'Pinned' : LABEL[row.status] || row.status, elements = [];
         if (group !== previous) elements.push(div().pt(7).pb(2).text_size(TYPE.xs).text_color(t.dim).child(group)); previous = group;
