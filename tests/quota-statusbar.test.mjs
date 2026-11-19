@@ -404,3 +404,13 @@ test("every remaining clickable quota strip control shares centered 24px height 
     assert(Object.hasOwn(label.attributes, "items_center")); assert.equal(label.attributes.line_height, "16px"); assert.equal(label.attributes.h, 24); assert(bar); assert(group.childNodes.includes(find(tree, "icon-" + provider)));
   }
 });
+
+test("the bar's window is drawn in the stronger color and reset countdowns sit apart in the dim color", async () => {
+  const f = fixture({ "sessions-plus.quota-hidden": ["codex", "agy"] });
+  await f.finish({ claude: { windows: [row("5h", 7, 1800012120000), row("7d", 35, 1800093600000)] } });
+  const label = find(f.render(), "quota-status-label-claude"), [first, dot, second] = label.childNodes;
+  assert.equal(text(first), "5h 93% 3h 22m"); assert.equal(text(dot), "·"); assert.equal(text(second), "7d 65% 1d 2h");
+  const [firstMain, firstReset] = first.childNodes, [secondMain, secondReset] = second.childNodes;
+  assert.equal(secondMain.attributes.text_color, "white"); assert.notEqual(firstMain.attributes.text_color, "white");
+  assert.equal(firstReset.attributes.text_color, dot.attributes.text_color); assert.equal(secondReset.attributes.text_color, dot.attributes.text_color);
+});

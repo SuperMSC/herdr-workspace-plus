@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import * as projectModel from "../mods/project-spaces/model.js";
-import { buildGroups, DENSITY_KEY, SIDEBAR_COLUMNS, normalizeState, spacePath } from "../mods/project-spaces/model.js";
+import { buildGroups, DENSITY_KEY, SIDEBAR_COLUMNS, normalizeState, spacePath, echoesName } from "../mods/project-spaces/model.js";
 import { DIRECTORY_PINS_KEY, normalizeDirectoryPins, setDirectoryPin } from "../mods/project-spaces/directory-pins.js";
 import { unifiedRows, validateUnifiedTarget } from "../mods/project-spaces/unified-model.js";
 const program={key:"codex",name:"Codex",agent:true,shell:false,icon:null};
@@ -27,7 +27,7 @@ function harness({on=null}={}){
  const cx={timer:{after(ms,callback){assert(ms>=0);timers.push({at:clock+ms,callback});}},focus_handle:()=>({release(){}}),notify(){assert(!rendering,'render must not notify');notifications.push(1);},stop_propagation(){}};
  class FixtureDate extends Date { static now(){return clock;} }
  const flush=()=>{for(let round=0;round<20;round++){const index=timers.findIndex(timer=>timer.at<=clock);if(index<0)return;timers.splice(index,1)[0].callback(cx);}throw new Error("Fixture timer loop");};
- const deps={FILTER_KEY:projectModel.FILTER_KEY,Date:FixtureDate,div:element,svg:element,image:element,h_flex:element,v_flex:element,Input:{new:element},Popover:{new:id=>{const p=element().id(id);p.trigger=value=>p.child(value);p.content=value=>p.attrs.open?p.child(value):p;return p;}},DENSITY_KEY,SIDEBAR_COLUMNS,spacePath,DIRECTORY_PINS_KEY,normalizeDirectoryPins,setDirectoryPin,
+ const deps={FILTER_KEY:projectModel.FILTER_KEY,Date:FixtureDate,div:element,svg:element,image:element,h_flex:element,v_flex:element,Input:{new:element},Popover:{new:id=>{const p=element().id(id);p.trigger=value=>p.child(value);p.content=value=>p.attrs.open?p.child(value):p;return p;}},DENSITY_KEY,SIDEBAR_COLUMNS,spacePath,echoesName,DIRECTORY_PINS_KEY,normalizeDirectoryPins,setDirectoryPin,
   agents:()=>f.snapshots.agents,terminals:()=>f.snapshots.terminals,spaces:()=>f.snapshots.spaces,panes:()=>f.snapshots.panes,focused:()=>f.snapshots.focus,theme:()=>({working:'#147',dim:'#777',idle:'#666',raised:'#111',selected:'#225',border:'#333',hover:'#444',accent:'#5bf',background:'#050',muted:'#888',foreground:'#eee'}),shared:key=>storage.get(key),setShared(key,value){assert(!rendering);storage.set(key,value);},run(...args){assert(!rendering);calls.push(args);},setAgentOrder:value=>orders.push(value),validateUnifiedTarget,
   unifiedRows:input=>{modelCalls++;return unifiedRows(input);}};
  const Class=uiFunction(...Object.keys(deps),source)(...Object.values(deps)),view=new Class();view.init({},cx);
@@ -74,18 +74,18 @@ test('Detailed and Compact task titles truncate to one line with the full task i
 test('single-agent tab timestamps supply relative activity and running duration without provider or shell sublines',()=>{
  const f=harness();f.advance(1000000);f.space.tabs[0].working_since=920000;f.space.tabs[0].changed_at=1000000;
  let tree=f.render(),row=f.view.result.rows.find(row=>row.address==='t1'),meta=nodes(tree).find(node=>node.attrs.id==='unified-meta-'+row.id);
- assert.deepEqual(meta.childNodes,['3m']);assert.equal(meta.attrs.tooltip,'Tab working for 3m');const before=f.modelCalls();
- f.space.tabs[0].working_since=980000;tree=f.render();assert.equal(f.modelCalls(),before+1);assert.deepEqual(nodes(tree).find(node=>node.attrs.id==='unified-meta-'+row.id).childNodes,['2m']);
+ assert.deepEqual(meta.childNodes,['for 3m']);assert.equal(meta.attrs.tooltip,'Tab working for 3m');const before=f.modelCalls();
+ f.space.tabs[0].working_since=980000;tree=f.render();assert.equal(f.modelCalls(),before+1);assert.deepEqual(nodes(tree).find(node=>node.attrs.id==='unified-meta-'+row.id).childNodes,['for 2m']);
  f.agent.status='idle';f.space.tabs[0].changed_at=920000;tree=f.render();meta=nodes(tree).find(node=>node.attrs.id==='unified-meta-'+row.id);assert.deepEqual(meta.childNodes,['3m ago']);assert.equal(meta.attrs.tooltip,'Tab activity 3m ago');
  assert(!nodes(tree).some(node=>node.attrs.id==='unified-meta-agent:t3'));assert(!nodes(f.render({density:'compact'})).some(node=>node.attrs.id==='unified-meta-'+row.id));
  f.space.tabs[0].changed_at=null;assert(!nodes(f.render()).some(node=>node.attrs.id==='unified-meta-'+row.id));
  const future={...row,agent:true,activityAt:2000000};assert.equal(f.view.activity(future),null);
 });
 
-test('changed activity labels include ago while working labels remain durations',()=>{
+test('changed activity labels include ago while working labels read as elapsed durations',()=>{
  const f=harness();f.advance(12*60*60*1000);f.agent.status='idle';f.space.tabs[0].changed_at=100000+60*60*1000;
  let tree=f.render(),row=f.view.result.rows.find(row=>row.address==='t1'),meta=nodes(tree).find(node=>node.attrs.id==='unified-meta-'+row.id);assert.deepEqual(meta.childNodes,['11h ago']);assert.equal(meta.attrs.tooltip,'Tab activity 11h ago');
- f.agent.status='working';f.space.tabs[0].working_since=100000+12*60*60*1000-3*60*1000;tree=f.render();meta=nodes(tree).find(node=>node.attrs.id==='unified-meta-'+row.id);assert.deepEqual(meta.childNodes,['3m']);assert.equal(meta.attrs.tooltip,'Tab working for 3m');
+ f.agent.status='working';f.space.tabs[0].working_since=100000+12*60*60*1000-3*60*1000;tree=f.render();meta=nodes(tree).find(node=>node.attrs.id==='unified-meta-'+row.id);assert.deepEqual(meta.childNodes,['for 3m']);assert.equal(meta.attrs.tooltip,'Tab working for 3m');
 });
 test('done stays in its status branch while focused until the user leaves, with no cross-incarnation hold',()=>{
  const f=harness();f.agent.status='done';f.agent.focused=true;f.render({state:{...f.owner.state(),mode:'status'}});
@@ -222,15 +222,17 @@ test('ordinary terminals omit agent status in both densities and the collapsed r
  const process={...row,title:'Editor',program:{name:'Vim',shell:false,agent:false},inlineMetadata:'Vim',activityAt:1};assert(!nodes(f.view.entityRow(process,0,f.frame(),f.cx)).some(node=>node.attrs.id===`unified-meta-${row.id}`));
 });
 
-test('Idle agents show their status in both densities and the collapsed rail',()=>{
+test('Idle agents keep a status dot without the word in both densities and the collapsed rail',()=>{
  const f=harness();f.render();const row=f.view.result.rows.find(row=>row.address==='t1');
  for(const density of ['detailed','compact'])for(const status of ['idle','working','blocked','done','unknown']){
-  const tree=f.view.entityRow({...row,status,branchStatus:status},0,{...f.frame(),density},f.cx),all=nodes(tree);
-  assert.equal(all.find(n=>n.attrs.id==='unified-status-slot-'+row.id).attrs.w,density==='detailed'?72:13);
-  assert.equal(all.find(n=>n.attrs.id==='unified-actions-'+row.id).attrs.w,19+3+(density==='detailed'?72:13));
+  const tree=f.view.entityRow({...row,status,branchStatus:status},0,{...f.frame(),density},f.cx),all=nodes(tree),width=density==='detailed'&&status!=='idle'?72:13;
+  assert.equal(all.find(n=>n.attrs.id==='unified-status-slot-'+row.id).attrs.w,width);
+  assert.equal(all.find(n=>n.attrs.id==='unified-actions-'+row.id).attrs.w,19+3+width);
   assert.equal(all.find(n=>n.attrs.id==='unified-agent-pin-slot-'+row.id).attrs.size,19);
   assert(all.some(n=>n.attrs.id==='unified-status-'+row.id));
-  if(density==='detailed')assert(all.find(n=>n.attrs.id==='unified-status-text-'+row.id).childNodes.includes(status==='idle'?'Idle':status==='blocked'?'Needs you':status[0].toUpperCase()+status.slice(1)));
+  assert.equal(all.find(n=>n.attrs.id==='unified-status-'+row.id).attrs.tooltip,status==='idle'?'Idle':status==='blocked'?'Needs you':status[0].toUpperCase()+status.slice(1));
+  if(density==='detailed'&&status!=='idle')assert(all.find(n=>n.attrs.id==='unified-status-text-'+row.id).childNodes.includes(status==='blocked'?'Needs you':status[0].toUpperCase()+status.slice(1)));
+  else assert(!all.some(n=>n.attrs.id==='unified-status-text-'+row.id));
  }
  f.agent.status='idle';const rail=nodes(f.render({collapsed:true})).find(n=>n.attrs.id==='unified-rail-'+row.id),slot=nodes(rail).find(n=>n.attrs.id==='unified-rail-status-'+row.id);assert(Object.hasOwn(slot.attrs,'bg'));assert(rail.attrs.tooltip.includes('Idle'));
 });

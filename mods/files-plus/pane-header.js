@@ -104,9 +104,12 @@ export default class PaneHeader {
     }
     const name = ((p.program?.agent || p.program?.shell) && p.program.name) || p.title || p.program?.name || "shell";
     const pic = icon(p.program, 14, t.dim), st = p.status;
+    // A lone pane under a tab of the same name only repeats the tab; its folder is the new part.
+    const tabName = spaces().flatMap(space => space.tabs ?? []).find(tab => tab.id === p.tab)?.name ?? "";
+    const echoesTab = panes().filter(item => item.tab === p.tab).length === 1 && tabName.trim().toLocaleLowerCase() === String(name).trim().toLocaleLowerCase();
     return this.frame(t, p)
       .when(Boolean(pic), el => el.child(pic))
-      .child(div().flex_none().truncate().max_w(260).font_medium().text_color(t.foreground).child(name))
+      .when(!echoesTab, el => el.child(div().flex_none().truncate().max_w(260).font_medium().text_color(t.foreground).child(name)))
       .child(div().flex_1().truncate().text_color(t.dim).child(folder(p.cwd)))
       .when(st === "working", el => el.child(svg("mods/workspace-chrome/spinner.svg").size(12).flex_none().text_color(t.working).spin(900)))
       .when(st === "blocked", el => el.child(div().flex_none().px(6).h(18).flex().items_center().rounded(5).bg(t.blocked + "26").text_size(TYPE.xs).font_semibold().text_color(t.blocked).child("Needs you")))

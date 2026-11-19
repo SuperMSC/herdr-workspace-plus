@@ -256,6 +256,8 @@ export function unifiedRows(input = {}, supplied = {}) {
   const mainGroups=visibleGroups.map(entry=>({...entry,remaining:entry.wanted.filter(r=>!movedSpaces.has(r.w.id))})).filter(entry=>entry.remaining.length);
   let navigationOpen=mode!=="status"||filter==="all";
   if(mode==="status"&&filter==="all"&&mainGroups.length){const nav=baseRow("section","section:navigation","Other workspaces",0);Object.assign(nav,{foldable:true,childCount:mainGroups.reduce((n,entry)=>n+entry.remaining.length,0)});navigationOpen=push(nav);}
+  // After Pinned or Needs attention, a plain heading marks where the ordinary project list starts.
+  if(mode==="project"&&mainGroups.length&&rows.some(row=>row.kind==="section"))push(baseRow("section","section:projects","Projects",0));
   if(navigationOpen)for(const entry of mainGroups)drawGroup(entry,entry.remaining,0,mode==="project"?rest:[]);
   const unplaced=mode==="project"?rest.filter(node=>!node.owner||!s.spaces.has(node.owner.space)):[];
   if(unplaced.length){const header=baseRow("section","section:unplaced","Other live terminals",0);Object.assign(header,{foldable:true,childCount:unplaced.length,count:unplaced.length});if(push(header))for(const node of unplaced.sort(priority))drawBranch(node,0,null,null,false,"unplaced");}

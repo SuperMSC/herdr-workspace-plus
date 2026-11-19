@@ -262,3 +262,15 @@ test('local filter opens from its icon or Cmd+F and closes on Escape or empty bl
 test('a pending filter focus is cancelled when its browser closes',async()=>{
  const f=harness();await f.flush();f.browser.openFilter(f.cx);f.browser.close();await f.flush();assert.notEqual(f.browser.filterInput.focused,true);
 });
+
+test("Git state lives in the trailing mark; only deleted or conflicted names take its color", async () => {
+  const f = harness(); await f.flush();
+  const t = { foreground: "#bfbfbf", ansi1: "#cd3131", ansi2: "#0dbc79", ansi3: "#e5e510", dim: "#777777", muted: "#999999", selected: "#333333", hover: "#222222", border: "#444444" };
+  f.browser.marks = { [f.browser.root + "/readme.md"]: "A", [f.browser.root + "/gone.md"]: "D", [f.browser.root + "/src/a.py"]: "M" };
+  const row = entry => f.browser.row({ depth: 0, ...entry }, t), name = (tree, path) => tree.childNodes.find(node => node.attrs.tooltip === path).attrs.text_color;
+  const added = row({ path: "readme.md", name: "readme.md", dir: false });
+  assert.equal(name(added, "readme.md"), t.foreground); assert(nodes(added).some(node => node.childNodes.includes("A") && node.attrs.text_color === model.markColor("A", t)));
+  assert.equal(name(row({ path: "gone.md", name: "gone.md", dir: false }), "gone.md"), model.markColor("D", t));
+  const folder = row({ path: "src", name: "src", dir: true });
+  assert.equal(name(folder, "src"), t.foreground); assert(nodes(folder).some(node => node.attrs.tooltip === "Contains changes" && node.attrs.bg === model.markColor("M", t)));
+});

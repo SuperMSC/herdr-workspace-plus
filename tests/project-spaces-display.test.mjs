@@ -56,8 +56,8 @@ function fixture({ density, folded = false, rail = false } = {}) {
   return { view, cx, source, shared, commands, inputs, groupKey, mask: value => { masked = value; }, render() { rendering = true; try { return view.render(cx); } finally { rendering = false; } } };
 }
 
-test("production Detailed paths do not duplicate the project root and Compact keeps complete tooltips and drag handlers", () => {
-  const f = fixture(); let tree = f.render(); assert.equal(find(tree, "group-0").attrs.h, 46); assert(strings(find(tree, "group-0")).includes("~/project"));
+test("production Detailed paths do not duplicate the project root or name and Compact keeps complete tooltips and drag handlers", () => {
+  const f = fixture(); let tree = f.render(); assert.equal(find(tree, "group-0").attrs.h, 30); assert(!strings(find(tree, "group-0")).includes("~/project")); assert.equal(find(tree, "group-0").attrs.tooltip, "/Users/me/project");
   assert.equal(find(tree, "space-main").attrs.h, 28); assert.equal(find(tree, "space-fix").attrs.h, 46); assert(strings(find(tree, "space-fix")).includes("~/project-fix"));
   assert.equal(find(tree, "space-remote").attrs.tooltip, "@server\n/srv/app"); assert(strings(find(tree, "space-remote")).includes("@server"));
   for (const event of ["on_mouse_down", "on_mouse_move", "on_mouse_up"]) assert.equal(typeof find(tree, "space-main").events[event], "function");

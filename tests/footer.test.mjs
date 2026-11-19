@@ -78,14 +78,29 @@ test("command labels follow the current global binding instead of a hardcoded sh
     { section: "mod:example", action: "app.palette", keys: "cmd-x" },
     { section: "global", action: "app.palette", keys: "cmd-shift-p" },
   ] });
-  assert.equal(text(find(f.render(), "workspace-commands")), "⌘⇧P  commands");
+  assert.equal(text(find(f.render(), "workspace-commands")), "Commands ⇧⌘P");
   f.state.bindings = [{ section: "global", action: "app.palette", keys: "ctrl--" }];
-  assert.equal(text(find(f.render(), "workspace-commands")), "⌃-  commands");
+  assert.equal(text(find(f.render(), "workspace-commands")), "Commands ⌃-");
   f.state.platform = "linux";
   f.state.bindings = [{ section: "global", action: "app.palette", keys: "ctrl-shift-p" }];
-  assert.equal(text(find(f.render(), "workspace-commands")), "Ctrl+Shift+P  commands");
+  assert.equal(text(find(f.render(), "workspace-commands")), "Commands Ctrl+Shift+P");
   f.state.bindings = [];
-  assert.equal(text(find(f.render(), "workspace-commands")), "commands");
+  assert.equal(text(find(f.render(), "workspace-commands")), "Commands");
+});
+
+test("Launch and Commands share one form: a capitalized name, then the bound shortcut in the dim color", () => {
+  const f = fixture({ bindings: [
+    { section: "global", action: "app.palette", keys: "shift-cmd-p" },
+    { section: "layout:Agent-Workspace", action: "sessions-plus.launcher", keys: "cmd-alt-p" },
+  ] });
+  let tree = f.render();
+  assert.equal(text(find(tree, "workspace-launcher-button")), "Launch ⌥⌘P");
+  assert.equal(text(find(tree, "workspace-commands")), "Commands ⇧⌘P");
+  for (const id of ["workspace-launcher-button", "workspace-commands"]) assert(Object.hasOwn(find(tree, id + "-key").attributes, "text_color"), id);
+  f.state.bindings = [];
+  tree = f.render();
+  assert.equal(text(find(tree, "workspace-launcher-button")), "Launch");
+  assert.equal(find(tree, "workspace-launcher-button-key"), undefined);
 });
 
 test("the commands control opens the palette even when no shortcut is bound", () => {

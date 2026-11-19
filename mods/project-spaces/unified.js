@@ -3,7 +3,7 @@ import { div, svg, image } from "gpui-kit";
 import { h_flex, v_flex, Input, Popover } from "gpui-base";
 import { agents, terminals, spaces, panes, focused, theme, run, shared, setShared, setAgentOrder } from "herdr";
 import { menuTooltipKey } from "./menu-tooltip.js";
-import { FILTER_KEY, SIDEBAR_COLUMNS, spacePath } from "./model.js";
+import { FILTER_KEY, SIDEBAR_COLUMNS, spacePath, echoesName } from "./model.js";
 import { DIRECTORY_PINS_KEY, normalizeDirectoryPins, setDirectoryPin } from "./directory-pins.js";
 import { unifiedRows, validateUnifiedTarget } from "./unified-model.js";
 const chrome = name => `mods/workspace-chrome/${name}.svg`;
@@ -11,6 +11,7 @@ const label = (value, limit = 500) => String(value ?? "").replace(/[\x00-\x1f\x7
 const TREE_STEP = 20, ROW_GAP = 2;
 const CONTROL = { height: 24, radius: 4, glyph: 14 };
 const treeDepth = row => Math.min(4, Math.max(0, Number.isFinite(row.displayDepth) ? row.displayDepth : row.depth || 0));
+const countTooltip = (count, noun) => `${count} ${noun}${count === 1 ? "" : "s"}`;
 const statusName = status => ({ blocked: "Needs you", done: "Done", working: "Working", idle: "Idle" }[status] || "Unknown");
 
 export default class UnifiedSidebar {
@@ -137,7 +138,7 @@ export default class UnifiedSidebar {
       const group = row.sourceGroup || {}, nested = row.depth > 0 || group.custom || group.manual || group.rows?.length > 1;
       const location = spacePath(row.sourceSpace, group, home, Boolean(nested), group.displayLocation), git = row.sourceSpace.g, branch = git?.branch ?? "detached";
       if (full) return [location?.tooltip, git?.name, git ? branch : "", git?.ahead > 0 ? "Ahead: " + git.ahead : "", git?.behind > 0 ? "Behind: " + git.behind : ""].filter(Boolean).join("\n");
-      return label([git && !["main", "master"].includes(branch) ? "⑂ " + branch : "", location && !location.repeat ? location.short : ""].filter(Boolean).join(" · "), 700);
+      return label([git && !["main", "master"].includes(branch) ? "⑂ " + branch : "", location && !location.repeat && !echoesName(location, row.sourceSpace.w.name) ? location.short : ""].filter(Boolean).join(" · "), 700);
     }
     if (Array.isArray(row.metadata)) return row.metadata.map(value => label(value, 200)).filter(Boolean).join(" · ");
     if (typeof row.metadata === "string") return label(row.metadata, 700);
@@ -147,7 +148,8 @@ export default class UnifiedSidebar {
     const now = Date.now();
     if (!row.agent || !Number.isFinite(row.activityAt) || row.activityAt <= 0 || row.activityAt > now) return null;
     const minutes = Math.floor((now - row.activityAt) / 60000), duration = minutes < 1 ? "<1m" : minutes < 60 ? `${minutes}m` : minutes < 1440 ? `${Math.floor(minutes / 60)}h` : `${Math.floor(minutes / 1440)}d`;
-    return { label: row.activityKind === "working" ? duration : duration + " ago", tooltip: row.activityKind === "working" ? "Tab working for " + duration : "Tab activity " + duration + " ago" };
+    // Working rows count elapsed time, others count since the last activity; the words keep them apart.
+    return { label: row.activityKind === "working" ? "for " + duration : duration + " ago", tooltip: row.activityKind === "working" ? "Tab working for " + duration : "Tab activity " + duration + " ago" };
   }
   guides(row, t, index) {
     const depth = treeDepth(row), previous = this.result?.rows?.[index - 1];
@@ -166,7 +168,8 @@ export default class UnifiedSidebar {
     const statusColor = disabled || row.status === "idle" ? t.dim : t[row.status] || t.accent;
     const hasDetails = detailed && Boolean(contextDetails), showAgentPin = agent && (this.hovered === row.id || row.pinned && row.section !== "pinned");
     const showStatus = !terminalOnly && knownStatus && (row.status !== "idle" || row.agent === true) && !["space", "group"].includes(row.kind), pinWidth = agent || row.kind === "space" || directoryPin ? SIDEBAR_COLUMNS.pin : 0;
-    const statusWidth = showStatus ? detailed ? 72 : 13 : 0, actionWidth = pinWidth + (pinWidth && statusWidth ? SIDEBAR_COLUMNS.gap : 0) + statusWidth;
+    // Idle is the resting state: a dot marks a real agent, the word is kept for states that need a look.
+    const statusText = detailed && row.status !== "idle", statusWidth = showStatus ? statusText ? 72 : 13 : 0, actionWidth = pinWidth + (pinWidth && statusWidth ? SIDEBAR_COLUMNS.gap : 0) + statusWidth;
     const fullDetails = [this.metadata(row, true), activity?.tooltip, ownStatus, !terminalOnly && row.branchStatus && row.branchStatus !== row.status ? "Child activity: " + statusName(row.branchStatus) : ""].filter(Boolean).join(" · ");
     const tooltip = [completeTask, fullDetails, row.parentId ? "Parent: " + label(row.parentId, 256) : "", target?.address, target?.reason].filter(Boolean).join("\n");
     const folding = div().id("unified-fold-" + row.id).w(18).h(16).flex_none().rounded(4).flex().items_center().justify_center().text_color(t.dim)
@@ -178,7 +181,7 @@ export default class UnifiedSidebar {
     const statusGlyph = row.status === "working" ? svg(chrome("spinner")).size(11).text_color(t.working).spin(900) : div().size(row.status === "blocked" ? 8 : 7).rounded(4).bg(t[row.status] || t.dim);
     const statusControl = showStatus ? h_flex().id("unified-status-" + row.id).h(19).gap(4).items_center().justify_end().when(!this.popupTooltipState?.open, el => el.tooltip(ownStatus))
       .child(div().size(13).flex_none().flex().items_center().justify_center().child(statusGlyph))
-      .when(detailed, el => el.child(div().id("unified-status-text-" + row.id).flex_none().text_size(TYPE.xs).font_medium().text_color(statusColor).child(ownStatus))) : null;
+      .when(statusText, el => el.child(div().id("unified-status-text-" + row.id).flex_none().text_size(TYPE.xs).font_medium().text_color(statusColor).child(ownStatus))) : null;
     const pinControl = !agent ? directoryPin : showAgentPin ? div().id("unified-pin-" + row.id).size(19).flex_none().rounded(4).flex().items_center().justify_center().text_color(row.pinned ? t.accent : t.dim).when(!this.popupTooltipState?.open, el => el.tooltip(row.pinned ? "Unpin agent" : "Pin agent"))
       .cursor_pointer().hover(el => el.bg(t.hover)).on_mouse_down("left", (_event, cx) => cx.stop_propagation()).on_mouse_up("left", (_event, cx) => cx.stop_propagation())
       .on_click((_event, cx) => { cx.stop_propagation(); this.pin(row, cx); }).child(svg(chrome(row.pinned ? "pin-off" : "pin")).size(12)) : null;
@@ -221,7 +224,7 @@ export default class UnifiedSidebar {
         .when(row.id === "section:pinned", el => el.child(svg(chrome("pin")).size(10)))
         .when(Boolean(row.status), el => el.child(div().size(5).rounded(3).bg(t[row.status] || t.dim))))
       .child(div().flex_1().font_semibold().child(row.title || row.name || "Workspaces"))
-      .when(Boolean(row.count ?? row.childCount), el => el.child(div().text_size(TYPE.xs).child(String(row.count ?? row.childCount))));
+      .when(Boolean(row.count ?? row.childCount), el => el.child(div().id(`unified-section-count-${row.id}`).text_size(TYPE.xs).when(!this.popupTooltipState?.open, el => el.tooltip(countTooltip(row.count ?? row.childCount, "item"))).child(String(row.count ?? row.childCount))));
     if (row.kind === "group") return h_flex().id(this.tooltipKey(`unified-readonly-group-${row.id}`)).relative().w_full().min_w(0).min_h(28).mt(spacing).pl(4 + depth * TREE_STEP).pr(SIDEBAR_COLUMNS.inset).gap(5).flex_none().items_center().bg("#00000000").rounded(4).hover(el => el.bg(t.hover)).children(this.guides(row, t, index))
       .on_hover((on, cx) => this.hoverRow(row, on, cx))
       .when(Boolean(row.foldable), el => el.cursor_pointer().on_click((_event, cx) => this.fold(row, cx)))
@@ -231,7 +234,7 @@ export default class UnifiedSidebar {
       .child(div().flex_1().min_w(0).truncate().text_size(TYPE.md).font_semibold().child(row.title || row.name || "Workspaces"))
       .child(h_flex().w(SIDEBAR_COLUMNS.pin * 2 + SIDEBAR_COLUMNS.gap).flex_none().gap(SIDEBAR_COLUMNS.gap).items_center()
         .child(div().size(SIDEBAR_COLUMNS.pin).flex_none().when(Boolean(pin), el => el.child(pin)))
-        .child(div().w(SIDEBAR_COLUMNS.pin).min_w(0).flex_none().truncate().text_right().text_size(TYPE.sm).text_color(t.dim).when(!this.popupTooltipState?.open, el => el.tooltip(String(row.count ?? row.childCount ?? ""))).child(String(row.count ?? row.childCount ?? ""))));
+        .child(div().w(SIDEBAR_COLUMNS.pin).min_w(0).flex_none().truncate().text_right().text_size(TYPE.sm).text_color(t.dim).when(row.folded && Boolean(row.count ?? row.childCount), el => el.when(!this.popupTooltipState?.open, el => el.tooltip(countTooltip(row.count ?? row.childCount, "item"))).child(String(row.count ?? row.childCount)))));
     return this.entityRow(row, index, frame, cx, pin)
       .when(row.kind === "space", el => el.mt(spacing))
       .when(row.kind === "space" && Boolean(row.sourceSpace?.auto) && canonical.spaces.has(row.spaceId), el => el.on_mouse_down("right", (_event, cx) => { cx.stop_propagation(); owner.spaceMenu(row.sourceSpace); }));

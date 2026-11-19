@@ -341,6 +341,8 @@ export default class Browser {
     const { path, name, dir, depth, group, hint } = entry, open = group ? !this.libraryFolded.has(path) : this.folders.has(path), mark = this.marks[this.root + "/" + path];
     const localId = kind => `${idPrefix === "file" ? "" : idPrefix + "-"}${kind}-${path}`;
     const inner = dir && !mark ? this.dirtyFolders().get(path) : null, active = this.file === path, tone = markColor(mark ?? inner, t);
+    // The trailing dot or letter carries the Git state; only deleted or conflicted names take its color too.
+    const nameTone = ["D", "U"].includes(mark) ? tone : null;
     // One 14px lane per level, each with a hairline, so nested rows read as a tree.
     const guides = Array.from({ length: depth }, (_, i) => div().w(14).h_full().flex_none().flex().justify_center()
       .child(div().w(1).h_full().bg(t.border)).id(`${localId("guide")}-${i}`));
@@ -350,7 +352,7 @@ export default class Browser {
       .children(guides)
       .child(dir ? div().id(localId("expand")).w(16).h(24).flex_none().flex().items_center().justify_center().on_click((_e, cx) => { cx.stop_propagation(); if (group) this.foldLibrary(path, cx); else this.toggle(path, cx); }).child(svg("mods/files-plus/chevron-" + (open ? "down" : "right") + ".svg").size(10).text_color(open ? t.muted : t.dim)) : div().w(16).flex_none())
       .child(div().w(16).mr(7).flex_none().flex().items_center().child(fileIcon(path, dir, open)))
-      .child(div().when(!hint, el => el.flex_1()).min_w(0).truncate().text_size(TYPE.md).text_color(tone ?? t.foreground).when(active, el => el.font_medium()).tooltip(path).child(name))
+      .child(div().when(!hint, el => el.flex_1()).min_w(0).truncate().text_size(TYPE.md).text_color(nameTone ?? t.foreground).when(active, el => el.font_medium()).tooltip(path).child(name))
       .when(Boolean(hint), el => el.child(div().flex_1().min_w(0).ml(8).truncate().text_size(TYPE.sm).text_color(t.dim).child(hint)))
       .when(Boolean(group), el => el.child(div().flex_none().mr(4).text_size(TYPE.sm).text_color(t.dim).child(String(entry.count))))
       .when(Boolean(inner), el => el.child(div().size(5).mr(4).rounded(3).flex_none().bg(tone).tooltip("Contains changes")))

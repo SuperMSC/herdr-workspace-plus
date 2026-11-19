@@ -4,6 +4,13 @@
 
 Native Herdr mods for files, Git changes, saved agent sessions, project navigation and account quota. The personal layout is named **Agent-Workspace**; runtime mod IDs remain `files-plus`, `sessions-plus`, `project-spaces` and `agents-plus`.
 
+## 0.14.3
+
+- Sidebar rows omit a folder path that ends in the row's own name; the tooltip keeps the full path. Idle agents keep their status dot without the word, and working time reads **for 7m**, apart from **12m ago** activity.
+- Open projects drop their space count, which stays for folded or filtered projects; counts have tooltips. A **Projects** heading marks where the ordinary list resumes after Pinned or Needs attention.
+- Files: plain folders use a neutral color while typed folders keep theirs. Git state stays in the trailing dot or letter; only deleted and conflicted names take its color.
+- Footer quota shows reset countdowns in the dim color, and the window measured by the bar is brighter. **Launch** and **Commands** share one form with their bound shortcuts. A lone terminal pane under a tab of the same name shows only its folder.
+
 ## 0.14.2
 
 - Replace numbered items in the collapsed unified sidebar with centered folder, tab and program icons. Highlight the focused item with a subtle background and side marker.

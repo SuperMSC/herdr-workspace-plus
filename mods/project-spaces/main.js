@@ -12,7 +12,7 @@ import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, Input, InputState } from "gpui-base";
 import { spaces, machines, panes, agents, terminals, focused, run, exec, theme, shared, setShared, watchFolder, window, layout, props, home } from "herdr";
 import {
-  STATE_KEY, FILTER_KEY, DENSITY_KEY, SIDEBAR_COLUMNS, projectDensity, groupPath, spacePath, filterProjectGroups, projectMark, normalizeState, buildGroups, targetOrder, moves, assignSpace, moveGroup, toggleFold, prune, sameState,
+  STATE_KEY, FILTER_KEY, DENSITY_KEY, SIDEBAR_COLUMNS, projectDensity, groupPath, spacePath, echoesName, filterProjectGroups, projectMark, normalizeState, buildGroups, targetOrder, moves, assignSpace, moveGroup, toggleFold, prune, sameState,
 } from "./model.js";
 import { menuTooltipState, menuTooltipKey, endMenuTooltip } from "./menu-tooltip.js";
 import { Menu, openMenu, menuRows } from "./menus.js";
@@ -418,7 +418,7 @@ export default class ProjectSpaces extends View {
   }
 
   groupHead(group, st, t, n, density = "detailed", tree = false, pinControl = null) {
-    const project = st.mode === "project", location = project ? group.displayLocation === undefined ? groupPath(group, this.home) : group.displayLocation : null, details = density === "detailed" && location;
+    const project = st.mode === "project", location = project ? group.displayLocation === undefined ? groupPath(group, this.home) : group.displayLocation : null, details = density === "detailed" && location && !echoesName(location, group.name);
     const mark = projectMark(t, group.name, group.color);
     const target = this.drag && this.over?.kind === "group" && this.over.id === group.key && !(this.drag.kind === "group" && this.drag.id === group.key);
     const joining = target && this.drag.kind === "space" && project;
@@ -427,7 +427,11 @@ export default class ProjectSpaces extends View {
     const above = shown.indexOf(this.drag?.id) > shown.indexOf(group.key);
     const hovered = this.hover === group.key;
     const loud = group.status === "blocked" || group.status === "done";
-    const count = group.fullCount && group.fullCount !== group.rows.length ? String(group.rows.length) + "/" + String(group.fullCount) : String(group.rows.length);
+    const filtered = Boolean(group.fullCount && group.fullCount !== group.rows.length);
+    const count = filtered ? String(group.rows.length) + "/" + String(group.fullCount) : String(group.rows.length);
+    const countTooltip = filtered ? `${group.rows.length} of ${group.fullCount} spaces shown` : `${group.rows.length} ${group.rows.length === 1 ? "space" : "spaces"}`;
+    // An open tree already shows its spaces; the count stays for folded or filtered projects.
+    const treeCount = !tree || group.folded || filtered ? count : "";
     const newSpace = () => div().id("group-new-" + n).size(SIDEBAR_COLUMNS.pin).flex_none().flex().items_center().justify_center().rounded(5)
       .text_color(t.muted).hover(s => s.bg(t.selected).text_color(t.foreground)).when(!this.tooltipState()?.open, el => el.tooltip("New space in this project"))
       .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
@@ -439,7 +443,7 @@ export default class ProjectSpaces extends View {
       .when(group.folded && loud && project, el => el.child(div().size(5).flex_none().rounded(3).bg(tone(t, group.status)).when(!this.tooltipState()?.open, el => el.tooltip("Project activity: " + statusLabel(group.status))))) : null;
     const treeSummary = tree ? h_flex().w_full().min_w(0).gap(4).items_center().justify_end()
       .when(project && hovered && Boolean(group.folder), el => el.child(newSpace()))
-      .when(!(project && hovered && group.folder), el => el.child(div().flex_1().min_w(0).truncate().text_size(TYPE.sm).text_color(t.dim).text_right().child(count))) : null;
+      .when(!(project && hovered && group.folder), el => el.child(div().flex_1().min_w(0).truncate().text_size(TYPE.sm).text_color(t.dim).text_right().child(treeCount))) : null;
     return h_flex().relative().id(this.tooltipKey(`group-${n}`)).h(details ? tree ? 40 : 46 : tree ? 28 : 30).when(!this.tooltipState()?.open, el => el.tooltip(location?.tooltip || group.name)).flex_none().mt(tree ? 0 : n ? 6 : 0).mb(0).pl(tree ? 4 : 6).pr(tree ? SIDEBAR_COLUMNS.inset : 4).gap(tree ? 5 : 7).items_center().when(tree, el => el.items_start().py(details ? 3 : 4)).rounded(tree ? 0 : 7)
       .when(joining && !tree, el => el.bg(t.selected).border_1().border_color(t.accent))
       .when(!joining && !tree, el => el.hover(s => s.bg(t.hover)))
@@ -470,7 +474,7 @@ export default class ProjectSpaces extends View {
         .on_click((_e, cx) => { cx.stop_propagation(); run("space.new", { folder: group.folder, machine: group.machine ?? "" }); })
         .child(svg(chrome("plus")).size(12))))
       .when(!tree && !(project && hovered && group.folder), el => el.child(div().flex_none().min_w(22).text_size(TYPE.sm).text_color(t.dim).text_right().pr(4).child(group.fullCount && group.fullCount !== group.rows.length ? `${group.rows.length}/${group.fullCount}` : String(group.rows.length))))
-      .when(tree, el => el.child(this.trailingDock("group-" + n, pinControl, treeSummary, count + " spaces", SIDEBAR_COLUMNS.pin)))
+      .when(tree, el => el.child(this.trailingDock("group-" + n, pinControl, treeSummary, treeCount ? countTooltip : "", SIDEBAR_COLUMNS.pin)))
       .when(!tree && Boolean(pinControl), el => el.child(pinControl));
   }
 
@@ -486,7 +490,8 @@ export default class ProjectSpaces extends View {
     const nested = st.mode === "project" && group.header && !solo;
     const parentLocation = nested ? group.displayLocation === undefined ? groupPath(group, this.home) : group.displayLocation : null;
     const location = spacePath(r, group, this.home, nested, parentLocation), branch = r.g?.branch ?? "detached", showBranch = Boolean(r.g) && !["main", "master"].includes(branch);
-    const details = density === "detailed" && (tree ? Boolean(location && !location.repeat || showBranch || solo && group.name !== w.name) : location && !location.repeat);
+    const relative = location && !location.repeat && !echoesName(location, w.name) ? location.short : "";
+    const details = density === "detailed" && (tree ? Boolean(relative || showBranch || solo && group.name !== w.name) : Boolean(relative));
     const machineBadge = w.machine ? !nested || parentLocation?.mixed || (group.machine ?? null) !== w.machine ? `@${w.machine}` : "" : nested && (group.machine || parentLocation?.mixedMachines) ? "local" : "";
     const mark = projectMark(t, solo ? group.name : w.name, solo ? group.color : null);
     const target = this.drag?.kind === "space" && this.over?.kind === "space" && this.over.id === w.id && this.drag.id !== w.id;
@@ -500,7 +505,6 @@ export default class ProjectSpaces extends View {
     const treeMarker = nested ? svg(chrome(r.g?.linked ? "branch" : "folder")).size(14).text_color(t.muted || t.dim) : sourceMarker;
     const marker = tree ? h_flex().w(18).h(18).mr(3).flex_none().items_center().justify_center().child(treeMarker) : sourceMarker;
     const summaryTooltip = r.g ? [r.g.name, r.g.branch ?? "detached", r.g.ahead > 0 ? "Ahead: " + r.g.ahead : "", r.g.behind > 0 ? "Behind: " + r.g.behind : ""].filter(Boolean).join("\n") : solo && group.name !== w.name ? group.name : "";
-    const relative = location && !location.repeat ? location.short : "";
     const treeDetails = tree && details ? h_flex().id("sidebar-details-space-" + w.id).min_w(0).h(12).gap(5).items_center().text_size(TYPE.xs).line_height("12px").text_color(t.dim).when(!this.tooltipState()?.open, el => el.tooltip([summaryTooltip, location?.tooltip].filter(Boolean).join("\n")))
       .when(showBranch, el => el.child(h_flex().min_w(0).flex_shrink(1).max_w(160).gap(3).items_center()
         .child(svg(chrome("branch")).size(10).flex_none())
@@ -527,7 +531,7 @@ export default class ProjectSpaces extends View {
           .when(!tree, el => el.child(r.g ? this.gitTail(r.g, r, nested ? group.name : "", t)
             : solo && group.name !== w.name ? h_flex().flex_1().min_w(0).justify_end().text_size(TYPE.sm).text_color(t.dim).child(div().min_w(0).truncate().child(group.name))
             : div().flex_1())))
-        .when(!tree && Boolean(details), el => el.child(div().truncate().text_size(TYPE.xs).text_color(t.dim).child(location.short)))
+        .when(!tree && Boolean(details), el => el.child(div().truncate().text_size(TYPE.xs).text_color(t.dim).child(relative)))
         .when(Boolean(treeDetails), el => el.child(treeDetails)))
       .when(!tree && !nested && loud, el => el.child(div().flex_none().text_color(tone(t, w.status)).child("●")))
       .when(tree, el => el.child(this.trailingDock("space-" + w.id, pinControl)))

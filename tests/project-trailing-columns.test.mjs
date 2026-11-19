@@ -11,7 +11,7 @@ const nodes=node=>!node||typeof node!=="object"?[]:[node,...node.childNodes.flat
 const strings=node=>!node||typeof node!=="object"?typeof node==="string"?[node]:[]:node.childNodes.flatMap(strings);
 function fixture() {
  const calls=[],state=model.normalizeState({mode:"project"}),w={id:"s1",name:"Workspace",folder:"/work/repo/checkout",machine:null,active:false,status:"blocked",tabs:[]},g={name:"repo",repo:JSON.stringify([null,"/work/repo/.git"]),branch:"feature/a-very-long-branch-name",ahead:12,behind:3,linked:true};
- const group=model.buildGroups([{w,i:0,place:w.folder,g}],state)[0];group.custom=true;group.fullCount=1234;
+ const group=model.buildGroups([{w,i:0,place:w.folder,g}],state)[0];group.custom=true;group.fullCount=1234;group.name="Repository";
  const deps={...model,View:class{},div:element,svg:element,h_flex:element,v_flex:element,shared:()=>({}),spaces:()=>[w],run:(...args)=>calls.push(args)},source=readFileSync(new URL("../mods/project-spaces/main.js",import.meta.url),"utf8").replace(/^import[\s\S]*?;\n/gm,"").replace("export default class","return class"),Main=uiFunction(...Object.keys(deps),source)(...Object.values(deps)),view=new Main();view.home="/Users/demo";view.lastGroups=[group];
  const t={dim:"dim",muted:"muted",foreground:"foreground",hover:"hover",selected:"selected",accent:"accent",border:"border",blocked:"blocked",ansi1:"behind",ansi2:"ahead"};return{view,group,row:group.rows[0],state,t,calls};
 }
@@ -22,7 +22,7 @@ function dock(node,id,summaryWidth=0) {
 test("tree directories use a compact pin slot while branch and path share the secondary line",()=>{
  assert.deepEqual(model.SIDEBAR_COLUMNS,{pin:19,gap:3,summary:56,width:78,inset:5});
  const f=fixture();for(const density of ["detailed","compact"]){let clicked=0;const pin=element().id("fixture-pin").on_click(()=>{clicked++;});const group=f.view.groupHead(f.group,f.state,f.t,0,density,true,pin),space=f.view.row(f.row,f.group,f.state,f.t,density,true,pin),groupDock=dock(group,"group-0",19),spaceDock=dock(space,"space-s1");
-  assert.equal(group.attrs.pr,5);assert.equal(space.attrs.pr,0);assert.equal(group.attrs.h,density==="detailed"?40:28);assert.equal(space.attrs.h,density==="detailed"?38:28);assert.equal(groupDock.pin.childNodes[0],pin);assert.equal(spaceDock.pin.childNodes[0],pin);groupDock.pin.childNodes[0].events.on_click();assert.equal(clicked,1);assert.equal(groupDock.summary.attrs.tooltip,"1/1234 spaces");assert(space.attrs.tooltip.includes(f.row.g.branch));assert(space.attrs.tooltip.includes("Ahead: 12"));assert(space.attrs.tooltip.includes("Behind: 3"));const details=nodes(space).find(n=>n.attrs.id==="sidebar-details-space-s1");if(density==="detailed"){assert(details);assert(strings(details).includes(f.row.g.branch));assert(strings(details).includes("↑12"));assert(strings(details).includes("↓3"));}else assert(!details);
+  assert.equal(group.attrs.pr,5);assert.equal(space.attrs.pr,0);assert.equal(group.attrs.h,density==="detailed"?40:28);assert.equal(space.attrs.h,density==="detailed"?38:28);assert.equal(groupDock.pin.childNodes[0],pin);assert.equal(spaceDock.pin.childNodes[0],pin);groupDock.pin.childNodes[0].events.on_click();assert.equal(clicked,1);assert.equal(groupDock.summary.attrs.tooltip,"1 of 1234 spaces shown");assert(space.attrs.tooltip.includes(f.row.g.branch));assert(space.attrs.tooltip.includes("Ahead: 12"));assert(space.attrs.tooltip.includes("Behind: 3"));const details=nodes(space).find(n=>n.attrs.id==="sidebar-details-space-s1");if(density==="detailed"){assert(details);assert(strings(details).includes(f.row.g.branch));assert(strings(details).includes("↑12"));assert(strings(details).includes("↓3"));}else assert(!details);
   const titleX=group.attrs.pl+group.childNodes[0].attrs.w+group.attrs.gap+group.childNodes[1].attrs.size+group.childNodes[1].attrs.mr+group.attrs.gap;assert.equal(titleX,53);assert.equal(space.childNodes[0].attrs.w+space.childNodes[0].attrs.mr+space.attrs.gap,26);
   const empty=dock(f.view.row(f.row,f.group,f.state,f.t,density,true),"space-s1");assert.equal(empty.pin.childNodes.length,0);assert.equal(empty.found.attrs.w,spaceDock.found.attrs.w);
  }
@@ -62,7 +62,7 @@ test("unified task trailing columns reserve status width only for visible states
  const row={id:'agent:t1',kind:'agent',agent:true,title:'herdr.app 最新版本与 agent 工作区',program:{name:'Codex',agent:true},metadata:'',target:{kind:'agent',address:'t1'}},cx={notify(){},stop_propagation(){}};
  const draw=(status,density,overrides={})=>view.entityRow({...row,status,branchStatus:status,...overrides},0,{density},cx),find=(tree,prefix)=>nodes(tree).find(node=>node.attrs.id===prefix+row.id);
  for(const density of ['detailed','compact'])for(const status of ['idle',null,'working','blocked','done','unknown']){
-  view.hovered=null;const before=draw(status,density),actions=find(before,'unified-actions-'),pin=find(before,'unified-agent-pin-slot-'),slot=find(before,'unified-status-slot-'),statusWidth=['idle','working','blocked','done','unknown'].includes(status)?density==='detailed'?72:13:0;
+  view.hovered=null;const before=draw(status,density),actions=find(before,'unified-actions-'),pin=find(before,'unified-agent-pin-slot-'),slot=find(before,'unified-status-slot-'),statusWidth=status==='idle'?13:['working','blocked','done','unknown'].includes(status)?density==='detailed'?72:13:0;
   assert.equal(actions.attrs.w,19+(statusWidth?3+statusWidth:0));assert.equal(slot?.attrs.w||0,statusWidth);assert.equal(actions.childNodes.length,statusWidth?2:1);assert.equal(pin.attrs.size,19);assert.equal(pin.childNodes.length,0);
   before.events.on_hover(true,cx);const hovered=draw(status,density);assert.equal(find(hovered,'unified-actions-').attrs.w,actions.attrs.w);assert.equal(find(hovered,'unified-agent-pin-slot-').attrs.size,19);assert.equal(find(hovered,'unified-agent-pin-slot-').childNodes.length,1);
   hovered.events.on_hover(false,cx);const after=draw(status,density);assert.equal(find(after,'unified-actions-').attrs.w,actions.attrs.w);assert.equal(find(after,'unified-agent-pin-slot-').childNodes.length,0);
@@ -70,4 +70,13 @@ test("unified task trailing columns reserve status width only for visible states
  for(const density of ['detailed','compact']){
   const shell=draw('unknown',density,{kind:'terminal',agent:false,program:{name:'zsh',shell:true,agent:false},target:{kind:'terminal',address:'t1'}});assert.equal(find(shell,'unified-status-slot-'),undefined);assert.equal(find(shell,'unified-status-'),undefined);assert.equal(find(shell,'unified-actions-').attrs.w,19);assert(!strings(shell).includes('Unknown'));
  }
+});
+
+test("paths that end in the row's own name stay in the tooltip, and open unfiltered projects drop the redundant count",()=>{
+ assert.equal(model.echoesName({path:"/work/repo/"},"Repo"),true);assert.equal(model.echoesName({path:"/work/repo"},"Repository"),false);assert.equal(model.echoesName({mixed:true,path:"/work/repo"},"repo"),false);assert.equal(model.echoesName(null,"repo"),false);
+ const f=fixture();f.group.name="repo";
+ for(const density of ["detailed","compact"]){const head=f.view.groupHead(f.group,f.state,f.t,0,density,true);assert.equal(head.attrs.h,28);assert(!strings(head).includes("/work/repo"));assert.equal(head.attrs.tooltip,"/work/repo");}
+ const solo={...f.row,w:{...f.row.w,name:"checkout"},g:{...f.row.g,branch:"main"}},space=f.view.row(solo,f.group,f.state,f.t,"detailed",true);assert.equal(space.attrs.h,28);assert(space.attrs.tooltip.includes("/work/repo/checkout"));
+ f.group.name="Repository";f.group.fullCount=1;let head=f.view.groupHead(f.group,f.state,f.t,0,"detailed",true),summary=dock(head,"group-0",19).summary;assert(!strings(summary).includes("1"));assert.equal(summary.attrs.tooltip,"");
+ f.group.folded=true;head=f.view.groupHead(f.group,f.state,f.t,0,"detailed",true);summary=dock(head,"group-0",19).summary;assert(strings(summary).includes("1"));assert.equal(summary.attrs.tooltip,"1 space");
 });

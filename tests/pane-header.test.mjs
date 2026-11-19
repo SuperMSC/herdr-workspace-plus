@@ -25,16 +25,17 @@ const nodes = node => !node || typeof node !== "object" ? [] : [node, ...node.ch
 const find = (tree, id) => nodes(tree).find(node => node.attrs.id === id);
 const texts = tree => nodes(tree).flatMap(node => node.childNodes.filter(child => typeof child === "string"));
 
-function harness({ pane = "file-pane", tree = null } = {}) {
+function harness({ pane = "file-pane", tree = null, termTab = "Claude", extraPanes = [] } = {}) {
   const row = { tab: "file-tab", pane: "file-pane", space: "s", root: "/Users/me/project", path: "src/deep/app.py", on: null, previewId: "p" };
   const state = { [FILE_TABS_KEY]: { tabs: { [row.tab]: row } } }, overlays = [], commands = [];
   const all = [
     { pane: "file-pane", tab: "file-tab", mod: "files-plus", terminal: null, title: "files-plus", focused: true, zoomed: false },
     { pane: "term-pane", tab: "term-tab", terminal: "t1", title: "zsh", cwd: "/Users/me/project", status: "working", program: { name: "Claude Code", agent: true, icon: null }, zoomed: false },
+    ...extraPanes,
   ];
   const deps = { ...library, ...model, FILE_TABS_KEY, DIRTY_KEY: "files-plus.dirty.v1", div: () => element(), svg: path => element("svg").path?.(path) ?? element("svg"), image: () => element("image"), h_flex: () => element(),
     fileIcon: path => element("icon").id(`icon-${path}`), iconButton: (id, _icon, label, callback) => element().id(id).tooltip(label).on_click(callback),
-    panes: () => all, spaces: () => [{ id: "s", tabs: [{ id: "file-tab", name: "app.py" }, { id: "term-tab", name: "Claude" }] }],
+    panes: () => all, spaces: () => [{ id: "s", tabs: [{ id: "file-tab", name: "app.py" }, { id: "term-tab", name: termTab }] }],
     props: () => ({ pane, terminal: null, role: "pane-header" }), run: (...args) => commands.push(args), theme: () => ({ blocked: "#f00" }), home: () => "/Users/me",
     shared: key => state[key], setShared: (key, value) => { state[key] = value; }, openOverlay: spec => overlays.push(spec),
     settings: () => ({ zoom: 1 }), window: () => ({ platform: "macos" }), layout: () => tree };
@@ -72,4 +73,11 @@ test("a terminal pane keeps Herdr's header: program name, folder and status", ()
   assert(nodes(tree).some(node => node.tag === "svg"));
   tree.events.on_click();
   assert.deepEqual(f.commands, [["pane.focus", { pane: "term-pane" }]]);
+});
+
+test("a lone terminal pane under a tab of the same name shows only its folder and status", () => {
+  const lone = harness({ pane: "term-pane", termTab: "claude code" }).view.render();
+  assert(!texts(lone).includes("Claude Code")); assert(texts(lone).includes("~/project"));
+  const split = harness({ pane: "term-pane", termTab: "Claude Code", extraPanes: [{ pane: "other", tab: "term-tab", terminal: "t2", title: "zsh", cwd: "/tmp" }] }).view.render();
+  assert(texts(split).includes("Claude Code"));
 });

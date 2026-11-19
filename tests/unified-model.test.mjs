@@ -314,3 +314,12 @@ test("Pinned counts top-level project, directory and standalone entries independ
  const empty=fixture({sp:[space('a',[],{folder:'/one'}),space('b',[],{folder:'/two'})],ts:[],as:[],ps:[]});assert.equal(all(empty,{directoryPins:{spaces:['a','b']}}).rows.find(row=>row.id==='section:pinned').count,2);
  f.terminals.push(terminal('standalone',{labels:{'herdr.pinned':'true'}}));assert.equal(all(f).rows.find(row=>row.id==='section:pinned').count,2);
 });
+
+test("a Projects heading marks where the ordinary list resumes after Pinned, and appears only after a section",()=>{
+ const sp=[space("s1",[tab("tab1")],{folder:"/one"}),space("s2",[tab("tab2")],{folder:"/two"})],ps=[pane("t1","tab1","p1"),pane("t2","tab2","p2")],ts=[terminal("t1"),terminal("t2")];
+ const pinned=all(fixture({sp,ts,ps,as:[agent("t1","s1","tab1","p1",{pinned:true}),agent("t2","s2","tab2","p2")]}));
+ const heading=pinned.rows.findIndex(r=>r.id==="section:projects");assert(heading>0);assert.equal(pinned.rows[heading].kind,"section");assert.equal(pinned.rows[heading].foldable,false);assert.equal(pinned.rows[heading].title,"Projects");
+ assert(pinned.rows.slice(0,heading).some(r=>r.id==="section:pinned"));assert(pinned.rows.slice(heading+1).some(r=>r.address==="t2"));assert(pinned.rows.slice(0,heading).some(r=>r.address==="t1"));
+ const plain=all(fixture({sp,ts,ps,as:[agent("t1","s1","tab1","p1"),agent("t2","s2","tab2","p2")]}));assert(!plain.rows.some(r=>r.kind==="section"));
+ const status=all(fixture({sp,ts,ps,as:[agent("t1","s1","tab1","p1",{pinned:true}),agent("t2","s2","tab2","p2")]}),{view:"status"});assert(!status.rows.some(r=>r.id==="section:projects"));
+});

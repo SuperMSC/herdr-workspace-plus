@@ -39,12 +39,30 @@ export default class StatusBar {
       const label = mode === "used" ? "Used" : "Remaining", stale = data.state === "stale";
       const details = windows.map(item => `${item.label}: ${percentage(item, mode)}${item.unlimited ? "" : ` · ${resetLabel(item.resetAt)}${!Number.isFinite(item.resetAt) && item.minutes === 300 ? " · Showing default 5h" : ""}\n${paceLabel(item, Date.now(), stale)}`}`);
       const tooltip = [`${PROVIDERS[provider]} · ${label}${stale ? " · Stale" : ""}`, ...details, warning].filter(Boolean).join("\n");
-      const format = withPercentage => windows.slice(0, 2).map(item => item.unlimited ? "∞" : [
-        Number.isFinite(item.minutes) && item.minutes > 0 ? durationLabel(item.minutes) : "",
-        withPercentage ? percentage(item, mode) : "", this.countdown(item.resetAt, item.minutes),
-      ].filter(Boolean).join(" ")).join(" · ");
-      return [{ provider, row, pace: quotaPace(row, Date.now(), stale), text: row.unlimited ? "∞" : percentage(row, mode), compact: format(true), brief: format(false), extra: Math.max(0, windows.length - 2), stale, warning, tooltip }];
+      // The reset countdown is kept apart from the window name and percentage so it can take a dimmer color;
+      // the bar shows the lowest window, and that window is marked primary so the two read together.
+      const parts = withPercentage => windows.slice(0, 2).map(item => {
+        const main = item.unlimited ? "∞" : [Number.isFinite(item.minutes) && item.minutes > 0 ? durationLabel(item.minutes) : "", withPercentage ? percentage(item, mode) : ""].filter(Boolean).join(" ");
+        const reset = item.unlimited ? "" : this.countdown(item.resetAt, item.minutes);
+        return { primary: item === row && windows.length > 1, main, reset, text: [main, reset].filter(Boolean).join(" ") };
+      });
+      const format = withPercentage => parts(withPercentage).map(part => part.text).join(" · ");
+      return [{ provider, row, pace: quotaPace(row, Date.now(), stale), text: row.unlimited ? "∞" : percentage(row, mode), compact: format(true), brief: format(false), compactParts: parts(true), briefParts: parts(false), extra: Math.max(0, windows.length - 2), stale, warning, tooltip }];
     });
+  }
+
+  /** One provider's windows: name and percentage, then the reset countdown in the dim color; the bar's window is stronger. */
+  labelParts(item, withPercentage, bars, t) {
+    const parts = (withPercentage ? item.compactParts : item.briefParts) ?? [{ main: withPercentage ? item.compact : item.brief, reset: "", primary: false }];
+    const tone = primary => item.stale ? t.ansi3 : primary && bars ? t.foreground : t.muted;
+    return h_flex().id(`quota-status-label-${item.provider}`).h(24).line_height("16px").gap(4).items_center().whitespace_nowrap().text_color(item.stale ? t.ansi3 : t.muted)
+      .children(parts.flatMap((part, index) => [
+        ...(index ? [div().text_color(t.dim).child("·")] : []),
+        h_flex().gap(4).items_center()
+          .when(Boolean(part.main), el => el.child(div().text_color(tone(part.primary)).child(part.main)))
+          .when(Boolean(part.reset), el => el.child(div().text_color(item.stale ? t.ansi3 : t.dim).child(part.reset))),
+      ]))
+      .when(item.extra > 0, el => el.child(div().text_color(t.dim).child(`+${item.extra}`)));
   }
 
   render() {
@@ -94,7 +112,7 @@ export default class StatusBar {
         .child(providerIcon(item.provider, 15))
         .when(bars && item.row && !item.row.unlimited, el => el.child(div().w(32).h(5).flex_none().overflow_hidden().rounded(3).bg(t.raised)
           .child(div().h_full().w(`${Math.max(0, Math.min(100, item.row[mode]))}%`).rounded(3).bg(item.stale || item.pace?.state === "ahead" ? t.ansi3 : t.dim))))
-        .when(!minimal, el => el.child(div().id(`quota-status-label-${item.provider}`).h(24).line_height("16px").flex().items_center().whitespace_nowrap().text_color(item.stale ? t.ansi3 : t.muted).child(label(item))))
+        .when(!minimal, el => el.child(this.labelParts(item, label === full, bars, t)))
         .when(Boolean(item.warning), el => el.child(div().id(`quota-status-warning-${item.provider}`).size(13).flex_none().text_color(t.ansi3).tooltip(item.warning).accessibility_label(`${PROVIDERS[item.provider]}: ${item.warning}`).child(svg("mods/sessions-plus/warning.svg").size(13))))))
       .when(collapsed || (!summaries.length && !loading), el => el.child(div().text_color(t.muted).tooltip("Open quota details").child("Quota")))
       .when(collapsed && warnings.length > 0, el => el.child(div().id("quota-status-warning").size(13).flex_none().text_color(t.ansi3)

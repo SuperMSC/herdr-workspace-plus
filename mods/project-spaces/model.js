@@ -309,6 +309,12 @@ export function groupPath(group, home = "") {
   if (group.custom && origins.size > 1) return { mixed: true, short: "Multiple folders", tooltip: "Each space shows its own folder.", on: null, mixedMachines: new Set(rows.map(row => row.w.machine || null)).size > 1 };
   return projectPath(group.folder, home, group.machine ?? null);
 }
+// A path whose last folder is the row's own name repeats it; the tooltip keeps the full path.
+export function echoesName(location, name) {
+  if (!location || location.mixed || typeof location.path !== "string") return false;
+  const path = location.path.replace(/\/+$/, ""), last = path.slice(path.lastIndexOf("/") + 1), own = String(name ?? "").trim();
+  return Boolean(last && own) && last.toLocaleLowerCase() === own.toLocaleLowerCase();
+}
 export function spacePath(row, group, home = "", nested = false, capturedParent = undefined) {
   const own = projectPath(row.place || row.w.folder, home, row.w.machine ?? null); if (!own) return null;
   const parent = nested ? capturedParent === undefined ? groupPath(group, home) : capturedParent : null;
