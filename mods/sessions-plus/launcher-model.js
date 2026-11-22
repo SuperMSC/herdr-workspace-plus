@@ -32,6 +32,7 @@ export function launcherRows(snapshot, query = "") {
   rows.push(...[
     ["new-agent", "Start an agent…", "Choose a space and an installed agent"],
     ["git-overview", "Git overview", "Pending work across local repositories"],
+    ["usage-stats", "Usage stats", "Tokens and estimated cost per agent, 7 days and this month"],
     ["commands", "Project commands", "Saved commands and run output"],
     ["presets", "Project presets", "Saved workspaces"],
     ["notes", "Notes", "Project, session and global notes"],

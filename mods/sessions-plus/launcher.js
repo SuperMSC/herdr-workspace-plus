@@ -27,7 +27,7 @@ export default class Launcher {
   open(role, extra = {}) {
     this.dismiss();
     openOverlay({ mod: "sessions-plus", kind: "dialog", width: 900, height: 680,
-      props: { role, context: { root: this.context.root || this.context.cwd, on: this.context.on ?? null }, node: this.p.node, ...extra } });
+      props: { role, context: { root: this.context.root || this.context.cwd, on: this.context.on ?? null }, node: this.p.node, stores: this.p.stores, ...extra } });
   }
   activate(row, cx) {
     const fresh = this.rows().find(item => item.id === row.id);

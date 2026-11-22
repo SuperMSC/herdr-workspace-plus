@@ -54,7 +54,7 @@ export default class GitGraph {
   render() {
     const t = theme(), revision = this.revision, rows = this.rows, choices = [{ name: "all", label: "All branches" }, { name: "HEAD", label: "Current HEAD" }, ...this.refs].filter(ref => ref.label.toLocaleLowerCase().includes(this.branchQuery.toLocaleLowerCase())).slice(0, 100);
     const button = (id, title, action, disabled = false) => div().id(id).px(8).py(5).flex_none().rounded(5).bg(t.raised).text_color(disabled ? t.dim : t.foreground).when(!disabled, el => el.cursor_pointer().hover(el => el.bg(t.hover))).on_click((_event, cx) => { if (!disabled) action(cx); }).child(title);
-    return v_flex().id("git-graph").size_full().min_h(0).min_w(0).p(13).gap(8).bg(t.popover).text_color(t.foreground).text_size(TYPE.md).track_focus(this.handle)
+    return v_flex().id("git-graph").size_full().min_h(0).min_w(0).p(14).gap(8).bg(t.popover).text_color(t.foreground).text_size(TYPE.md).track_focus(this.handle)
       .on_key_down((event, cx) => { if (event.key === "escape") { closeOverlay(this.p.overlay); cx.stop_propagation(); } })
       .child(h_flex().flex_none().gap(7).items_center().child(div().flex_1().font_semibold().text_size(TYPE.lg).child("Git graph"))
         .child(button("graph-branches", this.selection === "all" ? "All branches ▾" : this.selection === "HEAD" ? "Current HEAD ▾" : this.selection.replace(/^refs\/(heads|remotes|tags)\//, "") + " ▾", cx => { this.branchMenu = !this.branchMenu; cx.notify(); }, this.loading))

@@ -71,6 +71,16 @@ export function launchCommand(row, executable, spaces) {
 }
 
 
+export function codexOrigin(source) {
+  if (["cli", "vscode", "exec", "app-server"].includes(source)) return "main";
+  if (source && typeof source === "object" && Object.hasOwn(source, "subagent")) {
+    const kind = source.subagent;
+    if (kind === "review" || kind?.other === "guardian" || (kind && typeof kind === "object" && Object.hasOwn(kind, "review"))) return "review";
+    return "subagent";
+  }
+  return "unknown";
+}
+
 export const ORIGINS = { main: "Main", review: "Auto review", subagent: "Subagent", unknown: "Unknown source" };
 export function historyGroup(row, now = Date.now()) {
   if (row.live) return "Running";

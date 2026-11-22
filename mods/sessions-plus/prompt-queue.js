@@ -236,7 +236,7 @@ export default class PromptQueue {
           .child(h_flex().gap(7).justify_end()
             .child(button("prompt-clear-cancel", "Keep", cx => { this.confirmClear = false; cx.notify(); }))
             .child(button("prompt-clear-confirm", "Clear queue", cx => this.clear(cx))))));
-    return v_flex().id("prompt-queue").size_full().min_h(0).p(16).gap(10).overflow_hidden()
+    return v_flex().id("prompt-queue").size_full().min_h(0).p(14).gap(10).overflow_hidden()
       .bg(t.popover).text_color(t.foreground).text_size(TYPE.md)
       .track_focus(this.handle).on_key_down((event, cx) => {
         if (event.key === "escape" && !this.busy) { closeOverlay(this.p.overlay); cx.stop_propagation(); }

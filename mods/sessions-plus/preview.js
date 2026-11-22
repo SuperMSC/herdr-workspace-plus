@@ -27,7 +27,7 @@ export default class Preview {
   render() {
     const t = theme();
     const button = (id, label, callback) => div().id(id).px(10).py(6).rounded(5).bg(t.raised).cursor_pointer().on_click(callback).child(label);
-    return v_flex().id("session-preview").size_full().min_h(0).p(16).gap(10).overflow_hidden().bg(t.popover).text_color(t.foreground).text_size(TYPE.md)
+    return v_flex().id("session-preview").size_full().min_h(0).p(14).gap(10).overflow_hidden().bg(t.popover).text_color(t.foreground).text_size(TYPE.md)
       .track_focus(this.handle).on_key_down((event, cx) => { if (event.key === "escape") { closeOverlay(this.p.overlay); cx.stop_propagation(); } })
       .child(h_flex().flex_none().gap(8).items_center().child(div().id("preview-info").flex_1().min_w(0).truncate().font_semibold().text_size(TYPE.lg).tooltip("Read-only excerpts · No generated summary or persistent message index.").child("Recent messages")))
       .child(div().truncate().child(this.target.title || "Session"))

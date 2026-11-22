@@ -5,7 +5,8 @@ import { homedir, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
-import { UUID, sessionKey, cleanTitle, PROVIDERS } from "./model.js";
+import { UUID, sessionKey, cleanTitle, PROVIDERS, codexOrigin } from "./model.js";
+export { codexOrigin };
 
 const MAX_FILES = 6000, MAX_ROWS = 500, MAX_READ = 256 * 1024, MAX_INDEX = 4 * 1024 * 1024;
 const json = text => { try { return JSON.parse(text); } catch { return null; } };
@@ -59,10 +60,12 @@ function collect(root, accept, maxDepth, state) {
   return files.slice(0, MAX_ROWS);
 }
 
+// Slash commands, their output and harness notices are recorded as user turns but are not what
+// the person asked; the next real prompt names the session.
+const HARNESS_TEXT = /^\s*(<(command-name|command-message|command-args|local-command-stdout|local-command-stderr|local-command-caveat|system-reminder)>|Caveat: The messages below were generated)/;
 function promptText(content) {
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) return content.filter(x => x?.type === "text" || x?.type === "input_text").map(x => x.text ?? "").join(" ");
-  return "";
+  const text = typeof content === "string" ? content : Array.isArray(content) ? content.filter(x => x?.type === "text" || x?.type === "input_text").map(x => x.text ?? "").join(" ") : "";
+  return HARNESS_TEXT.test(text) ? "" : text;
 }
 
 function claude(store, state) {
@@ -80,16 +83,6 @@ function claude(store, state) {
     if (!isAbsolute(cwd)) return [];
     return [{ provider: "claude", store, id, cwd, source: file.path, origin: sidechain === true ? "subagent" : sidechain === false ? "main" : "unknown", title: cleanTitle(title || auto || first) || `Claude ${id.slice(0, 8)}`, updated: file.updated }];
   });
-}
-
-export function codexOrigin(source) {
-  if (["cli", "vscode", "exec", "app-server"].includes(source)) return "main";
-  if (source && typeof source === "object" && Object.hasOwn(source, "subagent")) {
-    const kind = source.subagent;
-    if (kind === "review" || kind?.other === "guardian" || (kind && typeof kind === "object" && Object.hasOwn(kind, "review"))) return "review";
-    return "subagent";
-  }
-  return "unknown";
 }
 
 function codex(store, state) {

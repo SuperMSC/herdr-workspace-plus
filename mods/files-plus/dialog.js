@@ -82,7 +82,7 @@ export default class Dialog {
         .child(div().text_size(TYPE.md).font_medium().text_color(t.foreground).truncate().child(name))
         .when(Boolean(parent), el => el.child(div().text_size(TYPE.sm).text_color(t.dim).truncate().text_ellipsis_start().child(parent))));
 
-    return v_flex().id("files-plus-dialog").track_focus(this.handle).size_full().min_h(0).px(20).pt(20).pb(18).gap(14)
+    return v_flex().id("files-plus-dialog").track_focus(this.handle).size_full().min_h(0).p(14).gap(14)
       .overflow_hidden().bg(t.popover).text_size(TYPE.md).text_color(t.foreground)
       .on_key_down((event, cx) => {
         if (event.key === "escape") { if (!this.busy) closeOverlay(this.p.overlay); }

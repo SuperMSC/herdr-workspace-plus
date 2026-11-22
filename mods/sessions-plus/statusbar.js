@@ -1,19 +1,29 @@
 import { TYPE } from "./type-scale.js";
 import { div, svg } from "gpui-kit";
-import { h_flex, Popover } from "gpui-base";
+import { h_flex, v_flex, Popover } from "gpui-base";
 import { theme, shared, setShared } from "herdr";
 import { PROVIDERS } from "./model.js";
 import { providerIcon } from "./icons.js";
 import { durationLabel, percentage, resetLabel, quotaWarning, quotaPace, paceLabel } from "./quota-model.js";
 import Quota from "./quota.js";
+import UsageStats from "./usage-stats.js";
 
 export default class StatusBar {
   init(p, cx) {
-    this.open = false; this.embedded = Boolean(p.embedded);
+    this.p = p; this.open = false; this.page = "quota"; this.embedded = Boolean(p.embedded);
     this.quota = new Quota();
     this.quota.init({ ...p, statusbar: true }, cx);
     cx.timer.every(300000, cx => this.quota.refresh(cx, true));
     cx.timer.every(30000, cx => cx.notify());
+  }
+
+  showPage(page, cx) {
+    this.page = page;
+    if (page === "stats") {
+      if (!this.stats) { this.stats = new UsageStats(); this.stats.init({ compact: true, node: this.p.node, stores: this.p.stores, onOpenDetails: cx => { this.open = false; cx?.notify(); } }, cx); }
+      else this.stats.shown(cx);
+    }
+    cx.notify();
   }
 
   countdown(value, windowMinutes) {
@@ -121,7 +131,12 @@ export default class StatusBar {
     const details = Popover.new("quota-status-popover").open(this.open).anchor("bottom_right")
       .on_open_change((open, cx) => { this.open = open; cx.notify(); })
       .trigger(groups)
-      .content(div().w(430).h(510).rounded(9).border_1().border_color(t.border).bg(t.surface).overflow_hidden().child(this.quota.render()));
+      .content(v_flex().w(430).h(540).rounded(9).border_1().border_color(t.border).bg(t.surface).overflow_hidden()
+        .child(h_flex().id("quota-popover-pages").flex_none().px(8).pt(7).gap(3)
+          .children([["quota", "Quota", "Account quota windows"], ["stats", "Stats", "Usage for the last 7 days and this month"]].map(([page, label, hint]) => div().id(`quota-popover-page-${page}`).px(9).py(4).rounded(5)
+            .bg(this.page === page ? t.selected : t.surface).text_color(this.page === page ? t.foreground : t.muted).cursor_pointer().hover(el => el.bg(t.hover)).tooltip(hint)
+            .on_click((_event, cx) => this.showPage(page, cx)).child(label))))
+        .child(div().flex_1().min_h(0).child(this.page === "stats" && this.stats ? this.stats.render() : this.quota.render())));
     return h_flex().id("quota-statusbar").on_size_change(size("width")).size_full().min_w(0).px(6).gap(4).items_center().bg(t.chrome).when(!this.embedded, el => el.border_t(1).border_color(t.border)).text_size(TYPE.sm).line_height("16px")
       .child(div().id("quota-status-mode").on_size_change(size("modeWidth")).h(24).line_height("16px").px(4).flex_none().flex().items_center().rounded(5).text_color(t.dim)
         .cursor_pointer().hover(el => el.bg(t.hover)).tooltip("Click to switch between remaining and used quota")

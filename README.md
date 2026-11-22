@@ -4,6 +4,14 @@
 
 Native Herdr mods for files, Git changes, saved agent sessions, project navigation and account quota. The personal layout is named **Agent-Workspace**; runtime mod IDs remain `files-plus`, `sessions-plus`, `project-spaces` and `agents-plus`.
 
+## 0.15.0
+
+- The footer quota popover has a **Stats** page beside **Quota**: Claude Code and Codex tokens (also excluding cache reads), requests, sessions and estimated cost for **Last 7 days** or **This month**, with a daily sparkline per agent. **Details** (also **Launch → Usage stats** and **Sessions → Tools**) adds a 30-day chart by cost or tokens, a per-model table (requests, input, output, cache read/write, total tokens and cost), projects grouped by Git checkout, and the largest sessions; a session opens its work timeline.
+- Data comes from local Claude Code (`~/.claude/projects`, subagents included) and Codex (`~/.codex/sessions`) logs. Antigravity is not included, because its local data records no token usage. Repeated message records and resumed sessions are counted once. Cost is an estimate at API list prices (cache reads and 5-minute/1-hour writes, fast mode or priority tier, long-context rates), not a subscription bill; models without a listed price are marked **Unpriced**.
+- Appended logs are read from where the previous run stopped. The cache under `<Herdr home>/data/usage-stats/` (folder 0700, file 0600) holds only counts, model names, times, session IDs and folders, never message text. A first read of about 1.3 GB of logs takes a few seconds; later reads take a fraction of a second.
+- Session titles skip slash-command and harness turns, so a session started with `/clear` is named after its first real prompt, in Sessions too.
+- The agy quota strip lists the 5h window before 7d. Dialogs share one 14px frame, so their scrollbars line up.
+
 ## 0.14.3
 
 - Sidebar rows omit a folder path that ends in the row's own name; the tooltip keeps the full path. Idle agents keep their status dot without the word, and working time reads **for 7m**, apart from **12m ago** activity.

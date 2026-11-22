@@ -128,7 +128,7 @@ export default class Review {
     const locked = Boolean(state.delivery), selected = targets.find(target => target.identity === this.selected?.identity);
     const enabled = !locked && !this.busy && !this.checking && selected && ["idle", "done"].includes(selected.status) && comments.length > 0 && !state.messageStale;
     const action = (id, label, callback, disabled = false) => div().id(id).h(28).px(9).rounded(5).bg(t.raised).text_color(disabled ? t.dim : t.foreground).flex().items_center().when(!disabled, el => el.cursor_pointer().hover(row => row.bg(t.hover))).on_click((event, cx) => { if (!disabled) callback(event, cx); }).child(label);
-    return v_flex().id("review-draft").size_full().min_h(0).p(16).gap(9).bg(t.popover).text_color(t.foreground).text_size(TYPE.md).track_focus(this.handle)
+    return v_flex().id("review-draft").size_full().min_h(0).p(14).gap(9).bg(t.popover).text_color(t.foreground).text_size(TYPE.md).track_focus(this.handle)
       .on_key_down((event, cx) => { if (event.key === "escape" && !this.busy) { closeOverlay(this.p.overlay); cx.stop_propagation(); } })
       .child(h_flex().flex_none().gap(8).items_center().child(div().font_semibold().text_size(TYPE.lg).child(`Review · ${comments.length} comments`)).child(div().flex_1())
         .child(action("review-copy", "Copy message", (_event, cx) => cx.write_to_clipboard(this.editor.value())))

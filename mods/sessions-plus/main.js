@@ -25,6 +25,7 @@ import ScreenPicker from "./screen-picker.js";
 import LiveAgents from "./live-agents.js";
 import Launcher from "./launcher.js";
 import GitOverview from "./git-overview.js";
+import UsageStats from "./usage-stats.js";
 import { promptTargets } from "./prompt-queue-model.js";
 import { createTrashClient } from "./trash-client.js";
 import { providerIcon } from "./icons.js";
@@ -38,7 +39,7 @@ function location() {
 export default class SessionsPlus extends View {
   init(p, cx) {
     this.p = props() ?? p ?? {};
-    const Role = this.p.role === "sidebar-footer" ? SidebarFooter : this.p.role === "live-agents" ? LiveAgents : this.p.role === "launcher" ? Launcher : this.p.role === "git-overview" ? GitOverview : this.p.role === "timeline" ? Timeline : this.p.role === "gallery" ? SessionGallery : this.p.role === "deliverables" ? Deliverables : this.p.role === "screen-picker" ? ScreenPicker : this.p.role === "tools" ? WorkspaceTools : this.p.role === "presets" ? WorkspacePresets : this.p.role === "notes" ? Notes : this.p.role === "commands" ? Commands : this.p.role === "prompt-queue" ? PromptQueue : this.p.role === "preview" ? Preview : this.p.role === "rename" ? Rename : this.p.role === "actions" ? Actions : this.p.role === "trash-dialog" ? TrashDialog : this.p.role === "toolbar" ? Toolbar : this.p.role === "statusbar" ? StatusBar : this.p.role === "footer" ? Footer : null;
+    const Role = this.p.role === "sidebar-footer" ? SidebarFooter : this.p.role === "live-agents" ? LiveAgents : this.p.role === "launcher" ? Launcher : this.p.role === "git-overview" ? GitOverview : this.p.role === "usage-stats" ? UsageStats : this.p.role === "timeline" ? Timeline : this.p.role === "gallery" ? SessionGallery : this.p.role === "deliverables" ? Deliverables : this.p.role === "screen-picker" ? ScreenPicker : this.p.role === "tools" ? WorkspaceTools : this.p.role === "presets" ? WorkspacePresets : this.p.role === "notes" ? Notes : this.p.role === "commands" ? Commands : this.p.role === "prompt-queue" ? PromptQueue : this.p.role === "preview" ? Preview : this.p.role === "rename" ? Rename : this.p.role === "actions" ? Actions : this.p.role === "trash-dialog" ? TrashDialog : this.p.role === "toolbar" ? Toolbar : this.p.role === "statusbar" ? StatusBar : this.p.role === "footer" ? Footer : null;
     if (Role) { this.role = new Role(); this.role.init(this.p, cx); return; }
     this.history = []; this.warnings = []; this.error = ""; this.query = ""; this.provider = "all"; this.source = "all";
     this.all = false; this.visible = 60; this.loading = false; this.busy = new Set();
@@ -163,7 +164,7 @@ export default class SessionsPlus extends View {
     const focus = focused(), address = focus?.shown || focus?.agent || focus?.terminal;
     const live = terminals().find(item => item.address === address && item.state === "live");
     const target = live ? { ...live, on: live.address.includes("/") ? live.address.slice(0, live.address.lastIndexOf("/")) : null } : null;
-    openOverlay({ mod: "sessions-plus", kind: "dialog", width: Math.min(940, viewport.width / zoom * .93), height: Math.min(role === "presets" ? 780 : 730, viewport.height / zoom * .9), props: { role, context: { root: current.cwd, on: current.on }, target, node: this.p?.node } });
+    openOverlay({ mod: "sessions-plus", kind: "dialog", width: Math.min(940, viewport.width / zoom * .93), height: Math.min(role === "presets" ? 780 : 730, viewport.height / zoom * .9), props: { role, context: { root: current.cwd, on: current.on }, target, node: this.p?.node, stores: this.p?.stores } });
   }
 
   actionsRow(row) {

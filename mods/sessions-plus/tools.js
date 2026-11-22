@@ -11,13 +11,14 @@ export default class WorkspaceTools {
     const viewport = globalThis.window.viewport_size(), zoom = Number(settings().zoom) || 1;
     closeOverlay(this.p.overlay);
     openOverlay({ mod: "sessions-plus", kind: "dialog", width: Math.min(940, viewport.width / zoom * .93), height: Math.min(760, viewport.height / zoom * .9),
-      props: { role, context: this.p.context, target: this.p.target, node: this.p.node } });
+      props: { role, context: this.p.context, target: this.p.target, node: this.p.node, stores: this.p.stores } });
   }
   render() {
     const t = theme();
     const rows = [
       ["launcher", "Quick launcher", "Find agents, projects and saved commands."],
       ["git-overview", "Git overview", "Pending changes, unpushed commits, stash and conflicts across repositories."],
+      ["usage-stats", "Usage stats", "Claude Code and Codex tokens and estimated cost for the last 7 days and this month."],
       ["deliverables", "Deliverables", "Files and links to read, review and archive."],
       ["screen-picker", "Screen picker", "Pick paths and links from the captured terminal.", !this.p.target],
       ["presets", "Project presets", "Review and launch a saved workspace."],

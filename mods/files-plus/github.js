@@ -137,7 +137,7 @@ export default class GithubPanel {
       .child(div().font_semibold().child(this.log.name)).when(this.log.truncated, el => el.child(div().text_color(t.ansi3).child("Failed log truncated to the first 64 KB.")))
       .child(div().flex_1().min_h(100).border_1().border_color(t.border).rounded(5).child(Editor.new(this.logEditor).size_full()));
     const body = this.width >= 680 ? h_flex().flex_1().min_h(0).min_w(0).gap(10).child(list.w(260).flex_none()).child(preview) : v_flex().flex_1().min_h(0).gap(8).child(list.max_h(175).flex_none()).child(preview);
-    return v_flex().id("github-panel").size_full().min_h(0).min_w(0).p(12).gap(8).bg(t.background).text_color(t.foreground).text_size(TYPE.md).track_focus(this.handle)
+    return v_flex().id("github-panel").size_full().min_h(0).min_w(0).p(14).gap(8).bg(t.background).text_color(t.foreground).text_size(TYPE.md).track_focus(this.handle)
       .on_size_change((size, cx) => { if (Math.abs(this.width - size.width) > 1) { this.width = size.width; cx.notify(); } })
       .on_key_down((event, cx) => { if (event.key === "escape" && this.p.overlay) { closeOverlay(this.p.overlay); cx.stop_propagation(); } })
       .child(h_flex().gap(7).items_center().flex_none().child(svg("mods/files-plus/github.svg").size(16).text_color(t.muted)).child(div().flex_1().font_semibold().text_size(TYPE.lg).child("Pull requests / CI"))

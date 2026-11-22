@@ -27,7 +27,7 @@ export default class ReviewComment {
   render() {
     const t = theme();
     const action = (id, title, callback) => div().id(id).h(30).px(10).rounded(6).bg(t.raised).flex().items_center().cursor_pointer().hover(el => el.bg(t.hover)).on_click(callback).child(title);
-    return v_flex().id("review-comment").size_full().min_h(0).p(18).gap(10).bg(t.popover).text_color(t.foreground).text_size(TYPE.md).track_focus(this.handle)
+    return v_flex().id("review-comment").size_full().min_h(0).p(14).gap(10).bg(t.popover).text_color(t.foreground).text_size(TYPE.md).track_focus(this.handle)
       .on_key_down((event, cx) => { if (event.key === "escape") { closeOverlay(this.p.overlay); cx.stop_propagation(); } })
       .child(div().font_semibold().text_size(TYPE.lg).child(this.editing ? "Edit review comment" : "Add review comment"))
       .child(div().text_color(t.muted).truncate().tooltip(this.anchor ? commentLabel(this.anchor) : "").child(this.anchor ? commentLabel(this.anchor) : "No selection"))

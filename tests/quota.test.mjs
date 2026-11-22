@@ -62,6 +62,35 @@ test("agy accepts only a command response, keeps model groups, and distinguishes
   assert.equal(agyWindows(invalid).length, 1);
 });
 
+test("agy windows list 5h before weekly within each group, groups keep their order", () => {
+  const envelope = {
+    status: "SUCCESS",
+    command: {
+      name: "usage",
+      data: {
+        groups: [
+          {
+            name: "Gemini",
+            buckets: [
+              { id: "g-week", window: "weekly", remaining_fraction: 0.9 },
+              { id: "g-5h", window: "5h", remaining_fraction: 0.8 },
+              { id: "g-off", disabled: true },
+            ],
+          },
+          {
+            name: "Claude",
+            buckets: [
+              { id: "c-week", window: "weekly", remaining_fraction: 0.7 },
+              { id: "c-5h", window: "5h", remaining_fraction: 0.6 },
+            ],
+          },
+        ],
+      },
+    },
+  };
+  assert.deepEqual(agyWindows(envelope).map(row => row.id), ["g-5h", "g-week", "g-off", "c-5h", "c-week"]);
+});
+
 test("reset formatting never invents a reset or treat a past reset as fresh quota", () => {
   assert.equal(resetTime(null), null); assert.equal(resetTime("not a date"), null); assert.equal(resetTime("1800000000"), 1800000000000);
   assert.equal(resetLabel(null), "Reset time unavailable"); assert.match(resetLabel(1000, 2000), /passed/);

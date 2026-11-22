@@ -225,7 +225,7 @@ export default class Commands {
           .child(div().flex_1().truncate().child(draft.title || "Untitled command"))
           .child(button(`command-restore-${draft.draftId}`, "Restore copy", cx => this.openForm(null, cx, draft)).tooltip("Restore opens a separate copy; its original stays until discarded."))
           .child(button(`command-discard-${draft.draftId}`, this.confirmDraft === draft.draftId ? "Confirm discard" : "Discard", cx => { if (this.confirmDraft === draft.draftId) this.discardDraft(draft, cx); else { this.confirmDraft = draft.draftId; cx.notify(); } }))))));
-    return v_flex().id("project-commands").size_full().min_h(0).p(16).gap(10).overflow_hidden().bg(t.popover).text_color(t.foreground).text_size(TYPE.md)
+    return v_flex().id("project-commands").size_full().min_h(0).p(14).gap(10).overflow_hidden().bg(t.popover).text_color(t.foreground).text_size(TYPE.md)
       .track_focus(this.handle).on_key_down((event, cx) => { if (event.key === "escape") { closeOverlay(this.p.overlay); cx.stop_propagation(); } })
       .child(h_flex().gap(8).items_center().child(svg("mods/sessions-plus/commands.svg").size(16).text_color(t.muted)).child(div().flex_1().font_semibold().text_size(TYPE.lg).child("Project commands")))
       .when(Boolean(this.context), el => el.child(div().truncate().text_size(TYPE.xs).text_color(t.dim).tooltip(`${this.context.on || "This computer"} · ${this.context.root}`).child(`${this.context.on || "This computer"} · ${this.context.root}`)))

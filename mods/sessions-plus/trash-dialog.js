@@ -105,7 +105,7 @@ export default class TrashDialog {
       .child(v_flex().id("session-trash-files").flex_1().min_h(0).px(12).py(6).gap(3).overflow_y_scrollbar().text_size(TYPE.sm).text_color(t.muted).pr(16)
         .children(this.files.map(file => div().truncate().text_ellipsis_start().child(file))));
 
-    return v_flex().id("session-trash-dialog").size_full().min_h(0).px(20).pt(20).pb(18).gap(14).overflow_hidden()
+    return v_flex().id("session-trash-dialog").size_full().min_h(0).p(14).gap(14).overflow_hidden()
       .bg(t.popover).text_color(t.foreground).text_size(TYPE.md)
       .track_focus(this.handle).on_key_down((event, cx) => {
         if (event.key === "escape") { if (!this.busy) closeOverlay(this.p.overlay); }

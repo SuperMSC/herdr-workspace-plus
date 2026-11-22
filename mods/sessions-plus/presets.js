@@ -161,7 +161,7 @@ export default class WorkspacePresets {
         .when(state.launches.length > 0, el => el.child(div().font_semibold().text_size(TYPE.sm).child("Recent launches"))).children([...state.launches].reverse().map(row => h_flex().gap(6).items_center()
           .child(div().flex_1().truncate().text_color(["partial", "unconfirmed"].includes(row.status) ? t.blocked : t.dim).child(`${row.name} · ${row.status}`))
           .child(button(`preset-open-result-${row.token}`, "Result", cx => { this.resultToken = row.token; cx.notify(); })))));
-    return v_flex().id("workspace-presets").size_full().min_h(0).p(16).gap(10).bg(t.popover).text_color(t.foreground).text_size(TYPE.md).track_focus(this.handle)
+    return v_flex().id("workspace-presets").size_full().min_h(0).p(14).gap(10).bg(t.popover).text_color(t.foreground).text_size(TYPE.md).track_focus(this.handle)
       .on_key_down((event, cx) => { if (event.key === "escape" && !this.busyToken) { closeOverlay(this.p.overlay); cx.stop_propagation(); } })
       .child(h_flex().gap(8).items_center().child(svg("mods/sessions-plus/presets.svg").size(17).text_color(t.muted)).child(div().font_semibold().text_size(TYPE.lg).child("Workspace presets")))
       .child(body).when(Boolean(this.error), el => el.child(div().text_color(t.blocked).child(this.error)));

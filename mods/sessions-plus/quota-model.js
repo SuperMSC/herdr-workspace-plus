@@ -36,14 +36,23 @@ export function codexWindows(data) {
 }
 export function agyWindows(envelope) {
   if (envelope?.status !== "SUCCESS" || envelope.command?.name !== "usage" || !Array.isArray(envelope.command.data?.groups)) return null;
-  return envelope.command.data.groups.flatMap(group => (Array.isArray(group.buckets) ? group.buckets : []).flatMap(bucket => {
-    const name = `${label(group.name || "Antigravity")}${bucket.name ? " · " + label(bucket.name) : ""}`;
-    if (bucket.disabled === true) return [{ id: label(bucket.id), label: name, unlimited: true, used: null, remaining: null, resetAt: null, minutes: null }];
-    const fraction = bucket.remaining_fraction;
-    if (!finite(fraction) || fraction < 0 || fraction > 1) return [];
-    const row = window(bucket.id, name, (1 - fraction) * 100, bucket.reset_time, bucket.window === "weekly" ? 10080 : bucket.window === "5h" ? 300 : null);
-    return row ? [row] : [];
-  }));
+  return envelope.command.data.groups.flatMap(group => {
+    const rows = (Array.isArray(group.buckets) ? group.buckets : []).flatMap(bucket => {
+      const name = `${label(group.name || "Antigravity")}${bucket.name ? " · " + label(bucket.name) : ""}`;
+      if (bucket.disabled === true) return [{ id: label(bucket.id), label: name, unlimited: true, used: null, remaining: null, resetAt: null, minutes: null }];
+      const fraction = bucket.remaining_fraction;
+      if (!finite(fraction) || fraction < 0 || fraction > 1) return [];
+      const row = window(bucket.id, name, (1 - fraction) * 100, bucket.reset_time, bucket.window === "weekly" ? 10080 : bucket.window === "5h" ? 300 : null);
+      return row ? [row] : [];
+    });
+    return rows
+      .map((row, index) => [row, index])
+      .sort(([a, i], [b, j]) => {
+        const ma = a.minutes ?? Infinity, mb = b.minutes ?? Infinity;
+        return ma !== mb ? ma - mb : i - j;
+      })
+      .map(([row]) => row);
+  });
 }
 export function quotaWarning(data) {
   if (!["stale", "unavailable"].includes(data?.state) || ["missing-cli", "signed-out"].includes(data.reason)) return "";

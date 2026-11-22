@@ -31,7 +31,7 @@ export default class HunkDialog {
     const t = theme(), request = this.request;
     const button = (id, label, callback, disabled) => div().id(id).h(30).px(12).rounded(6).bg(t.raised).flex().items_center().text_color(disabled ? t.dim : t.foreground)
       .when(!disabled, el => el.cursor_pointer().hover(row => row.bg(t.hover))).on_click((_event, cx) => { if (!disabled) callback(cx); }).child(label);
-    return v_flex().id("hunk-operation").size_full().min_h(0).p(18).gap(12).bg(t.popover).text_color(t.foreground).text_size(TYPE.md).track_focus(this.handle)
+    return v_flex().id("hunk-operation").size_full().min_h(0).p(14).gap(12).bg(t.popover).text_color(t.foreground).text_size(TYPE.md).track_focus(this.handle)
       .on_key_down((event, cx) => { if (event.key === "escape") { if (!this.busy) closeOverlay(this.p.overlay); cx.stop_propagation(); } })
       .child(div().font_semibold().text_size(TYPE.lg).child(request.action === "stage" ? "Stage selected hunk" : "Unstage selected hunk"))
       .child(div().truncate().tooltip(request.root + "/" + request.file.path).child(request.file.path || "No file selected"))
