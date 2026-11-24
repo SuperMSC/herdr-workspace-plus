@@ -40,7 +40,7 @@ test("privacy suppresses sensitive role content across all four owned mods witho
 
 test("Tools places every feature in a bounded scrolling list without launching an operation", () => {
   let toggled=0;const overlays=[];
-  const deps={div:element,h_flex:element,v_flex:element,theme:()=>({}),openOverlay:s=>overlays.push(s),closeOverlay(){},settings:()=>({zoom:1}),privacyToggle:()=>toggled++};
+  const deps={div:element,h_flex:element,v_flex:element,theme:()=>({}),openOverlay:s=>overlays.push(s),closeOverlay(){},settings:()=>({zoom:1}),privacyToggle:()=>toggled++,shared:()=>undefined,AUTO_TITLES_ENABLED:"titles"};
   const source=readFileSync(new URL("../mods/sessions-plus/tools.js",import.meta.url),"utf8").replace(/^import .*;\n/gm,"").replace("export default class","return class");
   const Tools=uiFunction(...Object.keys(deps),source)(...Object.values(deps)),view=new Tools();view.init({}, {focus_handle:()=>({focus(){}})});
   const tree=view.render(),nodes=flat(tree).filter(node=>typeof node==="object");

@@ -5,7 +5,7 @@ import { TYPE } from "./type-scale.js";
 import { div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { run, closeOverlay, openOverlay, theme, shared, setShared, spaces } from "herdr";
-import { STATE_KEY, DENSITY_KEY, DENSITIES, projectDensity, MODES, SORTS, PALETTE, normalizeState, assignSpace, setGroupColor, stepGroup, ungroup, foldAll } from "./model.js";
+import { STATE_KEY, DENSITY_KEY, DENSITIES, ICONS_KEY, ICONS_REFRESH_KEY, projectDensity, MODES, SORTS, PALETTE, normalizeState, assignSpace, setGroupColor, stepGroup, ungroup, foldAll } from "./model.js";
 import { beginMenuTooltip, endMenuTooltip } from "./menu-tooltip.js";
 import { DIRECTORY_PINS_KEY, normalizeDirectoryPins, setDirectoryPin } from "./directory-pins.js";
 
@@ -108,6 +108,8 @@ function viewItems(p) {
   const keys = p.keys ?? [];
   const items = [{ section: "Display" }];
   for (const density of DENSITIES) items.push({ label: density.label, checked: projectDensity(shared(DENSITY_KEY)) === density.id, keep: true, act: () => setShared(DENSITY_KEY, density.id) });
+  const icons = shared(ICONS_KEY) !== false;
+  items.push({ label: "Project icons", checked: icons, keep: true, act: () => setShared(ICONS_KEY, shared(ICONS_KEY) === false) });
   items.push({ section: "Group by" });
   for (const m of MODES.filter(mode => !p.unified || mode.id !== "none")) items.push({ label: m.label, checked: st.mode === m.id, keep: true, act: () => save({ ...state(), mode: m.id }) });
   items.push({ section: "Sort" });
@@ -117,6 +119,7 @@ function viewItems(p) {
     items.push({ label: "Collapse all", icon: "chevron-right", act: () => save(foldAll(state(), keys, true)) });
     items.push({ label: "Expand all", icon: "chevron-down", act: () => save(foldAll(state(), keys, false)) });
   }
+  if (icons) items.push({ label: "Refresh project icons", icon: "search", act: () => setShared(ICONS_REFRESH_KEY, (Number(shared(ICONS_REFRESH_KEY)) || 0) + 1) });
   return items;
 }
 

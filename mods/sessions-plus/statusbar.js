@@ -1,7 +1,7 @@
 import { TYPE } from "./type-scale.js";
 import { div, svg } from "gpui-kit";
 import { h_flex, v_flex, Popover } from "gpui-base";
-import { theme, shared, setShared } from "herdr";
+import { checking, theme, shared, setShared } from "herdr";
 import { PROVIDERS } from "./model.js";
 import { providerIcon } from "./icons.js";
 import { durationLabel, percentage, resetLabel, quotaWarning, quotaPace, paceLabel } from "./quota-model.js";
@@ -13,8 +13,8 @@ export default class StatusBar {
     this.p = p; this.open = false; this.page = "quota"; this.embedded = Boolean(p.embedded);
     this.quota = new Quota();
     this.quota.init({ ...p, statusbar: true }, cx);
-    cx.timer.every(300000, cx => this.quota.refresh(cx, true));
-    cx.timer.every(30000, cx => cx.notify());
+    if (!checking()) cx.timer.every(300000, cx => this.quota.refresh(cx, true));
+    if (!checking()) cx.timer.every(30000, cx => cx.notify());
   }
 
   showPage(page, cx) {

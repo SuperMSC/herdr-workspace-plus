@@ -5,7 +5,7 @@ import { agents, terminals, spaces, panes, focused, theme, run, shared, setShare
 import { menuTooltipKey } from "./menu-tooltip.js";
 import { FILTER_KEY, SIDEBAR_COLUMNS, spacePath, echoesName } from "./model.js";
 import { DIRECTORY_PINS_KEY, normalizeDirectoryPins, setDirectoryPin } from "./directory-pins.js";
-import { unifiedRows, validateUnifiedTarget } from "./unified-model.js";
+import { unifiedRows, validateUnifiedTarget, subagentRecords } from "./unified-model.js";
 const chrome = name => `mods/workspace-chrome/${name}.svg`;
 const label = (value, limit = 500) => String(value ?? "").replace(/[\x00-\x1f\x7f]/g, " ").slice(0, limit);
 const TREE_STEP = 20, ROW_GAP = 2;
@@ -13,6 +13,19 @@ const CONTROL = { height: 24, radius: 4, glyph: 14 };
 const treeDepth = row => Math.min(4, Math.max(0, Number.isFinite(row.displayDepth) ? row.displayDepth : row.depth || 0));
 const countTooltip = (count, noun) => `${count} ${noun}${count === 1 ? "" : "s"}`;
 const statusName = status => ({ blocked: "Needs you", done: "Done", working: "Working", idle: "Idle" }[status] || "Unknown");
+
+// Shared registry contract. Mods each keep their own formatter because imports are local.
+function liveContext(entry, terminal, now) {
+  if (!terminal || terminal.state !== "live" || terminal.address.includes("/") || !Number.isSafeInteger(terminal.foreground?.pid) ||
+    entry?.pid !== terminal.foreground.pid || !Number.isFinite(entry.used) || entry.used < 0 || !Number.isFinite(entry.at) || now - entry.at > 120000) return null;
+  const window = entry.window, percent = Number.isFinite(window) && window > 0 && entry.used <= window ? Math.floor(entry.used * 100 / window) : null;
+  const tokens = n => n >= 1000000 ? `${+(n / 1000000).toFixed(2)}M` : n >= 1000 ? `${Math.round(n / 1000)}K` : String(n);
+  const s = Math.max(0, Math.floor((now - entry.asOf) / 1000));
+  const ago = s < 60 ? `${s}s ago` : s < 3600 ? `${Math.floor(s / 60)}m ago` : s < 86400 ? `${Math.floor(s / 3600)}h ago` : `${Math.floor(s / 86400)}d ago`;
+  const tooltip = [`Context ${tokens(entry.used)}${window ? ` of ${tokens(window)}` : ""} tokens`, entry.model || "Unknown model",
+    Number.isFinite(entry.asOf) ? `as of ${ago}` : "", "window table 2026-11-03"].filter(Boolean).join(" · ");
+  return { label: percent === null ? tokens(entry.used) : `${percent}%`, tooltip, level: percent >= 90 ? "strong" : percent >= 80 ? "warn" : null };
+}
 
 export default class UnifiedSidebar {
   init(p, cx) { this.p = p; this.foldMode = null; this.opened = new Set(); this.folded = new Set(); this.page = 0; this.error = ""; this.handle = cx.focus_handle(); this.epoch = 0; this.nextCheck = 0; this.pending = false; }
@@ -30,7 +43,7 @@ export default class UnifiedSidebar {
       groups.map(group => [group.key, group.name, group.color, group.folder, group.machine, group.folded, group.status, group.custom, group.manual, group.header, group.fullCount, group.rows.map(row => [row.w.id, row.w.name, row.w.machine, row.w.active, row.w.status, row.place, row.g?.branch, row.g?.ahead, row.g?.behind, row.g?.name, row.g?.linked, (row.w.tabs || []).map(tab => [tab.id, tab.name, tab.named, tab.active, tab.settled, tab.status, tab.changed_at, tab.working_since])])]),
       snapshot.spaces.map(space => [space.id, space.name, space.machine, space.folder, space.status, space.active, (space.tabs || []).map(tab => [tab.id, tab.name, tab.named, tab.active, tab.settled, tab.status, tab.changed_at, tab.working_since])]),
       snapshot.agents.map(agent => [agent.address, agent.title, agent.status, agent.pinned, agent.focused, agent.seq, agent.space, agent.tab, agent.pane, agent.program?.key, agent.program?.name, agent.program?.agent, agent.program?.shell, agent.program?.icon, agent.program?.tint]),
-      snapshot.terminals.map(terminal => [terminal.address, terminal.created_ms, terminal.pid, terminal.state, terminal.parent, terminal.cwd, terminal.name, terminal.title, terminal.template, terminal.status, terminal.argv?.[0], terminal.program?.key, terminal.program?.name, terminal.program?.agent, terminal.program?.shell, terminal.program?.icon, terminal.program?.tint, terminal.labels?.["herdr.pinned"], terminal.labels?.["herdr.space"], terminal.labels?.["herdr.tab"]]),
+      snapshot.terminals.map(terminal => [terminal.address, terminal.created_ms, terminal.pid, terminal.state, terminal.parent, terminal.cwd, terminal.name, terminal.title, terminal.template, terminal.status, terminal.argv?.[0], terminal.program?.key, terminal.program?.name, terminal.program?.agent, terminal.program?.shell, terminal.program?.icon, terminal.program?.tint, terminal.labels?.["herdr.pinned"], terminal.labels?.["herdr.space"], terminal.labels?.["herdr.tab"], terminal.records ? subagentRecords(terminal) : null]),
       snapshot.panes.map(pane => [pane.pane, pane.tab, pane.terminal, pane.cwd, pane.branch, pane.focused, pane.title]), snapshot.focus, options,
     ]);
   }
@@ -75,7 +88,7 @@ export default class UnifiedSidebar {
       const snapshot = this.fresh(), target = row.target;
       if (!target || !validateUnifiedTarget(target, snapshot)) throw new Error(target?.reason || "This workspace item changed or ended. Choose its current row.");
       if (["agent", "terminal"].includes(target.kind)) {
-        if (row.status === "done") this.held = { address: target.address, created: target.created_ms, status: "done" };
+        if (row.kind !== "record" && row.status === "done") this.held = { address: target.address, created: target.created_ms, status: "done" };
         const pane = snapshot.panes.find(pane => pane.terminal === target.address);
         run(pane ? "pane.focus" : "terminal.peek", { terminal: target.address });
       } else if (target.kind === "tab") { run("space.select", { id: target.space }); run("tab.select", { id: target.tab }); }
@@ -158,10 +171,11 @@ export default class UnifiedSidebar {
     // Join only guide levels present in both adjacent visible rows.
     return Array.from({ length: depth }, (_, level) => div().id(`unified-guide-${row.id}-${level}`).absolute().left(13 + level * TREE_STEP).top(previousDepth > level ? -gap : 0).bottom(0).w(0).border_l(1).border_color(t.dim).opacity(0.5));
   }
-  entityRow(row, index, frame, cx, directoryPin = null) {
+  entityRow(row, index, frame, cx, directoryPin = null, projectIcon = null) {
     const t = theme(), density = frame.density || "detailed", detailed = density !== "compact", target = row.target, disabled = Boolean(target?.disabled), program = this.program(row), depth = treeDepth(row);
     const task = label(row.title || row.taskTitle || row.agent?.title || row.terminal?.name || row.tabName || target?.address || "Workspace item", 2000), metadata = this.metadata(row, false, frame.home), agent = ["agent", "terminal"].includes(target?.kind), activity = this.activity(row);
     const terminalOnly = target?.kind === "terminal" && !row.agent;
+    const usage = this.contextFor?.(target);
     const completeTask = label(row.taskTitle || task, 2048), ownStatus = terminalOnly ? "" : statusName(row.status), knownStatus = ["blocked", "done", "working", "idle", "unknown"].includes(row.status);
     const localMetadata = metadata.trim().toLocaleLowerCase() === task.trim().toLocaleLowerCase() || metadata.trim().toLocaleLowerCase() === "unknown" ? "" : metadata;
     const contextDetails = agent ? activity?.label || "" : localMetadata;
@@ -176,7 +190,7 @@ export default class UnifiedSidebar {
       .when(Boolean(row.foldable), el => el.cursor_pointer().hover(el => el.bg(t.hover)).on_click((_event, cx) => { cx.stop_propagation(); this.fold(row, cx); }).child(svg(chrome(row.folded ? "chevron-right" : "chevron-down")).size(10)))
       .when(!row.foldable, el => el.child(div().w(1)));
     let icon = row.kind === "tab" ? svg(chrome("layers")).size(12).flex_none().text_color(t.dim) : div().size(8).flex_none().rounded(4).bg(t[row.status] || t.dim);
-    if (row.kind === "space") icon = svg(chrome("folder")).id("unified-directory-icon-" + row.id).size(14).text_color(t.muted || t.dim);
+    if (row.kind === "space") icon = projectIcon || svg(chrome("folder")).id("unified-directory-icon-" + row.id).size(14).text_color(t.muted || t.dim);
     if (program?.icon) icon = program.tint ? svg(program.icon).size(14).flex_none().text_color(t.foreground) : image(program.icon).size(14).flex_none();
     const statusGlyph = row.status === "working" ? svg(chrome("spinner")).size(11).text_color(t.working).spin(900) : div().size(row.status === "blocked" ? 8 : 7).rounded(4).bg(t[row.status] || t.dim);
     const statusControl = showStatus ? h_flex().id("unified-status-" + row.id).h(19).gap(4).items_center().justify_end().when(!this.popupTooltipState?.open, el => el.tooltip(ownStatus))
@@ -197,6 +211,9 @@ export default class UnifiedSidebar {
       .child(v_flex().flex_1().min_w(0).gap(2)
         .child(div().id("unified-task-" + row.id).min_w(0).truncate().line_height("16px").text_size(TYPE.md).font_weight(400).when(row.kind === "space", el => el.font_semibold().text_size(TYPE.md)).child(task))
         .when(Boolean(metadataLine), el => el.child(metadataLine)))
+      .when(Boolean(usage), el => el.child(div().id("unified-context-" + row.id).h(19).line_height("19px").flex_none().text_size(TYPE.xs)
+        .text_color(usage.level === "strong" ? t.blocked : usage.level === "warn" ? t.ansi3 : t.muted)
+        .when(!this.popupTooltipState?.open, el => el.tooltip(usage.tooltip)).child(usage.label)))
       .child(actions);
     return body;
   }
@@ -205,7 +222,17 @@ export default class UnifiedSidebar {
     if (!previous || !["group", "space"].includes(row.kind) || ["section", "statussection"].includes(previous.kind)) return 0;
     return row.groupKey && row.groupKey !== previous.groupKey ? 6 : 0;
   }
+  recordRow(row, index, t) {
+    const title = row.taskTitle || row.title, disabled = row.target.disabled;
+    return h_flex().id(this.tooltipKey("unified-record-" + row.id)).relative().h(22).min_w(0).flex_none().pl(27 + treeDepth(row) * TREE_STEP).pr(SIDEBAR_COLUMNS.inset)
+      .gap(6).items_center().rounded(4).text_size(TYPE.xs).text_color(t.muted).children(this.guides(row, t, index))
+      .when(!this.popupTooltipState?.open, el => el.tooltip(title))
+      .when(!disabled, el => el.cursor_pointer().hover(node => node.bg(t.hover)).on_click((_event, cx) => this.navigate(row, cx)))
+      .child(div().flex_1().min_w(0).truncate().child(row.title))
+      .when(Boolean(row.status), el => el.child(div().flex_none().text_color(t[row.status] || t.dim).child(statusName(row.status))));
+  }
   draw(row, index, frame, owner, cx, canonical) {
+    if (row.kind === "record") return this.recordRow(row, index, theme());
     const st = { ...frame.state, mode: "project" }, t = theme(), depth = treeDepth(row), pin = this.directoryPin(row, owner, cx), spacing = this.projectGap(row, index);
     if (row.kind === "group" && row.sourceGroup && canonical.groups.has(row.sourceGroup.key) && frame.state.mode !== "status") {
       const joining = owner.drag?.kind === "space" && owner.over?.kind === "group" && owner.over.id === row.sourceGroup.key;
@@ -230,20 +257,22 @@ export default class UnifiedSidebar {
       .when(Boolean(row.foldable), el => el.cursor_pointer().on_click((_event, cx) => this.fold(row, cx)))
       .when(Boolean(row.sourceGroup) && canonical.groups.has(row.groupKey), el => el.on_mouse_down("right", (_event, cx) => { cx.stop_propagation(); owner.groupMenu(row.sourceGroup); }))
       .child(div().w(18).h(18).flex_none().flex().items_center().justify_center().when(Boolean(row.foldable), el => el.child(svg(chrome(row.folded ? "chevron-right" : "chevron-down")).size(10))))
-      .child(div().w(18).h(18).mr(3).flex_none().flex().items_center().justify_center().child(svg(chrome("folder")).size(15)))
+      .child(div().w(18).h(18).mr(3).flex_none().flex().items_center().justify_center().child(owner.projectIcon?.(row.sourceGroup) || svg(chrome("folder")).size(15)))
       .child(div().flex_1().min_w(0).truncate().text_size(TYPE.md).font_semibold().child(row.title || row.name || "Workspaces"))
       .child(h_flex().w(SIDEBAR_COLUMNS.pin * 2 + SIDEBAR_COLUMNS.gap).flex_none().gap(SIDEBAR_COLUMNS.gap).items_center()
         .child(div().size(SIDEBAR_COLUMNS.pin).flex_none().when(Boolean(pin), el => el.child(pin)))
         .child(div().w(SIDEBAR_COLUMNS.pin).min_w(0).flex_none().truncate().text_right().text_size(TYPE.sm).text_color(t.dim).when(row.folded && Boolean(row.count ?? row.childCount), el => el.when(!this.popupTooltipState?.open, el => el.tooltip(countTooltip(row.count ?? row.childCount, "item"))).child(String(row.count ?? row.childCount)))));
-    return this.entityRow(row, index, frame, cx, pin)
+    const projectIcon = row.kind === "space" && row.sourceGroup?.rows?.length === 1 ? owner.projectIcon?.(row.sourceGroup, 16) : null;
+    return this.entityRow(row, index, frame, cx, pin, projectIcon)
       .when(row.kind === "space", el => el.mt(spacing))
       .when(row.kind === "space" && Boolean(row.sourceSpace?.auto) && canonical.spaces.has(row.spaceId), el => el.on_mouse_down("right", (_event, cx) => { cx.stop_propagation(); owner.spaceMenu(row.sourceSpace); }));
   }
-  railRow(row, selected, frame) {
+  railRow(row, selected, frame, owner) {
     const t = theme(), target = row.target, disabled = Boolean(target.disabled), program = this.program(row);
     const title = label(row.title || row.taskTitle || "Workspace item", 2048);
-    const details = [title, this.metadata(row, true, frame.home), row.agent ? statusName(row.status) : "", target.reason].filter(Boolean).join("\n");
+    const details = [title, this.metadata(row, true, frame.home), row.agent ? statusName(row.status) : "", target.reason, this.contextFor?.(target)?.tooltip].filter(Boolean).join("\n");
     let icon = svg(chrome(target.kind === "space" ? "folder" : target.kind === "tab" ? "layers" : "terminal")).size(16);
+    if (row.kind === "space" && row.sourceGroup?.rows?.length === 1) icon = owner?.projectIcon?.(row.sourceGroup, 16) || icon;
     if (program?.icon) icon = program.tint ? svg(program.icon).size(16) : image(program.icon).size(16);
     return div().id(this.tooltipKey("unified-rail-" + row.id)).w_full().h(32).flex_none().flex().items_center().justify_center()
       .role("button").accessibility_label(details).selected(selected).disabled(disabled).text_color(disabled ? t.dim : selected ? t.foreground : t.muted)
@@ -259,6 +288,13 @@ export default class UnifiedSidebar {
   }
   render(frame, owner, cx) {
     this.popupTooltipState = frame.popupTooltipState || null;
+    const registry = shared("sessions-plus.live.v1"), now = Date.now();
+    const byAddress = new Map(registry ? this.snapshots(frame).terminals.map(term => [term.address, term]) : []);
+    this.contextFor = target => {
+      const terminal = byAddress.get(target?.address);
+      return !target?.disabled && terminal && target.created_ms === terminal.created_ms
+        ? liveContext(registry[`${terminal.address}@${terminal.created_ms}`], terminal, now) : null;
+    };
     this.request(frame, owner, cx);
     const result = this.result || { rows: [], agentOrder: [], pages: 1 }, rows = result.rows || [], t = theme(), st = frame.state || {}, collapsed = frame.collapsed, view = st.mode === "status" ? "status" : "project";
     if (this.result) setAgentOrder(result.agentOrder || []);
@@ -294,13 +330,13 @@ export default class UnifiedSidebar {
     const viewControl = normalButton("unified-view", div().child(view === "status" ? "Status" : "Projects"), null).accessibility_label("Workspace view").child(svg(chrome("chevron-down")).size(10));
     const filterControl = normalButton("unified-filter", div().child("Filter"), null).accessibility_label("Filter workspaces and tasks").when(frame.filter !== "all", el => el.text_color(t.accent)).child(svg(chrome("chevron-down")).size(10));
     const allMode = this.foldMode === "collapse" ? "expand" : "collapse";
-    const railRows = collapsed ? rows.filter(row => row.target) : [], focus = this.snapshots(frame).focus;
+    const railRows = collapsed ? rows.filter(row => row.target && row.kind !== "record") : [], focus = this.snapshots(frame).focus;
     const selectable = row => !row.target.disabled;
     const selected = railRows.find(row => selectable(row) && row.target.address && row.target.address === focus?.terminal)
       || railRows.find(row => selectable(row) && row.focused)
       || railRows.find(row => selectable(row) && row.target.kind === "tab" && row.target.tab === focus?.tab)
       || railRows.find(row => selectable(row) && row.target.kind === "space" && (focus?.space ? row.target.space === focus.space : row.active));
-    const body = collapsed ? railRows.map(row => this.railRow(row, row === selected, frame)) : rows.map((row, index) => this.draw(row, index, frame, owner, cx, canonical));
+    const body = collapsed ? railRows.map(row => this.railRow(row, row === selected, frame, owner)) : rows.map((row, index) => this.draw(row, index, frame, owner, cx, canonical));
     return v_flex().id("unified-sidebar").size_full().min_h(0).min_w(0).bg(t.chrome).text_color(t.foreground).text_size(TYPE.md).track_focus(this.handle)
       .when(collapsed, el => el.child(v_flex().id(this.tooltipKey("unified-rail-controls")).flex_none().pt(7).pb(5).items_center().gap(4)
         .child(iconButton("unified-expand-sidebar", chrome("panel-left"), "Expand sidebar", () => owner.expandSidebar()).size(28).rounded(7))

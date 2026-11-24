@@ -295,6 +295,8 @@ export function sameState(a, b) {
 
 // Display preferences remain independent from grouping, manual assignments and order.
 export const DENSITY_KEY = "project-spaces.density.v1";
+export const ICONS_KEY = "project-spaces.icons.v1";
+export const ICONS_REFRESH_KEY = "project-spaces.icons-refresh.v1";
 export const DENSITIES = [{ id: "detailed", label: "Detailed" }, { id: "compact", label: "Compact" }];
 export const projectDensity = value => value === "compact" ? "compact" : "detailed";
 export function projectPath(folder, home = "", on = null) {
@@ -308,6 +310,14 @@ export function groupPath(group, home = "") {
   const rows = group.sourceRows || group.rows || [], origins = new Set(rows.map(row => JSON.stringify([row.auto?.machine ?? row.w.machine ?? null, row.auto?.folder || row.place || row.w.folder || ""])));
   if (group.custom && origins.size > 1) return { mixed: true, short: "Multiple folders", tooltip: "Each space shows its own folder.", on: null, mixedMachines: new Set(rows.map(row => row.w.machine || null)).size > 1 };
   return projectPath(group.folder, home, group.machine ?? null);
+}
+
+/** An icon belongs to one local project root, including in a filtered projection. */
+export function projectIconRoot(group) {
+  const root = group?.folder, rows = group?.sourceRows || group?.rows || [];
+  if (group?.machine != null || typeof root !== "string" || !root.startsWith("/") || root.length > 1024 || /[\x00-\x1f\x7f]/.test(root)) return null;
+  if (!rows.length || rows.some(row => row.w?.machine != null || row.auto?.machine != null || row.auto?.folder !== root)) return null;
+  return root;
 }
 // A path whose last folder is the row's own name repeats it; the tooltip keeps the full path.
 export function echoesName(location, name) {

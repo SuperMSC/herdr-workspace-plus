@@ -67,7 +67,14 @@ export default class PaneHeader {
   }
 
   frame(t, p) {
-    return h_flex().id(`pane-head-${p.pane}`).size_full().px(10).gap(8).items_center().bg(t.background)
+    const w = window();
+    let left = 10;
+    if (w?.platform === "macos" && w.titlebar === "none" && !w.fullscreen && shared("sessions-plus.zen.v1")?.[shared("layout")]?.on === true) {
+      const x = layout()?.traffic_lights?.[0], zoom = settings().zoom;
+      // Match the native tab bar's traffic-light clearance.
+      left = Math.max(left, ((Number.isFinite(x) ? x : 12) + 64) / (zoom > 0 ? zoom : 1));
+    }
+    return h_flex().id(`pane-head-${p.pane}`).size_full().pl(left).pr(10).gap(8).items_center().bg(t.background)
       .border_b(1).border_color(t.border).text_size(TYPE.md)
       .on_hover((hovered, cx) => { this.hovered = hovered; cx.notify(); })
       .on_click(() => run("pane.focus", { pane: p.pane }));

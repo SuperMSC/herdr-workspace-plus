@@ -1,7 +1,8 @@
 import { TYPE } from "./type-scale.js";
 import { div } from "gpui-kit";
 import { v_flex } from "gpui-base";
-import { theme, window, openOverlay, closeOverlay, terminals, settings } from "herdr";
+import { theme, window, openOverlay, closeOverlay, terminals, settings, setShared } from "herdr";
+import { canFork, FORK_REQUEST } from "./model.js";
 
 export default class Actions {
   init(p, cx) {
@@ -19,6 +20,7 @@ export default class Actions {
       { id: "screen-picker", label: "Screen picker", disabled: !this.pickerTarget },
       { id: "notes", label: "Session notes", disabled: !this.project.root },
       { id: "prompt-queue", label: "Pending prompts", disabled: !this.promptTarget }];
+    if (p.forkToken && canFork(this.target)) this.items.push({ id: "fork", label: "Fork" });
     this.at = 0;
     this.handle = cx.focus_handle();
     this.handle.focus();
@@ -27,6 +29,11 @@ export default class Actions {
   choose(index) {
     const item = this.items[index];
     if (!item || item.disabled) return;
+    if (item.id === "fork") {
+      setShared(FORK_REQUEST, this.p.forkToken);
+      closeOverlay(this.p.overlay);
+      return;
+    }
     closeOverlay(this.p.overlay);
     if (item.id === "notes") {
       openOverlay({ mod: "sessions-plus", kind: "dialog", width: 800, height: 680,

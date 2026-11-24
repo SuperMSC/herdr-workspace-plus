@@ -2,8 +2,9 @@ import { TYPE } from "./type-scale.js";
 import { privacyGuard } from "./privacy.js";
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, Input, InputState, Popover } from "gpui-base";
-import { appHome, exec, spaces, panes, terminals, agents, focused, theme, run, props, window, settings, shared, setShared, openOverlay } from "herdr";
-import { NAMES, PENDING, OPERATIONS, CHANGE_KEY, OPERATION_TTL, operationPending, PROVIDERS, ORIGINS, historyGroup, historyTime, sessionRows, filterRows, launchCommand } from "./model.js";
+import { appHome, checking, exec, spaces, panes, terminals, agents, machines, focused, theme, run, props, window, settings, shared, setShared, openOverlay, layout } from "herdr";
+import { NAMES, PENDING, OPERATIONS, CHANGE_KEY, OPERATION_TTL, LIVE_KEY, FORK_REQUEST, TERMINAL_SESSIONS_KEY, interruptedSessions, canFork, operationPending, PROVIDERS, ORIGINS, historyGroup, historyTime, sessionRows, filterRows, launchCommand, liveIdentity, sessionKey } from "./model.js";
+import { currentInterruption, interruptionTitle, localLayoutReady, sameSession } from "./live-model.js";
 import Rename from "./rename.js";
 import Quota from "./quota.js";
 import Toolbar from "./toolbar.js";
@@ -30,6 +31,7 @@ import { promptTargets } from "./prompt-queue-model.js";
 import { createTrashClient } from "./trash-client.js";
 import { providerIcon } from "./icons.js";
 import { projectContext } from "./project-context.js";
+import { reconcileZen, zenFooter } from "./zen-model.js";
 
 function location() {
   const context = projectContext();
@@ -40,7 +42,14 @@ export default class SessionsPlus extends View {
   init(p, cx) {
     this.p = props() ?? p ?? {};
     const Role = this.p.role === "sidebar-footer" ? SidebarFooter : this.p.role === "live-agents" ? LiveAgents : this.p.role === "launcher" ? Launcher : this.p.role === "git-overview" ? GitOverview : this.p.role === "usage-stats" ? UsageStats : this.p.role === "timeline" ? Timeline : this.p.role === "gallery" ? SessionGallery : this.p.role === "deliverables" ? Deliverables : this.p.role === "screen-picker" ? ScreenPicker : this.p.role === "tools" ? WorkspaceTools : this.p.role === "presets" ? WorkspacePresets : this.p.role === "notes" ? Notes : this.p.role === "commands" ? Commands : this.p.role === "prompt-queue" ? PromptQueue : this.p.role === "preview" ? Preview : this.p.role === "rename" ? Rename : this.p.role === "actions" ? Actions : this.p.role === "trash-dialog" ? TrashDialog : this.p.role === "toolbar" ? Toolbar : this.p.role === "statusbar" ? StatusBar : this.p.role === "footer" ? Footer : null;
-    if (Role) { this.role = new Role(); this.role.init(this.p, cx); return; }
+    if (Role) {
+      this.role = new Role();
+      if (this.p.role === "launcher") {
+        this.role.resumeInterrupted = (entry, cx, finished) => this.resumeInterrupted([entry], cx, { finished });
+        this.role.zenLayout = () => zenFooter(layout()) ? shared("layout") : null;
+      }
+      this.role.init(this.p, cx); return;
+    }
     this.history = []; this.warnings = []; this.error = ""; this.query = ""; this.provider = "all"; this.source = "all";
     this.all = false; this.visible = 60; this.loading = false; this.busy = new Set();
     this.page = "sessions"; this.filterMenu = null; this.filterIndex = 0; this.panelMenu = null; this.toolIndex = 0;
@@ -50,12 +59,12 @@ export default class SessionsPlus extends View {
     this.input = InputState.new({ placeholder: "Search sessions…" });
     this.input.on("change", (_e, cx) => { this.query = this.input.value(); this.visible = 60; cx.notify(); });
     this.refresh(cx);
-    cx.timer.every(30000, cx => { if (this.page === "sessions") { this.refresh(cx); if (this.showingTrash) this.refreshTrash(cx); } else cx.notify(); });
-    cx.timer.every(300000, cx => { if (this.page === "status") this.quota?.refresh(cx, true); });
+    if (!checking()) cx.timer.every(30000, cx => { if (this.page === "sessions") { this.refresh(cx); if (this.showingTrash) this.refreshTrash(cx); } else cx.notify(); });
+    if (!checking()) cx.timer.every(300000, cx => { if (this.page === "status") this.quota?.refresh(cx, true); });
   }
 
-  async read(action = "scan", key = "") {
-    const result = await exec(this.p.node || "node", [appHome() + "/mods/sessions-plus/history.mjs", action, JSON.stringify({ stores: this.p.stores ?? {} }), key]);
+  async read(action = "scan", key = "", stores = this.p.stores ?? {}, liveKeys) {
+    const result = await exec(this.p.node || "node", [appHome() + "/mods/sessions-plus/history.mjs", action, JSON.stringify({ stores, liveKeys }), key], action === "search" ? { timeout: 11000 } : undefined);
     let data;
     try { data = JSON.parse(result.stdout); } catch { throw new Error("Session history needs Node.js 22+ on PATH. Set the mod's node prop to its executable if needed."); }
     if (result.code || data.error) throw new Error(data.error || "Could not read session history.");
@@ -105,38 +114,174 @@ export default class SessionsPlus extends View {
     });
   }
 
-  rows() { return sessionRows(this.history, terminals(), panes(), shared(NAMES) ?? {}); }
+  scheduleZen(cx) {
+    if (!cx.timer?.after || this.zenScheduled || !shared("layout")) return;
+    this.zenScheduled = true;
+    cx.timer.after(0, () => {
+      this.zenScheduled = false;
+      if (!this.closed) reconcileZen({ checking, layout, shared, setShared, run });
+    });
+  }
 
-  open(row, cx) {
-    const current = this.rows().find(r => r.key === row.key && r.live);
-    if (current) { run("agent.focus", { terminal: current.address }); return; }
-    if (row.live) { this.error = "This running session has ended. Refresh to find its history."; cx.notify(); return; }
+  rows() { return sessionRows(this.history, terminals(), panes(), shared(NAMES) ?? {}, shared(LIVE_KEY)); }
+
+  open(row, cx, options = {}) {
+    const launch = this.prepareLaunch(row, cx, options);
+    if (launch) cx.spawn(cx => this.launchSession(launch, cx));
+  }
+
+  prepareLaunch(row, cx, { fork = false, recovery = null, background = false } = {}) {
+    if (recovery) {
+      if (!currentInterruption(shared(TERMINAL_SESSIONS_KEY), recovery) || !localLayoutReady(machines())) {
+        this.error = "The interrupted session or local layout is unavailable."; cx.notify(); return;
+      }
+    } else if (fork) {
+      if (!canFork(row)) { this.error = "Choose an exact local Claude Code or Codex session to fork."; cx.notify(); return; }
+    } else {
+      const current = this.rows().find(r => r.key === row.key && r.live);
+      if (current) { run("agent.focus", { terminal: current.address }); return; }
+      if (row.live) { this.error = "This running session has ended. Refresh to find its history."; cx.notify(); return; }
+    }
     const pending = shared(PENDING) ?? {}, now = Date.now();
     if (operationPending(shared(OPERATIONS), row.key, now)) { this.error = "Another operation is using this session. Try again when it finishes."; cx.notify(); return; }
-    if (this.busy.has(row.key) || now - (pending[row.key] ?? 0) < 15000) return;
+    if (this.busy.has(row.key) || now - (pending[row.key] ?? 0) < 15000) {
+      if (recovery) { this.error = "This session is already opening."; cx.notify(); }
+      return;
+    }
     const stamp = `${now}-${Math.random()}`;
-    setShared(OPERATIONS, { ...(shared(OPERATIONS) ?? {}), [row.key]: { stamp, expires: now + OPERATION_TTL, action: "resume" } });
+    setShared(OPERATIONS, { ...(shared(OPERATIONS) ?? {}), [row.key]: { stamp, expires: now + OPERATION_TTL, action: fork ? "fork" : "resume" } });
     this.busy.add(row.key); setShared(PENDING, { ...pending, [row.key]: now }); this.error = ""; cx.notify();
-    cx.spawn(async cx => {
-      let launched = false;
-      try {
-        const result = await this.read("validate", row.key);
-        const active = this.rows().find(r => r.key === row.key && r.live);
-        if (active) run("agent.focus", { terminal: active.address });
-        else {
-          const target = { ...result.row, title: shared(NAMES)?.[row.key] || row.title };
-          const [command, args] = launchCommand(target, result.command, spaces());
-          run(command, args); launched = true;
-        }
-      } catch (error) { this.error = String(error.message ?? error); }
-      finally {
-        this.busy.delete(row.key);
-        const operations = { ...(shared(OPERATIONS) ?? {}) };
-        if (operations[row.key]?.stamp === stamp) { delete operations[row.key]; setShared(OPERATIONS, operations); }
-        const clear = () => { const latest = { ...(shared(PENDING) ?? {}) }; if (latest[row.key] === now) { delete latest[row.key]; setShared(PENDING, latest); } };
-        if (launched) cx.timer.after(15000, cx => { clear(); cx.notify(); }); else clear();
-        cx.notify();
+    return { row, fork, recovery, background, now, stamp };
+  }
+
+  async launchSession({ row, fork, recovery, background, now, stamp }, cx) {
+    let launched = false;
+    try {
+      const stores = fork || recovery ? { ...this.p.stores, [row.provider]: row.store } : undefined;
+      const result = await this.read("validate", row.key, stores);
+      if (fork && (!canFork(result.row) || result.row.key !== row.key)) throw new Error("The source session identity could not be verified.");
+      if (recovery) {
+        if (this.closed || !currentInterruption(shared(TERMINAL_SESSIONS_KEY), recovery) || !localLayoutReady(machines())) throw new Error("The interrupted session or local layout changed.");
+        if (result.row.ambiguous || result.row.key !== row.key || !sameSession(result.row, recovery)) throw new Error("The original session identity could not be verified.");
+        const identities = shared(LIVE_KEY), foreground = terminals().filter(item => item.foreground?.argv?.length || liveIdentity(item, identities)?.provider === "claude");
+        if (sessionRows([result.row], foreground, panes(), {}, identities).some(item => item.live && item.key === row.key)) throw new Error("This session is already running.");
       }
+      const active = !fork && !recovery && this.rows().find(r => r.key === row.key && r.live);
+      if (active) run("agent.focus", { terminal: active.address });
+      else {
+        const target = { ...result.row, title: shared(NAMES)?.[row.key] || (recovery ? result.row.title : row.title) }, localSpaces = spaces();
+        let [command, args] = launchCommand(target, result.command, localSpaces, { fork });
+        const preferred = recovery && localSpaces.find(space => space.machine == null && !space.id.includes("/") && space.id === recovery.space);
+        if (preferred) {
+          command = "tab.new";
+          args = { name: args.name ?? args.tab, folder: args.folder, argv: args.argv, space: preferred.id };
+        }
+        if (background) args.focus = false;
+        run(command, args); launched = true;
+      }
+    } catch (error) { this.error = String(error.message ?? error); }
+    finally {
+      this.busy.delete(row.key);
+      const operations = { ...(shared(OPERATIONS) ?? {}) };
+      if (operations[row.key]?.stamp === stamp) { delete operations[row.key]; setShared(OPERATIONS, operations); }
+      const clear = () => { const latest = { ...(shared(PENDING) ?? {}) }; if (latest[row.key] === now) { delete latest[row.key]; setShared(PENDING, latest); } };
+      if (launched) cx.timer.after(15000, cx => { clear(); cx.notify(); }); else clear();
+      cx.notify();
+    }
+    return launched;
+  }
+
+  resumeInterrupted(entries, cx, { background = false, finished } = {}) {
+    if (this.restoring || !entries.length) return;
+    this.busy ??= new Set();
+    this.restoring = true; cx.notify();
+    const captured = entries.map(entry => ({ ...entry })), errors = [];
+    cx.spawn(async cx => {
+      let opened = 0;
+      try {
+        for (const recovery of captured) {
+          if (this.closed) break;
+          const row = { ...recovery, key: sessionKey(recovery) };
+          const launch = this.prepareLaunch(row, cx, { recovery, background });
+          if (launch && await this.launchSession(launch, cx)) opened++;
+          else errors.push(this.error);
+        }
+      } finally {
+        this.restoring = false;
+        if (!this.closed) {
+          this.error = errors.length ? opened ? `${opened} resume requests sent. ${errors[0]}` : errors[0] : "";
+          finished?.(opened === captured.length, this.error, cx);
+          if (!this.closed) cx.notify();
+        }
+      }
+    });
+  }
+
+  dismissInterrupted(entries, cx) {
+    const registry = { ...(shared(TERMINAL_SESSIONS_KEY) ?? {}) };
+    let changed = false;
+    for (const entry of entries) if (currentInterruption(registry, entry)) { delete registry[entry.key]; changed = true; }
+    if (changed) setShared(TERMINAL_SESSIONS_KEY, registry);
+    cx.notify();
+  }
+
+  consumeFork(cx) {
+    const target = this.forkTarget;
+    if (!target || this.forkScheduled || shared(FORK_REQUEST) !== target.token) return;
+    this.forkScheduled = true;
+    cx.timer.after(0, cx => {
+      this.forkScheduled = false;
+      if (this.closed || this.forkTarget !== target || shared(FORK_REQUEST) !== target.token) return;
+      this.forkTarget = null;
+      setShared(FORK_REQUEST, null);
+      this.open(target.row, cx, { fork: true });
+    });
+  }
+
+  transcriptSearch(rows, context, cx) {
+    const query = this.query.trim();
+    if (query.length > 512 || [...query].length < 3 || window()?.platform !== "macos") { this.transcriptRequest = null; return null; }
+    const keys = [], liveKeys = [], seen = new Set();
+    let budget = 100000, limited = false;
+    for (const row of rows) {
+      if (!canFork(row) || seen.has(row.key)) continue;
+      seen.add(row.key);
+      if (limited) continue;
+      budget -= JSON.stringify(row.key).length * 3 + 1;
+      if (budget < 0) { limited = true; continue; }
+      keys.push(row.key);
+      if (row.live) liveKeys.push(row.key);
+    }
+    if (!keys.length) { this.transcriptRequest = null; return null; }
+    const scope = JSON.stringify([this.all, this.provider, this.source, this.all ? null : context.cwd, this.all ? null : context.on]);
+    const signature = JSON.stringify([query, scope, [...seen].sort()]);
+    if (this.transcriptRequest?.signature === signature) return this.transcriptRequest.result;
+    // Request identity is also the generation. A later render or input change supersedes it.
+    const request = { signature, query, keys, liveKeys, limited, ready: false, result: null };
+    this.transcriptRequest = request;
+    cx.timer.after(600, cx => {
+      if (this.closed || this.transcriptRequest !== request) return;
+      request.ready = true; this.startTranscriptSearch(cx);
+    });
+    return null;
+  }
+
+  startTranscriptSearch(cx) {
+    const request = this.transcriptRequest;
+    if (this.transcriptPending || this.closed || !request?.ready) return;
+    request.ready = false;
+    this.transcriptPending = true;
+    cx.spawn(async cx => {
+      let result;
+      try {
+        const data = await this.read("search", JSON.stringify({ query: request.query, keys: request.keys }), undefined, request.liveKeys);
+        const inScope = new Set(request.keys);
+        result = { hits: new Set((Array.isArray(data.hits) ? data.hits : []).slice(0, 50).filter(key => inScope.has(key))), partial: request.limited || data.partial === true };
+      } catch { result = { hits: new Set(), partial: true }; }
+      finally { this.transcriptPending = false; }
+      if (this.closed) return;
+      if (this.transcriptRequest === request) { request.result = result; cx.notify(); }
+      this.startTranscriptSearch(cx);
     });
   }
 
@@ -170,8 +315,10 @@ export default class SessionsPlus extends View {
   actionsRow(row) {
     const on = row.remote && row.address?.includes("/") ? row.address.slice(0, row.address.lastIndexOf("/")) : null;
     const promptTarget = row.live ? promptTargets(agents(), terminals(), panes()).find(target => target.address === row.address && target.created === row.updated) : null;
+    const forkToken = canFork(row) ? `${Date.now()}-${Math.random()}` : null;
+    this.forkTarget = forkToken ? { token: forkToken, row: { ...row } } : null;
     openOverlay({ mod: "sessions-plus", kind: "popup", width: 230, height: 390,
-      props: { role: "actions", target: { ...row }, project: { root: row.cwd, on }, promptTarget: promptTarget || null, node: this.p.node, stores: this.p.stores } });
+      props: { role: "actions", target: { ...row }, project: { root: row.cwd, on }, promptTarget: promptTarget || null, forkToken, node: this.p.node, stores: this.p.stores } });
   }
 
   restoreRow(row) {
@@ -181,13 +328,16 @@ export default class SessionsPlus extends View {
   }
 
   render(cx) {
-    const mask = privacyGuard("Sessions", this.p); if (mask) return mask;
+    this.scheduleZen(cx);
+    const mask = privacyGuard("Sessions", this.p); if (mask) { this.transcriptRequest = null; return mask; }
     if (this.role) return this.role.render(cx);
     this.consumeChange(cx);
+    this.consumeFork(cx);
     if (this.p.role === "sessions") {
       const content = this.renderSessions(cx);
       return Number.isFinite(this.p.panelRadius) ? content.rounded(this.p.panelRadius).overflow_hidden() : content;
     }
+    if (this.page !== "sessions") this.transcriptRequest = null;
     const t = theme();
     const tab = (page, label) => div().id(`sessions-page-${page}`).px(10).py(6).rounded(5).cursor_pointer()
       .text_color(this.page === page ? t.foreground : t.muted).bg(this.page === page ? t.selected : t.surface)
@@ -283,10 +433,31 @@ export default class SessionsPlus extends View {
         .child(svg("mods/sessions-plus/" + item.icon + ".svg").size(14).flex_none()).child(item.title)));
   }
 
+  interruptedStrip(entries, t) {
+    const button = (id, label, action) => div().id(id).px(6).py(3).flex_none().rounded(4).text_size(TYPE.xs)
+      .text_color(this.restoring ? t.dim : t.foreground)
+      .when(!this.restoring, el => el.cursor_pointer().hover(el => el.bg(t.hover)).on_click((_event, cx) => action(cx))).child(label);
+    const names = shared(NAMES);
+    return v_flex().id("sessions-interrupted").flex_none().mx(8).mb(6).p(6).gap(4).rounded(6).bg(t.raised)
+      .child(h_flex().min_w(0).gap(4).items_center()
+        .child(div().flex_1().truncate().font_medium().text_size(TYPE.sm).child(`Interrupted · ${entries.length}`))
+        .child(button("sessions-interrupted-resume-all", "Resume all", cx => this.resumeInterrupted(entries, cx, { background: true })))
+        .child(button("sessions-interrupted-dismiss", "Dismiss", cx => this.dismissInterrupted(entries, cx))))
+      .child(v_flex().id("sessions-interrupted-list").max_h(136).gap(3).overflow_y_scrollbar()
+        .children(entries.map(entry => h_flex().id("sessions-interrupted-" + entry.key).h(25).flex_none().min_w(0).gap(5).items_center()
+          .child(div().flex_1().truncate().text_size(TYPE.sm).text_color(t.muted).tooltip(entry.cwd).child(interruptionTitle(entry, names)))
+          .child(button("sessions-interrupted-resume-" + entry.key, "Resume", cx => this.resumeInterrupted([entry], cx))))));
+  }
+
   renderSessions(cx) {
-    if (this.showingTrash) return this.renderTrash(cx);
+    if (this.showingTrash) { this.transcriptRequest = null; return this.renderTrash(cx); }
     const t = theme(), context = location(), detailed = shared("project-spaces.density.v1") !== "compact";
-    const rows = filterRows(this.rows(), { ...context, all: this.all, provider: this.provider, query: this.query, source: this.source });
+    const interrupted = interruptedSessions(shared(TERMINAL_SESSIONS_KEY));
+    const inScope = filterRows(this.rows(), { ...context, all: this.all, provider: this.provider, source: this.source });
+    const transcript = this.transcriptSearch(inScope, context, cx);
+    const textMatches = filterRows(inScope, { all: true, query: this.query });
+    const matching = transcript?.hits.size ? new Set(textMatches) : null;
+    const rows = matching ? inScope.flatMap(row => matching.has(row) ? [row] : transcript.hits.has(row.key) ? [{ ...row, inTranscript: true }] : []) : textMatches;
     const smallButton = (id, label, callback) => div().id(id).px(6).py(3).rounded(4).cursor_pointer().text_color(t.muted).hover(el => el.bg(t.hover)).on_click(callback).child(label);
     const folder = context.cwd.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || context.cwd || "No folder";
     const filters = v_flex().id("sessions-filter-content").w(220).p(8).gap(6).rounded(6).border_1().border_color(t.border).bg(t.popover || t.surface).text_color(t.foreground).text_size(TYPE.md)
@@ -309,6 +480,7 @@ export default class SessionsPlus extends View {
       const history = historyTime(row), time = /^Updated /.test(history) ? history.split(" · ")[0].replace(/^Updated /, "").replace(/ ago$/, "") : "—";
       const status = { working: "Working", blocked: "Needs you", done: "Done", idle: "Idle" }[row.status] || "Live";
       const trailing = pending ? "Opening…" : row.live ? status : time;
+      const usage = row.context;
       const subtitle = (PROVIDERS[row.provider] ?? "Agent") + " · " + (row.live ? "Live session" : ORIGINS[row.origin || "unknown"]) + (row.remote ? " · Remote" : "");
       const full = [row.title, subtitle, history, row.cwd, row.live ? "Switch to running session" : "Resume session"].filter(Boolean).join("\n");
       return v_flex().id("session-" + row.key).px(7).py(detailed ? 5 : 3).gap(2).min_w(0).rounded(4)
@@ -318,6 +490,9 @@ export default class SessionsPlus extends View {
         .child(h_flex().h(20).gap(6).items_center().min_w(0)
           .child(providerIcon(row.provider, 15))
           .child(div().id("session-title-" + row.key).flex_1().min_w(0).truncate().text_size(TYPE.md).child(row.title))
+          .when(Boolean(row.inTranscript), el => el.child(div().flex_none().text_size(TYPE.xs).text_color(t.muted).child("in transcript")))
+          .when(Boolean(usage), el => el.child(div().id("session-context-" + row.key).flex_none().text_size(TYPE.xs)
+            .text_color(usage.level === "strong" ? t.blocked : usage.level === "warn" ? t.ansi3 : t.muted).tooltip(usage.tooltip).child(usage.label)))
           .child(div().id("session-state-" + row.key).w(67).flex_none().text_right().text_size(TYPE.xs).text_color(pending ? t.accent : row.live && row.status !== "idle" ? t[row.status] || t.muted : t.dim).child(trailing))
           .child(div().id("session-action-slot-" + row.key).w(24).h(24).flex_none()
             .child(div().id("session-name-" + row.key).size(24).p(0).flex().items_center().justify_center().rounded(4).text_color(t.muted).cursor_pointer().hover(el => el.bg(t.hover))
@@ -344,10 +519,11 @@ export default class SessionsPlus extends View {
           .text_color(this.loading ? t.accent : t.muted).disabled(this.loading)
           .when(this.loading, el => el.cursor_default()).when(!this.loading, el => el.cursor_pointer().hover(s => s.bg(t.hover)))
           .tooltip(this.loading ? "Refreshing sessions…" : "Refresh sessions").accessibility_label("Refresh sessions")
-          .on_click((_event, cx) => { cx.stop_propagation(); if (!this.loading) this.refresh(cx); })
+          .on_click((_event, cx) => { cx.stop_propagation(); if (!this.loading) { this.transcriptRequest = null; this.refresh(cx); } })
           .child(svg("mods/sessions-plus/refresh.svg").size(14).flex_none().when(this.loading, el => el.spin(850))))
         .child(this.toolbarPopover("sessions-more-actions", "Workspace tools", "mods/sessions-plus/more.svg", this.toolsMenu())))
       .child(div().mx(8).mb(6).px(7).h(28).flex_none().border_1().border_color(t.input || t.border).rounded(5).bg(t.background).child(Input.new(this.input).w_full().h_full()))
+      .when(interrupted.length > 0, el => el.child(this.interruptedStrip(interrupted, t)))
       .when(this.provider !== "all" || this.source !== "all", el => el.child(h_flex().id("sessions-active-filters").px(9).pb(5).gap(8).min_w(0).flex_none()
         .when(this.provider !== "all", el => el.child(chip("sessions-agent-filter", PROVIDERS[this.provider] || "Agent", () => { this.provider = "all"; })))
         .when(this.source !== "all", el => el.child(chip("sessions-source-filter", ORIGINS[this.source] || "Source", () => { this.source = "all"; })))))
@@ -359,6 +535,7 @@ export default class SessionsPlus extends View {
         .when(!rows.length, el => el.child(div().p(12).text_color(t.muted).child(this.loading ? "Reading local session history…" : context.remote && !this.all ? "Choose All folders for local history and remote live sessions." : "No sessions here. Try All folders or another search.")))
         .when(rows.length > this.visible, el => el.child(smallButton("sessions-more", "Show more", (_e, cx) => { this.visible += 60; cx.notify(); }))))
       .when(Boolean(this.error), el => el.child(div().p(9).max_h(70).overflow_y_scrollbar().text_size(TYPE.sm).text_color(t.ansi1).pr(16).child(this.error)))
+      .when(Boolean(transcript?.partial), el => el.child(div().px(9).text_size(TYPE.xs).text_color(t.muted).child("Transcript search was partial.")))
       .when(this.warnings.length > 0 || this.limited, el => el.child(div().p(9).max_h(55).overflow_y_scrollbar().text_size(TYPE.xs).text_color(t.muted).pr(16).child([...this.warnings, ...(this.limited ? ["Showing recent history; scan limit reached."] : [])].join(" "))))
       .when(!rows.length, el => el.child(div().id("sessions-empty-hint").px(9).py(5).flex_none().text_size(TYPE.xs).text_color(t.dim).child(window()?.platform === "macos" ? "Local history · Right-click for session actions" : "Live sessions · Local history requires macOS")));
   }
@@ -386,6 +563,12 @@ export default class SessionsPlus extends View {
       .when(Boolean(this.trashError), el => el.child(div().p(10).max_h(80).overflow_y_scrollbar().text_color(t.ansi1).pr(16).child(this.trashError)))
       .when(!this.trashEntries.length, el => el.child(div().px(10).py(8).text_size(TYPE.xs).text_color(t.dim).child("Only sessions moved by Sessions Plus appear here. Emptying the macOS Trash removes their history permanently.")));
   }
-  async close(cx) { this.input?.release(); await this.role?.close?.(cx); }
+  async close(cx) {
+    this.closed = true;
+    this.input?.release();
+    this.role?.stats?.close?.();
+    this.role?.status?.stats?.close?.();
+    await this.role?.close?.(cx);
+  }
 
 }

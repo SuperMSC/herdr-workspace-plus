@@ -1,14 +1,17 @@
 #!/usr/bin/env node
 // Read-only local metadata reader. Run by Node, never imported by the GPUI runtime.
-import { accessSync, constants, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, closeSync, readSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { accessSync, constants, copyFileSync, existsSync, fstatSync, lstatSync, mkdirSync, mkdtempSync, opendirSync, openSync, closeSync, readSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, parse, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
+import { StringDecoder } from "node:string_decoder";
 import { UUID, sessionKey, cleanTitle, PROVIDERS, codexOrigin } from "./model.js";
 export { codexOrigin };
 
 const MAX_FILES = 6000, MAX_ROWS = 500, MAX_READ = 256 * 1024, MAX_INDEX = 4 * 1024 * 1024;
+const SEARCH_FILES = 300, SEARCH_HITS = 50, SEARCH_KEYS = 1200, SEARCH_BATCH = 16;
+const SEARCH_TIME = 10000, SEARCH_BYTES = 64 * 1024 * 1024, SEARCH_CHUNK = 64 * 1024;
 const json = text => { try { return JSON.parse(text); } catch { return null; } };
 const time = value => typeof value === "number" ? (value < 1e11 ? value * 1000 : value) : Date.parse(value) || 0;
 const regular = path => { try { return lstatSync(path).isFile(); } catch { return false; } };
@@ -36,36 +39,51 @@ function records(path, recentOnly = false) {
   } finally { closeSync(fd); }
 }
 
-function collect(root, accept, maxDepth, state) {
+function collect(root, accept, maxDepth, state, { deadline = Infinity, noLinks = false, rowLimit = MAX_ROWS } = {}) {
   const files = [];
+  const expired = () => deadline < Infinity && performance.now() >= deadline;
   function walk(dir, depth) {
-    if (state.visited >= MAX_FILES) { state.limited = true; return; }
+    if (state.visited >= MAX_FILES || expired()) { state.limited = true; return; }
     let entries;
-    try { entries = readdirSync(dir, { withFileTypes: true }); }
+    try {
+      if (noLinks && !safeSearchDirectory(dir)) return;
+      if (noLinks) {
+        entries = [];
+        const handle = opendirSync(dir);
+        try {
+          const remaining = MAX_FILES - state.visited;
+          for (let entry; entries.length <= remaining && !expired() && (entry = handle.readSync());) entries.push(entry);
+        } finally { handle.closeSync(); }
+      } else entries = readdirSync(dir, { withFileTypes: true });
+    }
     catch (error) { if (error.code !== "ENOENT") state.warnings.add("Some session folders could not be read."); return; }
     // Recent Codex date directories first. Never follow symlinks or agent artifact trees.
     entries.sort((a, b) => b.name.localeCompare(a.name));
     for (const entry of entries) {
-      if (++state.visited > MAX_FILES) { state.limited = true; break; }
+      if (++state.visited > MAX_FILES || expired()) { state.limited = true; break; }
       const path = join(dir, entry.name);
       if (entry.isDirectory() && depth < maxDepth && !["subagents", ".git", "node_modules"].includes(entry.name)) walk(path, depth + 1);
       else if (entry.isFile() && accept(entry.name)) {
-        try { files.push({ path, updated: statSync(path).mtimeMs }); } catch { /* A writer removed it. */ }
+        try {
+          const info = noLinks ? lstatSync(path) : statSync(path);
+          if (!noLinks || info.isFile()) files.push({ path, updated: info.mtimeMs });
+        } catch { /* A writer removed it. */ }
       }
     }
   }
   walk(root, 0);
   files.sort((a, b) => b.updated - a.updated);
-  if (files.length > MAX_ROWS) state.limited = true;
-  return files.slice(0, MAX_ROWS);
+  if (files.length > rowLimit) state.limited = true;
+  return files.slice(0, rowLimit);
 }
 
 // Slash commands, their output and harness notices are recorded as user turns but are not what
 // the person asked; the next real prompt names the session.
 const HARNESS_TEXT = /^\s*(<(command-name|command-message|command-args|local-command-stdout|local-command-stderr|local-command-caveat|system-reminder)>|Caveat: The messages below were generated)/;
-function promptText(content) {
+const SLASH_COMMAND = /^\s*\/[a-z][\w:-]*(?=\s|$)/i;
+export function promptText(content) {
   const text = typeof content === "string" ? content : Array.isArray(content) ? content.filter(x => x?.type === "text" || x?.type === "input_text").map(x => x.text ?? "").join(" ") : "";
-  return HARNESS_TEXT.test(text) ? "" : text;
+  return HARNESS_TEXT.test(text) || SLASH_COMMAND.test(text) ? "" : text;
 }
 
 function claude(store, state) {
@@ -209,6 +227,145 @@ export function resolveSession(key, options = {}) {
   return { provider, store, id, key, source, sourceStamp, cwd, title: provider + " " + id.slice(0, 8), updated: files[0].updated };
 }
 
+function safeSearchDirectory(folder) {
+  const root = parse(folder).root;
+  let current = root;
+  for (const part of folder.slice(root.length).split(sep).filter(Boolean)) {
+    current = join(current, part);
+    if (!lstatSync(current, { throwIfNoEntry: false })?.isDirectory()) return false;
+  }
+  return true;
+}
+
+function searchStat(path) {
+  if (/[\x00-\x1f\x7f]/.test(path) || !safeSearchDirectory(dirname(path))) return null;
+  const info = lstatSync(path, { throwIfNoEntry: false });
+  return info?.isFile() ? info : null;
+}
+
+function searchFileIsCurrent(file) {
+  const info = searchStat(file.path);
+  return info && info.dev === file.info.dev && info.ino === file.info.ino && info.size >= file.info.size;
+}
+
+function withSearchFile(file, read) {
+  const fd = openSync(file.path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  try {
+    const stat = fstatSync(fd);
+    if (!stat.isFile() || stat.dev !== file.info.dev || stat.ino !== file.info.ino || stat.size < file.info.size) return null;
+    return read(fd);
+  } finally { closeSync(fd); }
+}
+
+function searchCandidates(keys, options, deadline, result) {
+  const home = options.home || homedir();
+  const defaults = { claude: process.env.CLAUDE_CONFIG_DIR || join(home, ".claude"), codex: process.env.CODEX_HOME || join(home, ".codex") };
+  const liveKeys = new Set(Array.isArray(options.liveKeys) ? options.liveKeys.slice(0, SEARCH_KEYS) : []);
+  const wanted = new Map();
+  for (const key of keys.slice(0, SEARCH_KEYS)) {
+    if (typeof key !== "string" || key.length > 4096) continue;
+    const identity = json(key);
+    if (!Array.isArray(identity) || identity.length !== 3) continue;
+    const [provider, store, id] = identity;
+    if (typeof provider !== "string" || !Object.hasOwn(defaults, provider) || typeof store !== "string" || typeof id !== "string" || !UUID.test(id) || !isAbsolute(store) ||
+      resolve(store) !== store || key !== sessionKey({ provider, store, id })) continue;
+    if (store !== resolve(options.stores?.[provider] || defaults[provider]) && !liveKeys.has(key)) continue;
+    const group = JSON.stringify([provider, store]);
+    if (!wanted.has(group)) wanted.set(group, { provider, store, ids: new Map() });
+    wanted.get(group).ids.set(id, key);
+  }
+  if (keys.length > SEARCH_KEYS) result.partial = true;
+  const found = [];
+  for (const { provider, store, ids } of wanted.values()) {
+    if (performance.now() >= deadline) { result.partial = true; break; }
+    const claude = provider === "claude";
+    const idOf = name => claude ? name.endsWith(".jsonl") ? name.slice(0, -6) : "" : name.startsWith("rollout-") && name.endsWith(".jsonl") && name.at(-43) === "-" ? name.slice(-42, -6) : "";
+    const state = { visited: 0, limited: false, warnings: new Set() };
+    const files = collect(join(store, claude ? "projects" : "sessions"), name => ids.has(idOf(name)), claude ? 1 : 3, state, { deadline, noLinks: true, rowLimit: Infinity });
+    if (state.limited || state.warnings.size) { result.partial = true; continue; }
+    const byId = new Map();
+    for (const file of files) {
+      const id = idOf(basename(file.path));
+      byId.set(id, byId.has(id) ? null : { ...file, id, provider, key: ids.get(id) });
+    }
+    for (const file of byId.values()) if (file) found.push(file);
+  }
+  found.sort((a, b) => b.updated - a.updated);
+  if (found.length > SEARCH_FILES) result.partial = true;
+  return found.slice(0, SEARCH_FILES);
+}
+
+function fallbackSearch(file, pattern, match, deadline, bytes) {
+  return withSearchFile(file, fd => {
+    const decoder = new StringDecoder("utf8"), buffer = Buffer.alloc(SEARCH_CHUNK), overlap = pattern.length - 1;
+    let offset = 0, tail = "";
+    while (offset < file.info.size) {
+      if (performance.now() >= deadline || bytes.left <= 0) return null;
+      const count = readSync(fd, buffer, 0, Math.min(buffer.length, file.info.size - offset, bytes.left), offset);
+      if (!count) return null;
+      offset += count; bytes.left -= count;
+      const text = tail + decoder.write(buffer.subarray(0, count));
+      if (match.test(text)) return true;
+      tail = overlap ? text.slice(-overlap) : "";
+    }
+    return match.test(tail + decoder.end());
+  });
+}
+
+/** Read selected provider transcripts without returning content or building an index. */
+export function search(keys, query, options = {}, { rg = "rg", budget = SEARCH_TIME } = {}) {
+  const result = { hits: [], partial: false };
+  if (!Array.isArray(keys) || typeof query !== "string" || !query.length || query.length > 512) return result;
+  const deadline = performance.now() + Math.max(0, Math.min(SEARCH_TIME, budget));
+  const pattern = JSON.stringify(query).slice(1, -1);
+  const match = new RegExp(pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "iu"), bytes = { left: SEARCH_BYTES };
+  const candidates = searchCandidates(keys, options, deadline, result);
+  let useNode = false;
+  for (let offset = 0; offset < candidates.length; offset += SEARCH_BATCH) {
+    if (performance.now() >= deadline || result.hits.length >= SEARCH_HITS) { result.partial = true; break; }
+    const batch = [];
+    for (const candidate of candidates.slice(offset, offset + SEARCH_BATCH)) {
+      if (performance.now() >= deadline) { result.partial = true; break; }
+      try {
+        const info = searchStat(candidate.path);
+        if (!info) continue;
+        const file = { ...candidate, info };
+        if (file.provider === "codex") {
+          // A rollout name includes the ID, but the leading session_meta record must agree.
+          const identity = withSearchFile(file, fd => {
+            const buffer = Buffer.alloc(Math.min(info.size, SEARCH_CHUNK)), count = readSync(fd, buffer, 0, buffer.length, 0);
+            return buffer.subarray(0, count).toString("utf8").split("\n").map(json).find(record => record?.type === "session_meta")?.payload?.id;
+          });
+          if (identity !== file.id) continue;
+        }
+        batch.push(file);
+      } catch { result.partial = true; }
+    }
+    if (!batch.length) continue;
+    let matches;
+    if (!useNode) {
+      const remaining = Math.floor(deadline - performance.now());
+      if (remaining <= 0) { result.partial = true; break; }
+      const response = spawnSync(rg, ["-F", "-i", "-l", "--no-config", "--no-messages", "-e", pattern, "--", ...batch.map(file => file.path)],
+        { timeout: remaining, killSignal: "SIGKILL", encoding: "utf8", maxBuffer: 256 * 1024 });
+      useNode = response.error?.code === "ENOENT";
+      if (!useNode) {
+        if (response.error || ![0, 1].includes(response.status)) result.partial = true;
+        matches = new Set((response.stdout ?? "").split("\n"));
+      }
+    }
+    for (const file of batch) {
+      if (result.hits.length >= SEARCH_HITS || useNode && performance.now() >= deadline) { result.partial = true; break; }
+      try {
+        const found = useNode ? fallbackSearch(file, pattern, match, deadline, bytes) : matches.has(file.path);
+        if (found === null) result.partial = true;
+        if (found && searchFileIsCurrent(file)) result.hits.push(file.key);
+      } catch { result.partial = true; }
+    }
+  }
+  return result;
+}
+
 // Only an explicit preview action reads message excerpts; nothing is indexed or written.
 export function preview(key, options = {}) {
   const row = scan(options).rows.find(item => item.key === key);
@@ -245,8 +402,10 @@ if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.m
   try {
     const options = json(process.argv[3] ?? "{}") ?? {};
     const action = process.argv[2] || "scan";
-    if (!["scan", "validate", "preview"].includes(action)) throw new Error("Unknown history action.");
-    const result = action === "validate" ? validate(process.argv[4], options) : action === "preview" ? preview(process.argv[4], options) : scan(options);
+    if (!["scan", "validate", "preview", "search"].includes(action)) throw new Error("Unknown history action.");
+    const request = action === "search" ? json(process.argv[4] || "{}") : null;
+    const result = action === "search" ? search(request?.keys, request?.query, options)
+      : action === "validate" ? validate(process.argv[4], options) : action === "preview" ? preview(process.argv[4], options) : scan(options);
     process.stdout.write(JSON.stringify(result));
   } catch (error) { process.stdout.write(JSON.stringify({ error: error.message })); process.exitCode = 1; }
 }

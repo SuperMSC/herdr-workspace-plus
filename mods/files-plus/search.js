@@ -8,6 +8,7 @@ import { LIBRARY_KEY, updateLibrary } from "./library-model.js";
 import { projectContext } from "./file-tabs.js";
 import Preview from './preview.js';
 import { searchArgs, parseSearchOutput, groupedMatches, combineWorkspaceResults } from './search-model.js';
+import { checking } from "herdr";
 export default class Search {
   init(props, cx) {
     const context = projectContext();
@@ -18,7 +19,7 @@ export default class Search {
     this.query = InputState.new({ placeholder: 'Search project…' }); this.include = InputState.new({ placeholder: 'Include: *.js, src/**' }); this.exclude = InputState.new({ placeholder: 'Exclude: vendor/**, *.lock' });
     this.preview = new Preview(); this.matches = []; this.collapsed = new Set(); this.revision = 0;
     for (const input of [this.query, this.include, this.exclude]) { input.on('change', (_e, cx) => this.schedule(cx)); input.on('submit', (_e, cx) => this.run(cx)); }
-    this.refreshTimer = cx.timer.every(10000, cx => this.preview.refresh(cx));
+    if (!checking()) this.refreshTimer = cx.timer.every(10000, cx => this.preview.refresh(cx));
     cx.timer.after(0, () => { if (!this.disposed) this.query.focus(); });
   }
   schedule(cx) {

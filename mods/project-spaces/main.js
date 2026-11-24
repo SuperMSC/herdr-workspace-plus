@@ -8,11 +8,11 @@ import { privacyGuard } from "./privacy.js";
 // Recent). Folded groups, names, colors and order are kept in shared state.
 // Git tracking, avatars and drag reordering derive from Herdr's shipped Spaces mod.
 
-import { View, div, svg } from "gpui-kit";
+import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, Input, InputState } from "gpui-base";
-import { spaces, machines, panes, agents, terminals, focused, run, exec, theme, shared, setShared, watchFolder, window, layout, props, home } from "herdr";
+import { spaces, machines, panes, agents, terminals, focused, run, exec, theme, shared, setShared, watchFolder, window, layout, props, home, appHome, checking } from "herdr";
 import {
-  STATE_KEY, FILTER_KEY, DENSITY_KEY, SIDEBAR_COLUMNS, projectDensity, groupPath, spacePath, echoesName, filterProjectGroups, projectMark, normalizeState, buildGroups, targetOrder, moves, assignSpace, moveGroup, toggleFold, prune, sameState,
+  STATE_KEY, FILTER_KEY, DENSITY_KEY, ICONS_KEY, ICONS_REFRESH_KEY, SIDEBAR_COLUMNS, projectDensity, groupPath, spacePath, echoesName, filterProjectGroups, projectIconRoot, projectMark, normalizeState, buildGroups, targetOrder, moves, assignSpace, moveGroup, toggleFold, prune, sameState,
 } from "./model.js";
 import { menuTooltipState, menuTooltipKey, endMenuTooltip } from "./menu-tooltip.js";
 import { Menu, openMenu, menuRows } from "./menus.js";
@@ -79,11 +79,12 @@ export default class ProjectSpaces extends View {
     this.hover = null; // the group header under the pointer
     this.ordering = null;
     this.home = home();
-    cx.timer.every(250, cx => this.tick(cx));
-    cx.timer.every(5000, () => this.tidy());
+    if (!checking()) cx.timer.every(250, cx => this.tick(cx));
+    if (!checking()) cx.timer.every(5000, () => this.tidy());
   }
 
   close(cx) {
+    this.iconsClosed = true;
     const popup = this.menuHoverScope ? menuTooltipState(this.menuHoverScope) : null;
     if (popup) endMenuTooltip(this.menuHoverScope, popup.token);
     this.role?.close?.(cx);
@@ -97,6 +98,47 @@ export default class ProjectSpaces extends View {
 
   save(next) {
     if (!sameState(next, shared(STATE_KEY))) setShared(STATE_KEY, next);
+  }
+
+  requestIcons(groups, cx) {
+    const enabled = shared(ICONS_KEY) !== false, revision = shared(ICONS_REFRESH_KEY);
+    const roots = enabled ? [...new Set(groups.map(projectIconRoot).filter(Boolean))].sort().slice(0, 200) : [];
+    const key = JSON.stringify([roots, revision]);
+    if (this.iconRequest?.key === key) return;
+    this.iconRequest = { key, roots, revision };
+    if (!this.iconScheduled && roots.length && cx.timer?.after) {
+      this.iconScheduled = true;
+      cx.timer.after(0, cx => { this.iconScheduled = false; this.refreshIcons(cx); });
+    }
+  }
+
+  refreshIcons(cx) {
+    const request = this.iconRequest;
+    if (this.iconsClosed || this.iconPending || !request?.roots.length || checking() || shared(ICONS_KEY) === false) return;
+    this.iconPending = true;
+    cx.spawn(async cx => {
+      try {
+        const directory = appHome(), roots = request.roots.map(root => ({ root, on: null }));
+        const result = await exec(this.p.node || "node", [directory + "/mods/project-spaces/icons-helper.mjs", JSON.stringify({ home: directory, roots })], { timeout: 10000 });
+        if (this.iconsClosed || request !== this.iconRequest || shared(ICONS_KEY) === false || request.revision !== shared(ICONS_REFRESH_KEY)) return;
+        const values = result.code === 0 ? JSON.parse(result.stdout) : {};
+        this.projectIcons = new Map(request.roots.flatMap(root => {
+          const name = values?.[root];
+          return typeof name === "string" && /^[a-f0-9]{64}\.(?:png|jpg|webp|svg)$/.test(name) ? [[root, name]] : [];
+        }));
+        cx.notify();
+      } catch { /* An unavailable helper leaves the letter tiles available. */ }
+      finally {
+        this.iconPending = false;
+        if (request !== this.iconRequest) this.refreshIcons(cx);
+      }
+    });
+  }
+
+  projectIcon(group, size = 18) {
+    if (!this.projectIcons?.size || shared(ICONS_KEY) === false) return null;
+    const root = projectIconRoot(group), icon = this.projectIcons?.get(root);
+    return icon ? image("data/project-icons/" + icon).size(size).flex_none() : null;
   }
 
   tick(cx) {
@@ -420,6 +462,7 @@ export default class ProjectSpaces extends View {
   groupHead(group, st, t, n, density = "detailed", tree = false, pinControl = null) {
     const project = st.mode === "project", location = project ? group.displayLocation === undefined ? groupPath(group, this.home) : group.displayLocation : null, details = density === "detailed" && location && !echoesName(location, group.name);
     const mark = projectMark(t, group.name, group.color);
+    const projectIcon = project ? this.projectIcon(group) : null;
     const target = this.drag && this.over?.kind === "group" && this.over.id === group.key && !(this.drag.kind === "group" && this.drag.id === group.key);
     const joining = target && this.drag.kind === "space" && project;
     const reordering = target && this.drag.kind === "group" && project && st.sort === "manual";
@@ -459,7 +502,7 @@ export default class ProjectSpaces extends View {
       .on_mouse_up("left", (_e, cx) => this.dropOnGroup(group, cx))
       .on_mouse_down("right", () => { if (project) this.groupMenu(group); })
       .child(h_flex().w(tree ? 18 : 11).when(tree, el => el.h(18)).flex_none().items_center().justify_center().child(svg(chrome(group.folded ? "chevron-right" : "chevron-down")).size(11).text_color(t.dim)))
-      .when(project, el => el.child(h_flex().size(18).mr(tree ? 3 : 0).flex_none().rounded(5).bg(mark.background).items_center().justify_center()
+      .when(project, el => el.child(projectIcon ? projectIcon.mr(tree ? 3 : 0) : h_flex().size(18).mr(tree ? 3 : 0).flex_none().rounded(5).bg(mark.background).items_center().justify_center()
         .text_size(TYPE.xs).font_bold().text_color(mark.foreground).child([...group.name][0]?.toUpperCase() ?? "?")))
       .when(!project, el => el.child(div().size(8).flex_none().rounded(4).bg(tone(t, group.statusGroup))))
       .child(v_flex().flex_shrink(1).when(tree, el => el.flex_1()).min_w(0).gap(2).child(tree ? treeTitle : div().truncate().font_medium().text_color(t.foreground).child(group.name))
@@ -494,13 +537,14 @@ export default class ProjectSpaces extends View {
     const details = density === "detailed" && (tree ? Boolean(relative || showBranch || solo && group.name !== w.name) : Boolean(relative));
     const machineBadge = w.machine ? !nested || parentLocation?.mixed || (group.machine ?? null) !== w.machine ? `@${w.machine}` : "" : nested && (group.machine || parentLocation?.mixedMachines) ? "local" : "";
     const mark = projectMark(t, solo ? group.name : w.name, solo ? group.color : null);
+    const projectIcon = solo ? this.projectIcon(group) : null;
     const target = this.drag?.kind === "space" && this.over?.kind === "space" && this.over.id === w.id && this.drag.id !== w.id;
     const loud = w.status === "blocked" || w.status === "done";
     const sourceMarker = nested
       ? r.g?.linked
         ? svg(chrome("branch")).size(13).flex_none().text_color(t.dim)
         : div().size(13).flex_none().flex().items_center().justify_center().when(Boolean(w.status) && w.status !== "idle", el => el.child(div().size(6).rounded(3).bg(tone(t, w.status)).when(!this.tooltipState()?.open, el => el.tooltip("Directory activity: " + statusLabel(w.status)))))
-      : h_flex().size(18).flex_none().rounded(5).bg(mark.background).items_center().justify_center()
+      : projectIcon || h_flex().size(18).flex_none().rounded(5).bg(mark.background).items_center().justify_center()
         .text_size(TYPE.xs).font_bold().text_color(mark.foreground).child([...w.name][0]?.toUpperCase() ?? "?");
     const treeMarker = nested ? svg(chrome(r.g?.linked ? "branch" : "folder")).size(14).text_color(t.muted || t.dim) : sourceMarker;
     const marker = tree ? h_flex().w(18).h(18).mr(3).flex_none().items_center().justify_center().child(treeMarker) : sourceMarker;
@@ -574,6 +618,7 @@ export default class ProjectSpaces extends View {
     this.lastRows = groups.flatMap(g => g.rows);
     // Projects a space can move to, whatever is shown now.
     this.lastProjects = this.unifiedView || st.mode === "project" ? groups : buildGroups(this.lastRows, { ...st, mode: "project" }, { home: this.home });
+    this.requestIcons(this.lastProjects, cx);
     const title = st.mode === "project" ? "Projects" : "Spaces", density = projectDensity(shared(DENSITY_KEY));
     const radius = find(layout(), "workspace-sidebar-surface")?.radius;
     if (this.unifiedView) {

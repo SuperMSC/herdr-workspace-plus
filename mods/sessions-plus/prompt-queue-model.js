@@ -1,4 +1,4 @@
-import { argvIdentity, cleanTitle, PROVIDERS } from "./model.js";
+import { sessionIdentity, cleanTitle, PROVIDERS } from "./model.js";
 import { referenceMachineMatches } from "./reference-model.js";
 
 export const PROMPT_QUEUE_KEY = "sessions-plus.prompt-queue.v1";
@@ -21,9 +21,9 @@ export function promptStatus(value) {
   return ["idle", "working", "blocked", "done"].includes(state) ? state : null;
 }
 
-export function promptTarget(agent, terminal, pane = {}) {
+export function promptTarget(agent, terminal, pane = {}, identities = {}) {
   if (!agent || !terminal || terminal.state !== "live" || agent.address !== terminal.address || !validAddress(terminal.address)) return null;
-  const identity = argvIdentity(terminal), created = Number(terminal.created_ms);
+  const identity = sessionIdentity(terminal, identities), created = Number(terminal.created_ms);
   if (!identity || !Object.hasOwn(PROVIDERS, identity.provider) || !Number.isFinite(created) || created <= 0) return null;
   const argv = terminal.foreground?.argv?.length ? terminal.foreground.argv : terminal.argv ?? [];
   const process = terminal.foreground?.pid ?? terminal.pid ?? null;
@@ -36,8 +36,8 @@ export function promptTarget(agent, terminal, pane = {}) {
     cwd: text(pane.cwd || terminal.cwd).slice(0, 1000), machine, status: promptStatus(terminal.status) || promptStatus(agent.status) };
 }
 
-export function promptTargets(agents, terminals, panes = []) {
-  return agents.map(agent => promptTarget(agent, terminals.find(terminal => terminal.address === agent.address), panes.find(pane => pane.terminal === agent.address)))
+export function promptTargets(agents, terminals, panes = [], identities = {}) {
+  return agents.map(agent => promptTarget(agent, terminals.find(terminal => terminal.address === agent.address), panes.find(pane => pane.terminal === agent.address), identities))
     .filter(Boolean).filter((target, index, targets) => targets.findIndex(other => other.address === target.address) === index);
 }
 

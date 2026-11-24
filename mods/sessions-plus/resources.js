@@ -3,7 +3,7 @@
 import { TYPE } from "./type-scale.js";
 import { div, svg } from "gpui-kit";
 import { v_flex, h_flex, Popover } from "gpui-base";
-import { exec, theme, window } from "herdr";
+import { checking, exec, theme, window } from "herdr";
 import {
   PS_ARGS, SAMPLE_EVERY, OPEN_SAMPLE_EVERY, parsePs, usageSnapshot, formatCpu, formatMemory, badgeMemory, pressure, pushSample,
 } from "./perf-model.js";
@@ -16,7 +16,7 @@ export default class Resources {
     if (!this.enabled) return;
     this.sample(cx);
     // Every 5 s in the bar, every 2 s while the panel is open.
-    cx.timer.every(OPEN_SAMPLE_EVERY, cx => { if (this.open || Date.now() - this.last >= SAMPLE_EVERY - 100) this.sample(cx); });
+    if (!checking()) cx.timer.every(OPEN_SAMPLE_EVERY, cx => { if (this.open || Date.now() - this.last >= SAMPLE_EVERY - 100) this.sample(cx); });
   }
 
   sample(cx) {

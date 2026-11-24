@@ -11,6 +11,19 @@ import { collectUsage, projectRoots } from "../mods/sessions-plus/usage-stats.mj
 import { launcherRows } from "../mods/sessions-plus/launcher-model.js";
 
 const { claudeRecord, codexRecord, freshState, summarize, rangeStarts, formatTokens, formatUsd, formatCount, usageResult } = usageModel;
+
+test("plan value uses the full monthly price or the prorated seven-day price and requires complete pricing", () => {
+  const { planMultiple, planPrice } = usageModel;
+  const values = { cost: 42, monthlyPrice: 10, range: "month", unpricedTokens: 0 };
+  assert.equal(planMultiple(values), 4.2);
+  assert.equal(planMultiple({ ...values, range: "7d", cost: 10 * (7 / 30.4375) * 2 }), 2);
+  assert.equal(planMultiple({ ...values, cost: 0 }), 0);
+  assert.equal(planMultiple({ ...values, partial: true }), null);
+  assert.equal(planMultiple({ ...values, unpricedTokens: 100 }), null);
+  for (const monthlyPrice of [undefined, null, "", 0, -20, 100001, Infinity, "0xff", true]) assert.equal(planMultiple({ ...values, monthlyPrice }), null);
+  assert.equal(planPrice(" 100000 "), 100000);
+  assert.equal(planPrice("19.95"), 19.95);
+});
 const NOW = new Date(2026, 10, 22, 15, 0, 0).getTime();
 const at = (day, hour = 12) => new Date(2026, 10, day, hour, 0, 0).toISOString();
 const claudeId = "11111111-2222-4333-8444-555555555555", codexId = "01a201b3-53ec-7ab1-8e1c-aa938f23115c";
@@ -247,6 +260,42 @@ test("the quota popover gains a Stats page that reads usage once and opens the f
   assert.equal(bar.open, false); assert(notified > 0); assert.equal(f.overlays.at(-1).props.role, "usage-stats"); assert.deepEqual(f.overlays.at(-1).props.stores, { claude: "/c" });
   find(bar.render(f.cx), "usage-refresh").events.on_click({}, f.cx); await f.settle();
   assert.equal(f.calls.length, 2);
+});
+
+test("both Stats presentations save optional provider prices, validate edits, and release native inputs", async () => {
+  for (const compact of [true, false]) {
+    const data = sample(), f = uiFixture(data), editors = [];
+    f.deps.InputState = { new: ({ value }) => {
+      const editor = { text: value, events: {}, value() { return this.text; }, on(name, callback) { this.events[name] = callback; }, focus() {}, release() { this.released = true; } };
+      editors.push(editor);
+      return editor;
+    } };
+    f.deps.Input = { new: element };
+    const Stats = view("usage-stats", f.deps), stats = new Stats();
+    stats.init({ compact }, f.cx); await f.settle();
+    f.state["sessions-plus.usage-range"] = "month";
+    stats.data.ranges.month.providers.claude.cost = 42;
+    const price = () => find(stats.render(f.cx), "usage-plan-price-claude");
+    assert.equal(text(price()), "Optional");
+    price().events.on_click({}, f.cx);
+    editors[0].text = "100001"; editors[0].events.submit({}, f.cx);
+    assert.equal(f.state[usageModel.PLAN_PRICE_KEY], undefined);
+    assert.match(text(stats.render(f.cx)), /Enter a positive amount/);
+    editors[0].text = "10"; editors[0].events.submit({}, f.cx);
+    assert.equal(editors[0].released, true);
+    assert.deepEqual(f.state[usageModel.PLAN_PRICE_KEY], { claude: 10 });
+    f.state[usageModel.PLAN_PRICE_KEY].codex = 20;
+    assert.match(text(find(stats.render(f.cx), "usage-plan-multiple-claude")), /≈ 4\.2× plan/);
+    assert.equal(find(stats.render(f.cx), "usage-plan-multiple-codex"), undefined);
+    stats.data.limited = true;
+    assert.equal(find(stats.render(f.cx), "usage-plan-multiple-claude"), undefined);
+    price().events.on_click({}, f.cx);
+    editors[1].text = ""; editors[1].events.blur({}, f.cx);
+    assert.deepEqual(f.state[usageModel.PLAN_PRICE_KEY], { codex: 20 });
+    price().events.on_click({}, f.cx);
+    stats.close();
+    assert.equal(editors[2].released, true);
+  }
 });
 
 test("the full dialog lists models, projects and sessions; a session opens its work timeline", async () => {

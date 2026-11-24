@@ -7,7 +7,8 @@ import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import { scan, validate, preview, agySummaries } from "../mods/sessions-plus/history.mjs";
-import { NAMES, PENDING, OPERATIONS, OPERATION_TTL, operationPending, PROVIDERS, sessionKey, cleanTitle, argvIdentity, sessionRows, filterRows, resumeArgv, launchCommand } from "../mods/sessions-plus/model.js";
+import { LIVE_KEY, NAMES, PENDING, OPERATIONS, OPERATION_TTL, operationPending, PROVIDERS, sessionKey, cleanTitle, argvIdentity, sessionRows, filterRows, resumeArgv, launchCommand } from "../mods/sessions-plus/model.js";
+import * as model from "../mods/sessions-plus/model.js";
 
 const id = "11111111-1111-4111-8111-111111111111", second = "22222222-2222-4222-8222-222222222222";
 const put = (file, value) => { mkdirSync(dirname(file), { recursive: true }); writeFileSync(file, value); };
@@ -116,6 +117,26 @@ test("same-folder sessions are never guessed to be the same conversation", () =>
   assert.equal(rows.length, 2); assert.notEqual(rows[0].key, rows[1].key);
 });
 
+test("a bare Claude terminal merges with history only through its matching foreground identity", () => {
+  const history = row();
+  const terminal = { state: "live", address: "t2", created_ms: 10, pid: 50, foreground: { argv: ["claude"], pid: 51 }, cwd: history.cwd };
+  const identity = { provider: "claude", store: history.store, id, pid: 51, title: "Live title" };
+  assert.equal(sessionRows([history], [terminal], []).length, 2);
+  assert.equal(sessionRows([history], [terminal], [], {}, { "t2@10": { ...identity, pid: terminal.pid } }).length, 2);
+  const rows = sessionRows([history], [terminal], [], {}, { "t2@10": identity });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].key, history.key);
+  assert.equal(rows[0].title, identity.title);
+  assert.equal(rows[0].live, true);
+});
+
+test("fork argv cannot resolve to the source session ID", () => {
+  assert.equal(argvIdentity({ argv: ["claude", "--resume", id, "--fork-session"] }).id, null);
+  assert.equal(argvIdentity({ argv: ["codex", "fork", id] }).id, null);
+  assert.equal(argvIdentity({ argv: ["codex", "--profile", "default", "fork", id, "resume", id] }).id, null);
+  assert.equal(argvIdentity({ argv: ["codex", "--profile", "fork", "resume", id] }).id, id);
+});
+
 test("resume commands keep metacharacters as arguments and always target a local space", () => {
   for (const provider of Object.keys(PROVIDERS)) {
     const r = { ...row(provider), cwd: "/projects/a ' ; $(no)", store: "/home/a ' ; $(no)/store" };
@@ -126,6 +147,26 @@ test("resume commands keep metacharacters as arguments and always target a local
     assert.equal(launchCommand(r, `/bin/${provider}`, [{ id: "remote", machine: "server", folder: r.cwd }])[0], "space.new");
   }
   assert.throws(() => resumeArgv({ ...row(), id: "--help" }, "/bin/claude"), /Invalid/);
+});
+
+test("fork argv preserves the selected store and has no identity for the source conversation", () => {
+  for (const [provider, env, args] of [
+    ["claude", "CLAUDE_CONFIG_DIR", ["--resume", id, "--fork-session"]],
+    ["codex", "CODEX_HOME", ["fork", id]],
+  ]) {
+    const target = { ...row(provider), store: "/local store/quoted ' folder" };
+    target.key = sessionKey(target);
+    const argv = resumeArgv(target, `/bin/${provider}`, { fork: true });
+    assert.deepEqual(argv, ["/usr/bin/env", `${env}=${target.store}`, `/bin/${provider}`, ...args]);
+    assert.deepEqual(argvIdentity({ argv }), { provider, id: null, store: target.store });
+    assert.equal(model.canFork({ ...target, live: true }), true);
+    assert.equal(model.canFork({ ...target, remote: true }), false);
+    assert.equal(model.canFork({ ...target, key: "unresolved" }), false);
+    const [cmd, spec] = launchCommand(target, `/bin/${provider}`, [{ id: "remote", machine: "box", folder: target.cwd }], { fork: true });
+    assert.deepEqual([cmd, spec.tab, spec.folder], ["space.new", "Fork: Original", target.cwd]);
+  }
+  assert.equal(model.canFork(row("agy")), false);
+  assert.throws(() => resumeArgv(row("agy"), "/bin/agy", { fork: true }), /does not support forking/);
 });
 
 test("folder and provider filters preserve local/remote boundaries and renamed title search", () => {
@@ -141,11 +182,43 @@ function viewClass(file, dependencies) {
   return uiFunction(...Object.keys(dependencies), source)(...Object.values(dependencies));
 }
 
+test("the Fork action dispatches once to its owning view and starts a new tab even while the source is live", async () => {
+  const original = row(), live = { ...original, live: true, cwd: "/later/focus", address: "t7" };
+  const state = {}, commands = [], overlays = [], timers = [], tasks = [];
+  const dependency = {
+    ...model, View: class {}, shared: key => state[key], setShared: (key, next) => { state[key] = next; },
+    run: (...args) => commands.push(args), window: () => ({ platform: "macos" }), terminals: () => [], panes: () => [], agents: () => [], promptTargets: () => [],
+    spaces: () => [{ id: "remote", machine: "box", folder: original.cwd }, { id: "local", folder: original.cwd }],
+    openOverlay: value => overlays.push(value), closeOverlay: () => {},
+  };
+  const Panel = viewClass("main", dependency), panel = new Panel(), otherPanel = new Panel();
+  panel.p = { stores: { codex: "/other/config" } }; panel.busy = new Set();
+  panel.rows = () => [live];
+  panel.read = async (action, key, stores) => {
+    assert.deepEqual([action, key, stores], ["validate", original.key, { claude: original.store, codex: "/other/config" }]);
+    assert.equal(state[OPERATIONS][key].action, "fork");
+    return { row: original, command: "/bin/claude" };
+  };
+  const cx = { focus_handle: () => ({ focus() {} }), notify() {}, spawn: task => tasks.push(task(cx)), timer: { after: (delay, task) => timers.push({ delay, task }) } };
+  panel.actionsRow(live);
+  const Actions = viewClass("actions", dependency), menu = new Actions(), target = overlays[0].props;
+  menu.init(target, cx);
+  const fork = menu.items.findIndex(item => item.id === "fork");
+  assert(fork >= 0);
+  menu.choose(fork);
+  assert.equal(state[model.FORK_REQUEST], target.forkToken);
+  otherPanel.consumeFork(cx); panel.consumeFork(cx); panel.consumeFork(cx);
+  assert.equal(timers.length, 1);
+  timers.shift().task(cx); await Promise.all(tasks);
+  assert.equal(state[model.FORK_REQUEST], null);
+  assert.deepEqual(commands, [["tab.new", { space: "local", name: "Fork: Original", folder: original.cwd, argv: resumeArgv(original, "/bin/claude", { fork: true }) }]]);
+});
+
 test("a repeated resume click starts once and uses the captured session directory", async () => {
   const r = row(), state = {}, calls = [], tasks = [], timers = [];
   let finish;
   const gate = new Promise(resolve => { finish = resolve; });
-  const Panel = viewClass("main", { View: class {}, NAMES, PENDING, OPERATIONS, OPERATION_TTL, operationPending, PROVIDERS, sessionRows, filterRows, launchCommand,
+  const Panel = viewClass("main", { View: class {}, LIVE_KEY, NAMES, PENDING, OPERATIONS, OPERATION_TTL, operationPending, PROVIDERS, sessionRows, filterRows, launchCommand,
     focused: () => ({ cwd: "/changed/focus" }), spaces: () => [], panes: () => [], terminals: () => [],
     shared: key => state[key], setShared: (key, value) => state[key] = value, run: (...args) => calls.push(args),
   });

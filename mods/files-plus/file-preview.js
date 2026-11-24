@@ -2,7 +2,7 @@
 import { TYPE } from "./type-scale.js";
 import { div } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { theme, shared, setShared, spaces, panes, run, openOverlay, settings, window } from "herdr";
+import { checking, theme, shared, setShared, spaces, panes, run, openOverlay, settings, window } from "herdr";
 import Preview from "./preview.js";
 import { fileIcon, iconButton } from "./icons.js";
 import { FILE_TABS_KEY } from "./file-tabs.js";
@@ -18,7 +18,7 @@ export default class FilePreview {
     this.path = this.record()?.path || p.path;
     if (typeof this.root !== "string" || !this.root || !validRelative(this.path)) { this.error = "No valid file selected."; return; }
     this.preview.open(this.root, this.path, this.on, cx);
-    cx.timer.every(10000, cx => {
+    if (!checking()) cx.timer.every(10000, cx => {
       const row = this.record(), active = spaces().find(space => space.active);
       if (!this.disposed && row && active?.tabs?.some(tab => tab.id === row.tab && tab.active)) this.preview.refresh(cx);
     });

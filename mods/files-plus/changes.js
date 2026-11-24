@@ -4,7 +4,7 @@ import { fileIcon } from "./icons.js";
 // Modified from Herdr Changes (Apache-2.0). Git reads and UI extensions are independent of Git write actions.
 import { div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, VirtualListScrollHandle, v_resizable, resizable_panel, Popover } from "gpui-base";
-import { spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, window, openOverlay, shared, setShared } from "herdr";
+import { checking, spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, window, openOverlay, shared, setShared } from "herdr";
 import { CHANGE_KEY, targetFor, menuHeight } from "./model.js";
 import { fileKey, fileTree, diffRows, splitRows, splitDisplay, inlineDisplay, diffCounts, treeFolders } from "./git-model.js";
 import { createGitReader, READ } from "./git-reader.js";
@@ -34,7 +34,7 @@ export default class Changes {
     this.input.on("focus", (_e, cx) => { this.typing = true; cx.notify(); });
     this.input.on("blur", (_e, cx) => { this.typing = false; cx.notify(); });
     this.refresh(cx);
-    cx.timer.every(10000, cx => { if (!this.disposed) this.refresh(cx); });
+    if (!checking()) cx.timer.every(10000, cx => { if (!this.disposed) this.refresh(cx); });
   }
 
   sourceLocation() { return this.source ? { cwd: this.source.cwd, on: this.source.on ?? null } : location(); }

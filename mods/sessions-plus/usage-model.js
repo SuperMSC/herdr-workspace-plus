@@ -7,6 +7,7 @@ import { eventCost, priceFor } from "./usage-pricing.js";
 export const USAGE_PROVIDERS = ["claude", "codex"];
 export const TOKEN_PROVIDERS = ["claude", "codex"];
 export const RANGES = { "7d": "Last 7 days", month: "This month" };
+export const PLAN_PRICE_KEY = "sessions-plus.plan-price.v1";
 export const CHART_DAYS = 30;
 const TURN_MODELS = 64;
 const num = value => Number.isFinite(value) && value > 0 ? value : 0;
@@ -188,6 +189,18 @@ export function formatUsd(value) {
   if (n < 0.01) return "<$0.01";
   if (n < 1000) return `$${n.toFixed(2)}`;
   return `$${formatCount(n)}`;
+}
+
+export function planPrice(value) {
+  if (typeof value === "string" && /^(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i.test(value.trim())) value = Number(value);
+  return Number.isFinite(value) && value > 0 && value <= 100000 ? value : null;
+}
+
+export function planMultiple({ cost, monthlyPrice, range, partial = false, unpricedTokens = 0 }) {
+  const price = planPrice(monthlyPrice);
+  if (price === null || !Object.hasOwn(RANGES, range) || partial || unpricedTokens > 0 || !Number.isFinite(cost) || cost < 0) return null;
+  const multiple = cost / (range === "7d" ? price * (7 / 30.4375) : price);
+  return Number.isFinite(multiple) ? multiple : null;
 }
 // Grouped by hand: the GPUI script runtime need not ship locale data.
 export const formatCount = value => String(Math.round(Number(value) || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, ",");

@@ -16,6 +16,23 @@ const statusOf = value => STATUS.includes(value) ? value : value === "error" ? "
 const priority = (a, b) => RANK[b.branchStatus] - RANK[a.branchStatus] || a.order - b.order;
 export const unifiedAliasKey = target => target?.address && target?.created_ms ? JSON.stringify([target.on ?? null, target.address, target.created_ms]) : null;
 
+export function subagentRecords(terminal) {
+  const records = terminal?.records;
+  if (terminal?.state !== "live" || !records || typeof records !== "object" || Array.isArray(records)) return [];
+  const rows = [];
+  let inspected = 0;
+  for (const id in records) {
+    if (++inspected > 100 || rows.length >= 20) break;
+    if (!Object.hasOwn(records, id) || !id || id.length > 256 || /[\s\x00-\x1f\x7f]/.test(id)) continue;
+    const record = records[id];
+    if (!record || typeof record !== "object" || Array.isArray(record) || record.app !== "claude-code") continue;
+    const title = typeof record.title === "string" ? record.title.slice(0, 500).replace(/[\x00-\x1f\x7f]/g, " ").trim() : "";
+    const status = record.state === "error" ? "blocked" : ["working", "blocked", "done"].includes(record.state) ? record.state : null;
+    rows.push({ id, title: title || id, status });
+  }
+  return rows;
+}
+
 function snapshot(input) {
   const spaces = new Map(), tabs = new Map(), spaceRows = new Map(), groupOf = new Map(), duplicateSpaces = new Set(), duplicateTabs = new Set();
   for (const w of list(input.spaces)) {
@@ -215,7 +232,25 @@ export function unifiedRows(input = {}, supplied = {}) {
   const promotedNodes=new Set();for(const node of forest.nodes.values()){const root=rootOf.get(node.address);if(kept.has(node.address)&&root&&bucketOf(root)&&!node.target.disabled)promotedNodes.add(node.address);}
   const coveredTab=(w,tab)=>mode==="project"&&completeTab(w,tab,null)&&(directNodes.get(tab.id)||[]).every(node=>promotedNodes.has(node.address))&&(paneMembers.get(tab.id)||[]).every(p=>promotedNodes.has(p.terminal));
   const rows=[],push=row=>{row.folded=!openRow(row,options,filtering);rows.push(row);return !row.folded;};
-  const drawBranch=(root,depth,group=null,source=null,merged=false,section=null)=>{const stack=[{node:root,depth,merged}];while(stack.length){const item=stack.pop(),node=item.node;if(!kept.has(node.address))continue;const row=nodeRow(node,item.depth,s,options,group,source,item.merged);row.section=section;row.contextOnly=!matched.has(node.address);row.childCount=node.children.filter(n=>kept.has(n.address)).length;row.foldable=row.childCount>0;if(push(row))for(let i=node.children.length-1;i>=0;i--)stack.push({node:node.children[i],depth:item.depth+1,merged:false});}};
+  const drawBranch = (root, depth, group = null, source = null, merged = false, section = null) => {
+    const stack = [{ node: root, depth, merged }];
+    while (stack.length) {
+      const item = stack.pop(), node = item.node;
+      if (!kept.has(node.address)) continue;
+      const row = nodeRow(node, item.depth, s, options, group, source, item.merged);
+      const records = subagentRecords(node.core);
+      row.section = section;
+      row.contextOnly = !matched.has(node.address);
+      row.childCount = node.children.filter(child => kept.has(child.address)).length + records.length;
+      row.foldable = row.childCount > 0;
+      if (!push(row)) continue;
+      for (const record of records) {
+        const entry = baseRow("record", rowId("record", JSON.stringify([row.id, record.id])), record.title, item.depth + 1, row.sourceGroup, row.sourceSpace);
+        push({ ...entry, taskTitle: record.title, status: record.status, section, target: row.target });
+      }
+      for (let index = node.children.length - 1; index >= 0; index--) stack.push({ node: node.children[index], depth: item.depth + 1, merged: false });
+    }
+  };
   const itemIndexes=new Map();
   const itemIndex=items=>{if(itemIndexes.has(items))return itemIndexes.get(items);const index={spaces:new Map(),tabs:new Map(),roots:new Set(items)};for(const root of items){for(const[key,value]of [["spaces",root.owner?.space],["tabs",root.owner?.tab]]){if(!index[key].has(value))index[key].set(value,[]);index[key].get(value).push(root);}}itemIndexes.set(items,index);return index;};
   const spaceItems=(items,id)=>itemIndex(items).spaces.get(id)||[];

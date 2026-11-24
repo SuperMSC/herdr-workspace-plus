@@ -1,11 +1,21 @@
 import { TYPE } from "./type-scale.js";
 import { div } from "gpui-kit";
 import { h_flex, v_flex, Input, InputState, ScrollHandle } from "gpui-base";
-import { theme, spaces, agents, terminals, focused, shared, run, knownAgents, openOverlay, closeOverlay } from "herdr";
+import { theme, spaces, agents, terminals, focused, shared, run, knownAgents, openOverlay, closeOverlay, keys } from "herdr";
 import { COMMANDS_KEY } from "./commands-model.js";
 import { PRESETS_KEY } from "./presets-model.js";
-import { launcherRows, rankRows, sameLauncherTarget } from "./launcher-model.js";
+import { launcherRows, rankRows, sameLauncherTarget, TERMINAL_SESSIONS_KEY, NAMES } from "./launcher-model.js";
 import { projectContext } from "./project-context.js";
+import { ZEN_FOOTER } from "./zen-model.js";
+
+function togglesZen(action) {
+  if (action === `layout.toggle:${ZEN_FOOTER}`) return true;
+  if (!action?.startsWith("{")) return false;
+  try {
+    const { command, args, ...extra } = JSON.parse(action);
+    return command === "layout.toggle" && args?.id === ZEN_FOOTER && Object.keys(args).length === 1 && !Object.keys(extra).length;
+  } catch { return false; }
+}
 
 export default class Launcher {
   init(p, cx) {
@@ -16,11 +26,17 @@ export default class Launcher {
     this.input.on("submit", (_e, cx) => { const row = this.rows()[this.index]; if (row) this.activate(row, cx); });
     this.input.focus();
   }
-  snapshot() { return { spaces: spaces(), agents: agents(), terminals: terminals(), commands: shared(COMMANDS_KEY), presets: shared(PRESETS_KEY) }; }
+  snapshot() { return { spaces: spaces(), agents: agents(), terminals: terminals(), commands: shared(COMMANDS_KEY), presets: shared(PRESETS_KEY),
+    interrupted: shared(TERMINAL_SESSIONS_KEY), names: shared(NAMES), zenLayout: this.zenLayout?.() }; }
   rows() {
     if (this.stage === "spaces") return rankRows(spaces().map(s => ({ id: s.id, kind: "choose-space", title: s.name, detail: `${s.machine || "local"} · ${s.folder}`, priority: s.active ? 0 : 1 })), this.query);
     if (this.stage === "programs") return rankRows((this.programs || []).map(p => ({ id: p.key, kind: "program", title: p.name, detail: this.spaceName, priority: 0 })), this.query);
-    return launcherRows(this.snapshot(), this.query);
+    const snapshot = this.snapshot();
+    const shortcut = snapshot.zenLayout && keys().find(binding => binding.section === `layout:${snapshot.zenLayout}` && togglesZen(binding.action))?.keys;
+    const rows = launcherRows({ ...snapshot, zenLayout: shortcut ? snapshot.zenLayout : null }, this.query);
+    const zen = rows.find(row => row.action === "zen");
+    if (zen) zen.detail = `Toggle workspace chrome · ${shortcut}`;
+    return rows;
   }
   reset(stage, cx) { this.stage = stage; this.query = ""; this.index = 0; this.error = ""; this.input.set_value(""); this.input.focus(); cx.notify(); }
   dismiss(restore = true) { if (restore && this.origin) run("pane.focus", { pane: this.origin }); closeOverlay(this.p.overlay); }
@@ -32,6 +48,16 @@ export default class Launcher {
   activate(row, cx) {
     const fresh = this.rows().find(item => item.id === row.id);
     if (!sameLauncherTarget(row, fresh)) { this.error = "This item changed. Select its current entry."; cx.notify(); return; }
+    if (row.kind === "interrupted") {
+      if (this.resuming) return;
+      this.resuming = true;
+      this.resumeInterrupted(fresh.entry, cx, (opened, error, cx) => {
+        this.resuming = false;
+        if (opened) this.dismiss(false);
+        else { this.error = error; cx.notify(); }
+      });
+      return;
+    }
     if (row.kind === "choose-space") {
       const space = spaces().find(s => s.id === row.id); if (!space) return;
       this.spaceId = space.id; this.spaceMachine = space.machine; this.spaceName = space.name; this.programs = []; this.reset("programs", cx); this.loading = true;
@@ -52,6 +78,7 @@ export default class Launcher {
     if (row.kind === "command") { this.open("commands", { context: row.context, commandId: row.commandId }); return; }
     if (row.kind === "preset") { this.open("presets", { presetId: row.presetId }); return; }
     if (row.action === "new-agent") { this.reset("spaces", cx); return; }
+    if (row.action === "zen") { this.dismiss(); run("layout.toggle", { id: ZEN_FOOTER }); return; }
     if (row.action === "palette" || row.action === "settings") { this.dismiss(); run(row.action === "palette" ? "app.palette" : "app.settings"); return; }
     this.open(row.action);
   }
@@ -68,7 +95,9 @@ export default class Launcher {
       .when(Boolean(this.error), el => el.child(div().text_color(t.blocked).child(this.error)))
       .child(v_flex().id("launcher-results").flex_1().min_h(0).gap(3).overflow_y_scrollbar().track_scroll(this.scroll).pr(16)
         .children(rows.map((row, i) => v_flex().id(`launcher-row-${row.id}`).min_h(54).flex_none().p(8).gap(3).rounded(6).bg(i === this.index ? t.selected : t.surface).cursor_pointer().hover(el => el.bg(t.hover))
-          .on_click((_e, cx) => this.activate(row, cx)).child(h_flex().gap(8).child(div().flex_1().truncate().child(row.title)).child(div().text_size(TYPE.xs).text_color(t.dim).child(row.kind)))
+          .when(Boolean(row.group && row.group !== rows[i - 1]?.group), el => el.child(div().text_size(TYPE.xs).text_color(t.dim).child(row.group)))
+          .on_click((_e, cx) => this.activate(row, cx)).child(h_flex().gap(8).child(div().flex_1().truncate().child(row.title))
+            .child(div().text_size(TYPE.xs).text_color(t.dim).child(row.kind === "interrupted" ? this.resuming ? "Resuming…" : "Resume" : row.kind)))
           .child(div().truncate().text_size(TYPE.sm).text_color(t.muted).tooltip(row.detail).child(row.detail))))
         .when(!rows.length, el => el.child(div().p(12).text_color(t.dim).child(this.loading ? "Finding installed agents…" : "No matches"))))
       .child(div().flex_none().text_size(TYPE.xs).text_color(t.dim).child("↑ ↓ Select · Enter Open · Esc Back / Close · Saved commands open for review before Run"));

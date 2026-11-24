@@ -14,7 +14,7 @@ const execute = promisify(execFile), source = fileURLToPath(new URL("../mods/ses
 async function fixture(t) {
   const home = await fs.mkdtemp(path.join(tmpdir(), "herdr-notes-helper-")); t.after(() => fs.rm(home, { recursive: true, force: true }));
   const mod = path.join(home, "mods/sessions-plus"); await fs.mkdir(mod, { recursive: true });
-  for (const name of ["notes-helper.mjs", "notes-model.js", "model.js", "package.json"]) await fs.copyFile(path.join(source, name), path.join(mod, name));
+  for (const name of ["notes-helper.mjs", "notes-model.js", "model.js", "live-model.js", "package.json"]) await fs.copyFile(path.join(source, name), path.join(mod, name));
   const calls = [], failed = [], io = {
     read: async file => { try { return await fs.readFile(file, "utf8"); } catch (error) { if (error.code === "ENOENT") return null; throw error; } },
     write: async (file, raw, expected) => { if (await io.read(file) !== expected) throw new Error("stale snapshot"); await fs.writeFile(file, raw); },

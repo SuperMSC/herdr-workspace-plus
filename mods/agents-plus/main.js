@@ -7,8 +7,24 @@ import { privacyGuard } from "./privacy.js";
 
 import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { agents, terminals, panes, focused, spaces, run, theme, shared, setShared, setAgentOrder, openOverlay, closeOverlay, props, window, layout } from "herdr";
+import { checking, agents, terminals, panes, focused, spaces, run, theme, shared, setShared, setAgentOrder, openOverlay, closeOverlay, props, window, layout } from "herdr";
 import { RANK, SORTS, PIN_MODES, SORT_KEY, PIN_KEY, sortOf, pinModeOf, buildGroups, groupOrder, dropNested, countByTab } from "./model.js";
+
+// Shared registry contract. Mods each keep their own formatter because imports are local.
+function liveContext(entry, terminal, now) {
+  if (!terminal || terminal.state !== "live" || terminal.address.includes("/") || !Number.isSafeInteger(terminal.foreground?.pid) ||
+    entry?.pid !== terminal.foreground.pid || !Number.isFinite(entry.used) || entry.used < 0 || !Number.isFinite(entry.at) || now - entry.at > 120000) return null;
+  const window = entry.window, percent = Number.isFinite(window) && window > 0 && entry.used <= window ? Math.floor(entry.used * 100 / window) : null;
+  const tokens = n => n >= 1000000 ? `${+(n / 1000000).toFixed(2)}M` : n >= 1000 ? `${Math.round(n / 1000)}K` : String(n);
+  const s = Math.max(0, Math.floor((now - entry.asOf) / 1000));
+  const ago = s < 60 ? `${s}s ago` : s < 3600 ? `${Math.floor(s / 60)}m ago` : s < 86400 ? `${Math.floor(s / 3600)}h ago` : `${Math.floor(s / 86400)}d ago`;
+  const tooltip = [`Context ${tokens(entry.used)}${window ? ` of ${tokens(window)}` : ""} tokens`, entry.model || "Unknown model",
+    Number.isFinite(entry.asOf) ? `as of ${ago}` : "", "window table 2026-11-03"].filter(Boolean).join(" · ");
+  return { label: percent === null ? tokens(entry.used) : `${percent}%`, tooltip, level: percent >= 90 ? "strong" : percent >= 80 ? "warn" : null };
+}
+
+const usageBadge = (id, usage, t) => div().id(id).flex_none().text_size(TYPE.xs)
+  .text_color(usage.level === "strong" ? t.blocked : usage.level === "warn" ? t.ansi3 : t.muted).tooltip(usage.tooltip).child(usage.label);
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -57,6 +73,25 @@ const kidStatus = (k, listed) => {
   return s === "error" ? "blocked" : s === "done" ? "idle" : s;
 };
 
+function subagentRecords(terminal) {
+  const records = terminal?.records;
+  if (terminal?.state !== "live" || !records || typeof records !== "object" || Array.isArray(records)) return [];
+  const rows = [];
+  let inspected = 0;
+  for (const id in records) {
+    if (++inspected > 100 || rows.length >= 20) break;
+    if (!Object.hasOwn(records, id) || !id || id.length > 256 || /[\s\x00-\x1f\x7f]/.test(id)) continue;
+    const record = records[id];
+    if (!record || typeof record !== "object" || Array.isArray(record) || record.app !== "claude-code") continue;
+    const title = typeof record.title === "string" ? record.title.slice(0, 500).replace(/[\x00-\x1f\x7f]/g, " ").trim() : "";
+    const status = record.state === "error" ? "blocked" : ["working", "blocked", "done"].includes(record.state) ? record.state : null;
+    rows.push({ id, title: title || id, status });
+  }
+  return rows;
+}
+
+const recordLabel = status => ({ working: "Working", blocked: "Needs you", done: "Done" })[status];
+
 function duration(ms) {
   const m = Math.floor(ms / 60000);
   if (m < 1) return "<1m";
@@ -77,7 +112,7 @@ export default class Agents extends View {
     this.folded = new Set();
     // Each agent's last state and when it changed (ms), kept across restarts.
     this.changed = JSON.parse(localStorage.getItem("changed") ?? "{}");
-    cx.timer.every(30000, (cx) => cx.notify());
+    if (!checking()) cx.timer.every(30000, (cx) => cx.notify());
   }
 
   // Stamps agents whose state changed. Done and idle count as one: looking at a
@@ -152,41 +187,55 @@ export default class Agents extends View {
 
   // Live sub-agents of `addr`, depth first, each with the tree lines in front of it.
   tree(all, addr, lead = []) {
+    const parent = all.find(terminal => terminal.address === addr);
     const kids = all.filter((k) => k.parent === addr && k.state === "live");
-    return kids.flatMap((k, i) => {
-      const last = i === kids.length - 1;
+    const branches = [...subagentRecords(parent).map(record => ({ t: parent, record })), ...kids.map(t => ({ t }))];
+    return branches.flatMap((branch, i) => {
+      const last = i === branches.length - 1;
       return [
-        { t: k, lines: [...lead, last ? "└" : "├"] },
-        ...this.tree(all, k.address, [...lead, last ? "" : "│"]),
+        { ...branch, lines: [...lead, last ? "└" : "├"] },
+        ...(branch.record ? [] : this.tree(all, branch.t.address, [...lead, last ? "" : "│"])),
       ];
     });
   }
 
-  subRow(t, s, shown, compact) {
-    const k = s.t;
-    const st = kidStatus(k, this.listed);
-    const pic = icon(k.program, 14, t.foreground);
-    const on = k.address === shown;
+  focusRecord(parent) {
+    const matches = terminals().filter(terminal => terminal.address === parent.address && terminal.state === "live");
+    if (matches.length !== 1 || !Number.isSafeInteger(parent.created_ms) || parent.created_ms <= 0) return;
+    const [current] = matches;
+    if (current.created_ms !== parent.created_ms || current.pid !== parent.pid || current.foreground?.pid !== parent.foreground?.pid) return;
+    if (panes().some(pane => pane.terminal === parent.address)) run("pane.focus", { terminal: parent.address });
+    else this.peek(parent.address);
+  }
+
+  subRow(t, s, shown, compact, contextFor) {
+    const { t: k, record } = s;
+    const pic = record ? null : icon(k.program, 14, t.foreground);
+    const on = !record && k.address === shown;
+    const usage = record ? null : contextFor(k);
     return h_flex()
-      .id(`sub-${k.address}`)
+      .id(record ? "sub-record-" + JSON.stringify([k.address, record.id]) : `sub-${k.address}`)
       .pl(39)
       .pr(8)
       .rounded(8)
-      .h(26)
+      .h(record ? 22 : 26)
       .flex_none()
       .gap(0)
       .items_center()
-      .text_size(TYPE.md)
+      .text_size(record ? TYPE.xs : TYPE.md)
       .when(on, (el) => el.bg(t.raised))
       .hover((s) => s.bg(t.hover))
       // A kept sub-agent has a pane: go there, as its own row would; else peek.
-      .on_click(() => (this.listed.has(k.address) ? run("pane.focus", { terminal: k.address }) : this.peek(k.address)))
+      .on_click(() => record ? this.focusRecord(k) : this.listed.has(k.address) ? run("pane.focus", { terminal: k.address }) : this.peek(k.address))
       .children(s.lines.map(l => div().self_start().mt(-4).w(9).h(17).mr(4).flex_none()
         .when(Boolean(l), el => el.border_l(1.5).border_color(t.input))
         .when(l === "└" || l === "├", el => el.border_b(1.5).rounded_bl(6))))
       .when(Boolean(pic), el => el.child(div().mr(8).child(pic)))
-      .child(div().flex_1().truncate().text_color(on ? t.foreground : t.muted).child(k.name || k.template || k.program?.name || k.address))
-      .child(this.status(t, { status: st }, compact));
+      .child(div().flex_1().min_w(0).truncate().text_color(on ? t.foreground : t.muted)
+        .when(Boolean(record), el => el.tooltip(record.title)).child(record?.title || k.name || k.template || k.program?.name || k.address))
+      .when(Boolean(usage), el => el.child(usageBadge("sub-context-" + k.address, usage, t).mx(5)))
+      .when(Boolean(record?.status), el => el.child(div().ml(5).flex_none().text_color(t[record.status] || t.dim).child(recordLabel(record.status))))
+      .when(!record, el => el.child(this.status(t, { status: kidStatus(k, this.listed) }, compact)));
   }
 
   // compact: a ! for blocked where a header already says "Needs you".
@@ -211,12 +260,16 @@ export default class Agents extends View {
     const all = terminals();
     const shown = focused()?.agent;
     const now = Date.now();
+    const live = shared("sessions-plus.live.v1"), byAddress = new Map(all.map(terminal => [terminal.address, terminal]));
+    const contextFor = terminal => terminal ? liveContext(live?.[`${terminal.address}@${terminal.created_ms}`], terminal, now) : null;
     this.track(list, now);
     this.hold(list);
-    list = dropNested(list, new Set(collapsed ? [] : list.flatMap((a) => this.tree(all, a.address).map((s) => s.t.address))));
+    const trees = new Map(list.map(a => [a.address, this.tree(all, a.address)]));
+    const childTerminals = address => trees.get(address).filter(s => !s.record);
+    list = dropNested(list, new Set(collapsed ? [] : list.flatMap(a => childTerminals(a.address).map(s => s.t.address))));
     const tabCounts = countByTab(list);
     const byPriority = sort.id === "priority";
-    const urgency = new Map(list.map((a) => [a.address, Math.max(this.rank(a), ...this.tree(all, a.address).map((s) => RANK[kidStatus(s.t, this.listed)] ?? 0))]));
+    const urgency = new Map(list.map((a) => [a.address, Math.max(this.rank(a), ...childTerminals(a.address).map((s) => RANK[kidStatus(s.t, this.listed)] ?? 0))]));
     const rankOf = (a) => urgency.get(a.address);
     if (byPriority) list = [...list].sort((x, y) => rankOf(y) - rankOf(x) || this.since(y) - this.since(x) || y.seq - x.seq);
     // Groups in display order: priority sections or spaces, pinned agents where the setting puts them.
@@ -225,15 +278,15 @@ export default class Agents extends View {
     setAgentOrder(list.map((a) => a.address));
 
     const withKids = (a, i, g) => {
-      const subs = collapsed ? [] : this.tree(all, a.address);
+      const subs = collapsed ? [] : trees.get(a.address);
       const r = row(a, i, subs, g);
       if (this.folded.has(a.address)) return [r];
-      return [r, ...subs.map((s) => this.subRow(t, s, shown, byPriority))];
+      return [r, ...subs.map((s) => this.subRow(t, s, shown, byPriority, contextFor))];
     };
 
     // The fold chevron; folded, the count too, colored by the most urgent one.
     const fold = (a, subs) => {
-      const sts = subs.map((s) => kidStatus(s.t, this.listed));
+      const sts = subs.filter(s => !s.record).map(s => kidStatus(s.t, this.listed));
       const top = sts.reduce((m, s) => ((RANK[s] ?? 0) > (RANK[m] ?? 0) ? s : m), null);
       const open = !this.folded.has(a.address);
       return div()
@@ -280,6 +333,7 @@ export default class Agents extends View {
 
     const row = (a, i, subs = [], g = null) => {
       const pic = icon(a.program, 16, t.foreground);
+      const usage = contextFor(byAddress.get(a.address));
       const more = detail.get(a.address);
       // An agent on another machine (`vps/t7`) says which.
       const machine = a.address.includes("/") ? a.address.split("/")[0] : null;
@@ -291,6 +345,7 @@ export default class Agents extends View {
           .flex_none()
           .items_center()
           .gap(4)
+          .when(Boolean(usage), el => el.tooltip(usage.tooltip))
           .hover((s) => s.bg(t.hover))
           .on_click(() => run("pane.focus", { pane: a.pane }))
           .child(div().flex_1().min_w(0).whitespace_nowrap().text_right().text_color(t.muted).child(String(i + 1)))
@@ -349,6 +404,7 @@ export default class Agents extends View {
           .child(div().min_w(0).max_w(full && more ? 120 : 200).truncate().text_color(idle ? t.muted : t.foreground).child(name))
           .when(full && Boolean(more), el => el.child(div().flex_1().min_w(0).truncate().text_color(t.dim).child(`\u00b7 ${more}`))))
         .when(Boolean(machine), el => el.child(div().text_size(TYPE.xs).text_color(t.dim).child(machine)))
+        .when(Boolean(usage), el => el.child(usageBadge("agent-context-" + a.address, usage, t)))
         .when(subs.length > 0, el => el.child(fold(a, subs)))
         .when(this.hovered === a.address, el => el.child(pin))
         .when(this.hovered !== a.address && marked, el => el.child(svg("mods/workspace-chrome/pin.svg").size(11).flex_none().text_color(t.dim)))

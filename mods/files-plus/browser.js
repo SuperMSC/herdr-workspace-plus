@@ -3,7 +3,7 @@
 import { TYPE } from "./type-scale.js";
 import { div, svg } from "gpui-kit";
 import { v_flex, h_flex, Input, InputState, Popover } from "gpui-base";
-import { spaces, panes, focused, exec, watchFolder, theme, settings, window, openOverlay, shared, setShared } from "herdr";
+import { checking, spaces, panes, focused, exec, watchFolder, theme, settings, window, openOverlay, shared, setShared } from "herdr";
 
 import { openFileTab, projectContext } from "./file-tabs.js";
 import { fileIcon, iconButton } from "./icons.js";
@@ -55,7 +55,7 @@ export default class Browser {
     this.saved = new Map();
     this.entries = new Map(); this.folders = new Set(); this.pending = new Set(); this.marks = {};
     this.refresh(cx);
-    this.refreshTimer = cx.timer.every(10000, cx => this.refresh(cx));
+    if (!checking()) this.refreshTimer = cx.timer.every(10000, cx => this.refresh(cx));
   }
 
   watch(root, cx) {

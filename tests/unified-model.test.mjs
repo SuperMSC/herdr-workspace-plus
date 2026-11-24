@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
 import { buildGroups, assignSpace } from "../mods/project-spaces/model.js";
-import { unifiedRows, validateUnifiedTarget, unifiedAliasKey, UNIFIED_PAGE_SIZE } from "../mods/project-spaces/unified-model.js";
+import { unifiedRows, validateUnifiedTarget, unifiedAliasKey, subagentRecords, UNIFIED_PAGE_SIZE } from "../mods/project-spaces/unified-model.js";
+import { uiFunction } from "./helpers/ui-function.mjs";
 const program = { key: "codex", name: "Codex", agent: true, shell: false };
 const tab = (id, extra={}) => ({id,name:id,named:false,active:false,...extra});
 const space = (id, tabs=[], extra={}) => ({id,name:id,folder:"/same",machine:null,tabs,active:false,status:null,...extra});
@@ -16,6 +18,50 @@ function all(input,options={}) { const first=unifiedRows(input,{...options,page:
 const entities=result=>result.rows.filter(row=>row.address);
 const byAddress=(result,address)=>entities(result).find(row=>row.address===address);
 function freeze(value) {if(value&&typeof value==="object"){Object.freeze(value);for(const child of Object.values(value))freeze(child);}return value;}
+
+test("in-process records are read-only children that preserve the parent's status, section and identity", () => {
+  const f = fixture({ as: [agent("t1", "s1", "tab1", "p1", { status: "idle" })] });
+  const parent = f.terminals[0], original = byAddress(all(f, { view: "status" }), "t1");
+  parent.records = {
+    bad: [], wrongApp: { app: "codex", state: "working" }, null: null,
+    block: { app: "claude-code", state: "error", title: "Blocked task" },
+    completed: { app: "claude-code", state: "done", title: "Completed task" },
+    fallback: { app: "claude-code", state: { unknown: true }, title: null },
+    ...Object.fromEntries(Array.from({ length: 50 }, (_, n) => [`extra-${n}`, { app: "claude-code", state: "working", title: "Extra" }])),
+  };
+  const result = all(f, { view: "status" }), current = byAddress(result, "t1");
+  const records = result.rows.filter(row => row.kind === "record");
+  assert.equal(records.length, 20);
+  assert.equal(result.rows[result.rows.indexOf(current) + 1], records[0]);
+  assert.equal(current.status, original.status);
+  assert.equal(current.branchStatus, original.branchStatus);
+  assert.equal(current.section, original.section);
+  assert.deepEqual(result.agentOrder, ["t1"]);
+  assert.equal(current.childCount, 20);
+  assert.deepEqual(records.slice(0, 3).map(row => [row.title, row.status]), [["Blocked task", "blocked"], ["Completed task", "done"], ["fallback", null]]);
+  assert(records.every(row => row.target === current.target && row.depth === current.depth + 1 && !row.agent));
+  assert(!all(f, { view: "status", folded: [current.id] }).rows.some(row => row.kind === "record"));
+  assert(!all(f, { view: "status", statusFilter: "attention" }).rows.some(row => row.kind === "record"));
+  for (const bad of ["bad", [], null, { malformed: { app: false } }]) assert.deepEqual(subagentRecords({ ...parent, records: bad }), []);
+});
+
+test("unified render signature tracks bounded record changes and click uses the parent's navigation", () => {
+  const f = fixture(), terminal = f.terminals[0], commands = [];
+  terminal.records = { task: { app: "claude-code", state: "done", title: "Done subtask" } };
+  const source = readFileSync(new URL("../mods/project-spaces/unified.js", import.meta.url), "utf8").replace(/^import .*;\n/gm, "").replace("export default class", "return class");
+  const deps = { subagentRecords, validateUnifiedTarget, run: (...args) => commands.push(args),
+    terminals: () => f.terminals, agents: () => f.agents, panes: () => f.panes, spaces: () => f.spaces, focused: () => null };
+  const Sidebar = uiFunction(...Object.keys(deps), source)(...Object.values(deps)), sidebar = new Sidebar(), cx = { notify() {} };
+  const record = all(f).rows.find(row => row.kind === "record"), before = sidebar.signature(f.groups, f, {});
+  terminal.records.task = { app: "claude-code", state: "working", title: "Task updated" };
+  assert.notEqual(sidebar.signature(f.groups, f, {}), before);
+  sidebar.navigate(record, cx);
+  assert.deepEqual(commands, [["pane.focus", { terminal: "t1" }]]);
+  assert.equal(sidebar.held, undefined);
+  terminal.created_ms++;
+  sidebar.navigate(record, cx);
+  assert.equal(commands.length, 1);
+});
 
 test("canonical project assignment, ordering and source references survive the unified projection without mutations",()=>{
  const sp=[space("s1",[tab("tab1")],{folder:"/one"}),space("s2",[tab("tab2")],{folder:"/two"})],base=fixture({sp,ts:[terminal("t1"),terminal("t2")],as:[agent("t1","s1","tab1","p1"),agent("t2","s2","tab2","p2")],ps:[pane("t1","tab1","p1"),pane("t2","tab2","p2")]});

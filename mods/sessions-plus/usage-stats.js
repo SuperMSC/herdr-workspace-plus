@@ -1,10 +1,10 @@
 import { TYPE } from "./type-scale.js";
 import { div, svg } from "gpui-kit";
-import { h_flex, v_flex } from "gpui-base";
+import { h_flex, v_flex, Input, InputState } from "gpui-base";
 import { appHome, exec, theme, shared, setShared, window, settings, openOverlay, closeOverlay } from "herdr";
 import { PROVIDERS, UUID, sessionKey } from "./model.js";
 import { providerIcon } from "./icons.js";
-import { RANGES, TOKEN_PROVIDERS, usageResult, formatTokens, formatUsd, formatCount, shortModel, folderName } from "./usage-model.js";
+import { RANGES, TOKEN_PROVIDERS, PLAN_PRICE_KEY, planPrice, planMultiple, usageResult, formatTokens, formatUsd, formatCount, shortModel, folderName } from "./usage-model.js";
 
 export const USAGE_RANGE_KEY = "sessions-plus.usage-range";
 const STALE_AFTER = 300000;
@@ -43,7 +43,57 @@ export default class UsageStats {
   /** Called when the popover's Stats page is shown again. */
   shown(cx) { this.load(cx); }
 
-  close() { this.closed = true; }
+  close() { this.closed = true; this.releasePriceEditor(); }
+
+  releasePriceEditor() {
+    const editor = this.priceEditor;
+    this.priceEditor = null;
+    editor?.input.release();
+  }
+
+  editPrice(provider, cx) {
+    this.releasePriceEditor();
+    const saved = planPrice(shared(PLAN_PRICE_KEY)?.[provider]);
+    const editor = { provider, input: InputState.new({ value: saved === null ? "" : String(saved), placeholder: "Optional" }), error: "" };
+    this.priceEditor = editor;
+    editor.input.on("submit", (_event, cx) => this.savePrice(editor, cx));
+    editor.input.on("blur", (_event, cx) => this.savePrice(editor, cx, true));
+    editor.input.focus(); cx.notify();
+  }
+
+  savePrice(editor, cx, blurred = false) {
+    if (this.priceEditor !== editor) return;
+    const text = editor.input.value().trim(), price = planPrice(text);
+    if (text && price === null) {
+      if (blurred) this.releasePriceEditor();
+      else editor.error = "Enter a positive amount up to 100,000.";
+      cx.notify();
+      return;
+    }
+    const { provider } = editor, prices = { ...(shared(PLAN_PRICE_KEY) ?? {}) };
+    if (price === null ? Object.hasOwn(prices, provider) : price !== prices[provider]) {
+      if (price === null) delete prices[provider]; else prices[provider] = price;
+      setShared(PLAN_PRICE_KEY, prices);
+    }
+    this.releasePriceEditor(); cx.notify();
+  }
+
+  priceLine(t, provider, totals, range) {
+    const label = "Plan price (USD / month)", editor = this.priceEditor?.provider === provider ? this.priceEditor : null;
+    const monthlyPrice = planPrice(shared(PLAN_PRICE_KEY)?.[provider]);
+    const partial = this.data?.limited || this.data?.warnings?.some(warning => /some log folders|a log changed while/.test(warning));
+    const multiple = planMultiple({ cost: totals.cost, monthlyPrice, range, partial, unpricedTokens: totals.unpricedTokens });
+    const field = div().id(`usage-plan-price-${provider}`).w(84).h(23).px(5).flex_none().flex().items_center().rounded(4).border_1()
+      .border_color(editor?.error ? t.ansi3 : t.input || t.border).accessibility_label(label);
+    if (editor) field.child(Input.new(editor.input).w_full());
+    else field.cursor_pointer().hover(el => el.bg(t.hover)).on_click((_event, cx) => this.editPrice(provider, cx)).child(monthlyPrice === null ? "Optional" : String(monthlyPrice));
+    return v_flex().gap(3).flex_none().text_size(TYPE.xs).text_color(t.muted)
+      .child(h_flex().min_w(0).gap(6).items_center()
+        .child(div().flex_1().min_w(0).truncate().tooltip(label).child(label)).child(field))
+      .when(Boolean(editor?.error), el => el.child(div().text_color(t.ansi3).child(editor.error)))
+      .when(multiple !== null, el => el.child(div().id(`usage-plan-multiple-${provider}`).text_color(t.muted)
+        .tooltip("Estimated API list-price value of local usage ÷ your plan price, prorated to the range. Not a bill.").child(`≈ ${multiple.toFixed(1)}× plan`)));
+  }
 
   colors(t) { return { claude: t.accent, codex: t.ansi6 || t.done || t.muted }; }
 
@@ -86,7 +136,7 @@ export default class UsageStats {
     }));
   }
 
-  card(t, provider, totals, days, from) {
+  card(t, provider, totals, days, from, range) {
     const name = provider === "claude" ? "Claude Code" : PROVIDERS[provider];
     const top = totals.models[0], tokens = totals.tokens;
     return v_flex().id(`usage-card-${provider}`).when(this.compact, el => el.flex_none()).when(!this.compact, el => el.flex_1()).min_w(0).p(10).gap(6).rounded(8).border_1().border_color(t.border)
@@ -104,6 +154,7 @@ export default class UsageStats {
       // Always one price line, so Claude Code and Codex cards keep the same rows.
       .child(div().id(`usage-priced-${provider}`).text_size(TYPE.xs).text_color(totals.unpricedTokens > 0 ? t.ansi3 : t.dim).truncate()
         .child(totals.unpricedTokens > 0 ? `${formatTokens(totals.unpricedTokens)} tokens from models without a listed price` : "All models priced"))
+      .child(this.priceLine(t, provider, totals, range))
       .when(this.compact, el => el.child(this.bars(t, days, [provider], 22, "cost", from, `usage-spark-${provider}`)));
   }
 
@@ -139,7 +190,7 @@ export default class UsageStats {
       .when(Boolean(this.data?.warnings?.length), el => el.child(div().flex_none().when(this.compact, el => el.pr(8)).text_size(TYPE.xs).text_color(t.ansi3).child(this.data.warnings.join("\n"))));
     if (window()?.platform !== "macos") return content.child(div().p(10).text_color(t.muted).child("Usage statistics currently require macOS."));
     if (!view) return content.child(div().p(10).text_color(t.muted).child(this.loading ? "Reading local Claude Code and Codex logs…" : "No usage data yet."));
-    const cards = TOKEN_PROVIDERS.map(provider => this.card(t, provider, view.providers[provider], days.filter(day => Date.parse(day.date + "T00:00:00") >= view.from - 3600000), view.from));
+    const cards = TOKEN_PROVIDERS.map(provider => this.card(t, provider, view.providers[provider], days.filter(day => Date.parse(day.date + "T00:00:00") >= view.from - 3600000), view.from, range));
     if (this.compact) return content
       .child(v_flex().id("usage-cards").flex_1().min_h(0).gap(9).overflow_y_scrollbar().pr(16)
         .child(h_flex().flex_none().items_center().gap(6).px(2).child(div().flex_1().text_color(t.muted).child(`${view.label} · all agents`)).child(div().font_semibold().child(formatUsd(view.cost))))

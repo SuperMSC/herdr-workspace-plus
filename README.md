@@ -4,6 +4,20 @@
 
 Native Herdr mods for files, Git changes, saved agent sessions, project navigation and account quota. The personal layout is named **Agent-Workspace**; runtime mod IDs remain `files-plus`, `sessions-plus`, `project-spaces` and `agents-plus`.
 
+## 0.16.0
+
+- **Live context** appears beside exact local Claude Code and Codex sessions in Sessions, Agents Plus and the unified sidebar. The footer checks every 20 seconds while the window is active, and at once when it becomes active again, up to 40 agents and 8 MiB per check. Percentages warn at 80% and 90%. Unknown or exceeded windows show tokens. A successful check republishes an unchanged reading at most once per minute. Readings expire after two minutes without a new publication and are hidden in screenshot mode.
+- **Plan price** in Stats and Usage stats accepts an optional monthly USD price for each provider. The multiplier compares estimated API cost with that price, prorated for the seven-day view. Partial and unpriced results have no multiplier.
+- **Claude subagents** can expand beneath their parent in Agents Plus and the unified sidebar, up to 20 records per agent. Known states have labels. Clicking a record focuses the parent terminal.
+- **Fork** in the Sessions row menu uses the original directory and store of an exact local Claude Code or Codex session. It opens a new tab in the local space for that directory, or creates a space if there is no match. Sessions also matches transcript text once a three-character query settles for 600 ms. It searches up to 300 recent sessions within the current filters, with a 50-hit and 10-second limit. Partial searches are marked. No index or transcript text is cached.
+- **Interrupted sessions** in Sessions and Launch offer manual resume for retained local terminals whose root process changed and whose exact session is no longer running. Resume opens a new tab in the recorded local space if available, then falls back to a local space for the session directory or creates a new space. The recovered shell stays open. The footer retains up to 40 records for seven days. **Resume all** keeps the current focus.
+- **Zen mode** hides the footer, top toolbar, right panel and sidebar. Launch shows Zen mode and its shortcut when the current layout has a Zen binding. Leaving Zen restores the surfaces that were visible on entry. Run `node configure-launcher.mjs` to bind **Cmd+Option+Z** on macOS or **Ctrl+Shift+Z** elsewhere in the installed layout with a Sessions Plus footer. Conflicting keys are preserved. You can also exit with `herdr-app do layout.show --id status`.
+- **Project icons** in the sidebar preferences are on by default. The sidebar checks a project's local folder for a supported icon at startup, when the set of roots changes, or on **Refresh**. Remote and multi-root projects keep their usual icon. The private cache under `data/project-icons/` holds up to 200 files.
+- **Auto tab titles** in Sessions → Tools is on by default. The footer names an eligible unnamed local tab with one agent from its session alias or verified title, with up to 40 characters. Renaming a tab yourself takes over its title. Screenshot mode temporarily clears automatically managed titles in Herdr’s native tab bar. **Reveal** restores those titles while Auto tab titles is on. Turning the setting off clears titles still owned by the feature.
+- **Checks**: periodic timers no longer start while `herdr-app check` loads a mod, so the check reports no stranded tasks. A live window keeps the same refresh timers.
+
+Gallery inspirations include [Context Monitor](https://github.com/EMRahman/herdr-context-monitor), [worthit](https://github.com/namastex888/worthit), [agents-plus](https://github.com/jbped/herdr-mods), [hopback](https://github.com/avgvi/herdr-hopback), [Revive](https://github.com/jchen0824/herdr-mods), [Zen](https://github.com/CodeyPacker/herdr-mods), [Space icons](https://github.com/sockiplastsmurfen/herdr-space-icons) and [Auto Title](https://github.com/kryptamine/herdr-auto-title).
+
 ## 0.15.0
 
 - The footer quota popover has a **Stats** page beside **Quota**: Claude Code and Codex tokens (also excluding cache reads), requests, sessions and estimated cost for **Last 7 days** or **This month**, with a daily sparkline per agent. **Details** (also **Launch → Usage stats** and **Sessions → Tools**) adds a 30-day chart by cost or tokens, a per-model table (requests, input, output, cache read/write, total tokens and cost), projects grouped by Git checkout, and the largest sessions; a session opens its work timeline.
@@ -149,7 +163,7 @@ node ~/.config/herdr-app/mods/sessions-plus/deliverables-helper.mjs add \
 
 **Sessions → Tools → Screen picker**, also on live-session **⋯**, reads the captured terminal's screen and up to 200 history lines. **a–t** selects the current page; **Enter** copies. Preview paths, open HTTP(S) links, copy or add evidence to queue drafts. A replaced terminal or changed folder requires reopening.
 
-**Sessions → Tools → Screenshot mode** hides all four owned mods and their dialogs; **Reveal** restores them. Terminal output, Herdr's own tabs/notifications and unrelated mods remain visible.
+**Sessions → Tools → Screenshot mode** hides all four owned mods and their dialogs. **Reveal** restores them. Terminal output, Herdr's native tabs and notifications, and unrelated mods remain visible. Automatically managed tab titles are temporarily cleared.
 
 ## Project and agent sidebar
 

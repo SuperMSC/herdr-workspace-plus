@@ -1,5 +1,8 @@
 import { commandState, commandRevision } from "./commands-model.js";
 import { presetState, presetRevision } from "./presets-model.js";
+import { interruptedSessions, interruptionTitle } from "./live-model.js";
+export { TERMINAL_SESSIONS_KEY } from "./live-model.js";
+export { NAMES } from "./model.js";
 
 export function searchScore(text, query) {
   text = String(text).toLocaleLowerCase(); query = String(query).trim().toLocaleLowerCase();
@@ -22,6 +25,10 @@ export function launcherRows(snapshot, query = "") {
     return { id: `agent:${a.address}:${terminal.created_ms}`, kind: "agent", title: a.title || a.tab_name || a.program?.name || a.address,
       detail: `${a.status} · ${a.space_name || ""} · ${a.address}`, priority: a.status === "blocked" ? 0 : a.status === "done" ? 1 : 3, address: a.address, created: terminal.created_ms };
   });
+  for (const entry of interruptedSessions(snapshot.interrupted)) rows.push({
+    id: `interrupted:${entry.key}`, kind: "interrupted", group: "Interrupted sessions", title: interruptionTitle(entry, snapshot.names),
+    detail: entry.cwd, entry, created: entry.created_ms, revision: JSON.stringify(entry), priority: 3.5,
+  });
   rows.push(...snapshot.spaces.map(s => ({ id: `space:${s.id}`, kind: "space", title: s.name, detail: `${s.machine || "local"} · ${s.folder}`, space: s.id, priority: s.active ? 4 : 5 })));
   for (const project of commandState(snapshot.commands).projects) for (const c of project.commands) rows.push({
     id: `command:${project.key}:${c.id}`, kind: "command", title: c.title, detail: `${project.context.on || "local"} · ${c.cwd}`,
@@ -40,10 +47,12 @@ export function launcherRows(snapshot, query = "") {
     ["palette", "All Herdr commands", "Open the command palette"],
     ["settings", "Settings", "Herdr preferences"],
   ].map(([action, title, detail]) => ({ id: `action:${action}`, kind: "action", action, title, detail, priority: 8 })));
+  if (snapshot.zenLayout) rows.push({ id: "action:zen", kind: "action", action: "zen", title: "Zen mode",
+    detail: "Toggle workspace chrome", priority: 8, revision: snapshot.zenLayout });
   return rankRows(rows, query);
 }
 export function rankRows(rows, query) {
-  return rows.map(row => ({ ...row, score: searchScore(`${row.title} ${row.detail || ""}`, query) }))
+  return rows.map(row => ({ ...row, score: searchScore(`${row.title} ${row.detail || ""} ${row.group || ""}`, query) }))
     .filter(row => row.score !== null).sort((a, b) => a.score - b.score || a.priority - b.priority || a.title.localeCompare(b.title)).slice(0, 100);
 }
 export function sameLauncherTarget(captured, current) {
