@@ -133,7 +133,7 @@ function element() {
     if (name === "child" || name === "children") return item => { target.items.push(...(name === "child" ? [item] : item)); return proxy; };
     if (name === "when") return (show, fn) => show ? fn(proxy) : proxy;
     if (typeof name === "string" && name.startsWith("on_")) return fn => { target.events[name] = fn; return proxy; };
-    return name in target ? target[name] : value => { target.attrs[name] = value; return proxy; };
+    return name in target ? target[name] : (...args) => { target.attrs[name] = args.length ? args[0] : true; return proxy; };
   } });
   return proxy;
 }
@@ -153,6 +153,22 @@ function sessionView(registry) {
   const validation = n => ({ row: { ...identity(n), key: model.sessionKey(identity(n)), cwd: "/project/" + n, title: "Original " + n }, command: "/bin/claude" });
   return { panel, store, cx, tasks, commands, checks, running, layouts, validation, spaces };
 }
+
+test("the interrupted list states the height of its rows and scrolls when it reaches the cap", () => {
+  const { panel } = sessionView({});
+  for (const count of [1, 2, 6]) {
+    const registry = Object.fromEntries(Array.from({ length: count }, (_, index) => {
+      const n = index + 1;
+      return [`t${n}@${100 + n}`, saved(n, { interrupted: true })];
+    }));
+    const list = find(panel.interruptedStrip(interruptedSessions(registry), {}), "sessions-interrupted-list");
+    assert.equal(list.items.length, count);
+    assert(list.items.every(row => row.attrs.h === 25));
+    assert.equal(list.attrs.h, Math.min(136, count * 25 + (count - 1) * 3));
+    assert(list.attrs.h > 0);
+    assert.equal(list.attrs.overflow_y_scrollbar, true);
+  }
+});
 
 test("the interrupted strip resumes in sequence in a new local tab and leaves focus unchanged on Resume all", async () => {
   const registry = { "t1@101": saved(1, { interrupted: true }), "t2@102": saved(2, { interrupted: true }) };

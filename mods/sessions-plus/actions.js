@@ -2,7 +2,7 @@ import { TYPE } from "./type-scale.js";
 import { div } from "gpui-kit";
 import { v_flex } from "gpui-base";
 import { theme, window, openOverlay, closeOverlay, terminals, settings, setShared } from "herdr";
-import { canFork, FORK_REQUEST } from "./model.js";
+import { ACTION_MENU, actionsHeight, canFork, FORK_REQUEST } from "./model.js";
 
 export default class Actions {
   init(p, cx) {
@@ -58,7 +58,10 @@ export default class Actions {
 
   render() {
     const t = theme();
-    return v_flex().id("sessions-actions").size_full().min_h(0).overflow_y_scrollbar().p(6).gap(4).bg(t.popover || t.surface).text_color(t.foreground).text_size(TYPE.md)
+    const available = (globalThis.window?.viewport_size?.()?.height ?? Infinity) / (Number(settings().zoom) || 1) * 0.85;
+    const height = Math.min(available, actionsHeight(this.items.length, !this.canTrash));
+    return v_flex().id("sessions-actions").w_full().h(height).min_h(0).overflow_y_scrollbar().p(ACTION_MENU.padding).gap(ACTION_MENU.gap)
+      .bg(t.popover || t.surface).text_color(t.foreground).text_size(TYPE.md).line_height("18px")
       .track_focus(this.handle).pr(16).on_key_down((event, cx) => {
         if (event.key === "escape") closeOverlay(this.p.overlay);
         else if (event.key === "down" || event.key === "up") {
@@ -69,12 +72,13 @@ export default class Actions {
         else return;
         cx.stop_propagation(); cx.notify();
       })
-      .child(div().px(8).py(4).truncate().text_color(t.muted).child(this.target.title || "Session"))
-      .children(this.items.map((item, index) => div().id(`session-action-${item.id}`).px(8).py(7).rounded(5).cursor_pointer()
+      .child(div().h(ACTION_MENU.title).flex_none().px(8).py(4).truncate().text_color(t.muted).child(this.target.title || "Session"))
+      .children(this.items.map((item, index) => div().id(`session-action-${item.id}`).h(ACTION_MENU.row).flex_none().px(8).py(7).rounded(5).cursor_pointer()
         .text_color(item.disabled ? t.dim : item.id === "trash" ? t.ansi1 : t.foreground)
         .when(this.at === index, el => el.bg(t.selected))
         .on_mouse_move((_event, cx) => { if (!item.disabled) { this.at = index; cx.notify(); } })
         .on_click(() => this.choose(index)).child(item.label)))
-      .when(!this.canTrash, el => el.child(div().px(8).text_size(TYPE.xs).text_color(t.muted).child("Only stopped local sessions can be moved to Trash.")));
+      .when(!this.canTrash, el => el.child(div().h(ACTION_MENU.note).flex_none().px(8).text_size(TYPE.xs).line_height("14px").text_color(t.muted)
+        .child("Only stopped local sessions can\nbe moved to Trash.")));
   }
 }

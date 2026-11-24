@@ -4,6 +4,10 @@
 
 Native Herdr mods for files, Git changes, saved agent sessions, project navigation and account quota. The personal layout is named **Agent-Workspace**; runtime mod IDs remain `files-plus`, `sessions-plus`, `project-spaces` and `agents-plus`.
 
+## 0.16.1
+
+- Fixed empty frames in the Sessions row **⋯** menu and the header **Workspace tools** popover. Both menus now size to their contents and scroll in smaller windows. The **Interrupted** session list also displays its rows and scrolls when needed.
+
 ## 0.16.0
 
 - **Live context** appears beside exact local Claude Code and Codex sessions in Sessions, Agents Plus and the unified sidebar. The footer checks every 20 seconds while the window is active, and at once when it becomes active again, up to 40 agents and 8 MiB per check. Percentages warn at 80% and 90%. Unknown or exceeded windows show tokens. A successful check republishes an unchanged reading at most once per minute. Readings expire after two minutes without a new publication and are hidden in screenshot mode.

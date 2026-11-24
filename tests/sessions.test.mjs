@@ -187,7 +187,7 @@ test("the Fork action dispatches once to its owning view and starts a new tab ev
   const state = {}, commands = [], overlays = [], timers = [], tasks = [];
   const dependency = {
     ...model, View: class {}, shared: key => state[key], setShared: (key, next) => { state[key] = next; },
-    run: (...args) => commands.push(args), window: () => ({ platform: "macos" }), terminals: () => [], panes: () => [], agents: () => [], promptTargets: () => [],
+    run: (...args) => commands.push(args), window: () => ({ platform: "macos" }), settings: () => ({}), terminals: () => [], panes: () => [], agents: () => [], promptTargets: () => [],
     spaces: () => [{ id: "remote", machine: "box", folder: original.cwd }, { id: "local", folder: original.cwd }],
     openOverlay: value => overlays.push(value), closeOverlay: () => {},
   };
@@ -205,6 +205,10 @@ test("the Fork action dispatches once to its owning view and starts a new tab ev
   menu.init(target, cx);
   const fork = menu.items.findIndex(item => item.id === "fork");
   assert(fork >= 0);
+  // A popup sizes to its content: the overlay states the menu's full height (9 items plus the live-session note), never a collapsed frame.
+  assert.equal(overlays[0].kind, "popup");
+  assert.equal(overlays[0].height, model.actionsHeight(menu.items.length, true));
+  assert(overlays[0].height > 300);
   menu.choose(fork);
   assert.equal(state[model.FORK_REQUEST], target.forkToken);
   otherPanel.consumeFork(cx); panel.consumeFork(cx); panel.consumeFork(cx);

@@ -22,7 +22,7 @@ function element() {
     if (name === "when") return (condition, callback) => condition ? callback(proxy) : proxy;
     if (name.startsWith("on_")) return (...args) => { target.events[`${name}:${args.length > 1 ? args[0] : ""}`] = args.at(-1); return proxy; };
     if (name in target) return target[name];
-    return value => { target.attributes[name] = value; return proxy; };
+    return (...args) => { target.attributes[name] = args.length ? args[0] : true; return proxy; };
   } });
   return proxy;
 }
@@ -45,14 +45,14 @@ test('session and Trash hints appear only for empty lists while their filled vie
  }
 });
 
-function harness({ state = {}, target = session(), role, action = "trash", platform = "macos", response, context = {} } = {}) {
+function harness({ state = {}, target = session(), role, action = "trash", platform = "macos", zoom = 1, response, context = {} } = {}) {
   const calls = [], tasks = [], queued = [], timers = [], closed = [], overlays = [], launches = [], running = [];
   let stopped = 0, notifications = 0, defer = false;
   const p = { target, role, action, overlay: "overlay-1", node: "/fixture/node", stores: { claude: ["/fixture/claude"] } };
   const cx = { notify() { notifications++; }, stop_propagation() { stopped++; }, focus_handle: () => ({ focus() {} }),
     spawn(task) { if (defer) queued.push(task); else tasks.push(task(cx)); },
     timer: { every(ms, callback) { timers.push({ ms, callback }); }, after(ms, callback) { timers.push({ ms, callback }); } } };
-  const dependencies = { promptTargets, privacyGuard: () => null, settings: () => ({zoom:1}), ...model, agents: () => running, createTrashClient, View: class {}, div: element, svg: element, h_flex: element, v_flex: element,
+  const dependencies = { promptTargets, privacyGuard: () => null, settings: () => ({ zoom }), ...model, agents: () => running, createTrashClient, View: class {}, div: element, svg: element, h_flex: element, v_flex: element,
     InputState: { new: () => ({ on() {}, value: () => "", focus() {} }) }, Input: { new: element }, providerIcon: (provider, size) => element().id(`provider-icon-${provider}`).size(size),
     Popover: { new: id => element().id(id) },
     theme: () => ({}), window: () => ({ platform }), appHome: () => "/fixture/herdr", props: () => p,
@@ -103,6 +103,53 @@ test("right-click and overflow both open captured session actions, preserving Re
   const menu = f.menu(); f.p.target.title = "Changed focus"; menu.choose(0);
   assert.equal(f.overlays[2].props.role, "rename"); assert.equal(f.overlays[2].props.target.title, "Original session");
   assert.equal(f.calls.length, 1);
+});
+
+test("session actions state the same height on the popup and its scroll area for every row configuration", t => {
+  t.after(() => { delete globalThis.window; });
+  for (const [row, count, note, viewport] of [
+    [{ ...session(), ambiguous: true }, 8, false],
+    [session(), 9, false],
+    [{ ...session(), live: true }, 9, true],
+    [{ ...session(), remote: true }, 8, true],
+    [{ ...session(), live: true }, 9, true, 360],
+  ]) {
+    if (viewport) globalThis.window = { viewport_size: () => ({ height: viewport }) };
+    const f = harness({ zoom: 2 }), panel = new f.Panel();
+    panel.p = f.p;
+    panel.actionsRow(row);
+    const spec = f.overlays[0], menu = new f.Actions();
+    menu.init(spec.props, f.cx);
+    const tree = menu.render(), rows = tree.childNodes;
+    assert.equal(spec.kind, "popup");
+    assert.equal(tree.attributes.overflow_y_scrollbar, true);
+    assert.equal(menu.items.length, count);
+    assert.equal(rows.length, count + 1 + Number(note));
+    assert.deepEqual(rows.map(row => row.attributes.h), [26, ...Array(count).fill(32), ...(note ? [28] : [])]);
+    const natural = 12 + 26 + count * (32 + 4) + (note ? 28 + 4 : 0);
+    assert.equal(tree.attributes.h, Math.min(natural, viewport ? viewport / 2 * 0.85 : Infinity));
+    assert(tree.attributes.h > 0);
+    assert.equal(spec.height, tree.attributes.h);
+    assert.equal(typeof tree.events["on_key_down:"], "function");
+  }
+});
+
+test("Workspace tools popover allocates height from its rows, padding and border and caps it at the viewport", t => {
+  t.after(() => { delete globalThis.window; });
+  for (const [platform, count, viewport] of [["macos", 6], ["linux", 5], ["macos", 6, 320]]) {
+    if (viewport) globalThis.window = { viewport_size: () => ({ height: viewport }) };
+    const f = harness({ platform, zoom: 2 }), panel = new f.Panel();
+    const popover = panel.toolbarPopover("sessions-more-actions", "Workspace tools", "more.svg", panel.toolsMenu());
+    const menu = find(popover, "sessions-more-actions-popover").slots.content;
+    assert.equal(menu.attributes.id, "sessions-tools-menu");
+    assert.equal(menu.childNodes.length, count);
+    assert(menu.childNodes.every(row => row.attributes.h === 28));
+    const natural = 2 * (5 + 1) + count * 28 + (count - 1) * 2;
+    assert.equal(menu.attributes.h, Math.min(natural, viewport ? viewport / 2 * 0.85 : Infinity));
+    assert(menu.attributes.h > 0);
+    assert.equal(menu.attributes.overflow_y_scrollbar, true);
+    assert.equal(typeof menu.events["on_key_down:"], "function");
+  }
 });
 
 test("live, remote and unsupported-platform menus disable Trash", () => {

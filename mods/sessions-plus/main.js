@@ -3,7 +3,7 @@ import { privacyGuard } from "./privacy.js";
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, Input, InputState, Popover } from "gpui-base";
 import { appHome, checking, exec, spaces, panes, terminals, agents, machines, focused, theme, run, props, window, settings, shared, setShared, openOverlay, layout } from "herdr";
-import { NAMES, PENDING, OPERATIONS, CHANGE_KEY, OPERATION_TTL, LIVE_KEY, FORK_REQUEST, TERMINAL_SESSIONS_KEY, interruptedSessions, canFork, operationPending, PROVIDERS, ORIGINS, historyGroup, historyTime, sessionRows, filterRows, launchCommand, liveIdentity, sessionKey } from "./model.js";
+import { NAMES, PENDING, OPERATIONS, CHANGE_KEY, OPERATION_TTL, LIVE_KEY, FORK_REQUEST, TERMINAL_SESSIONS_KEY, interruptedSessions, canFork, operationPending, PROVIDERS, ORIGINS, historyGroup, historyTime, sessionRows, filterRows, launchCommand, liveIdentity, sessionKey, actionsHeight } from "./model.js";
 import { currentInterruption, interruptionTitle, localLayoutReady, sameSession } from "./live-model.js";
 import Rename from "./rename.js";
 import Quota from "./quota.js";
@@ -317,7 +317,9 @@ export default class SessionsPlus extends View {
     const promptTarget = row.live ? promptTargets(agents(), terminals(), panes()).find(target => target.address === row.address && target.created === row.updated) : null;
     const forkToken = canFork(row) ? `${Date.now()}-${Math.random()}` : null;
     this.forkTarget = forkToken ? { token: forkToken, row: { ...row } } : null;
-    openOverlay({ mod: "sessions-plus", kind: "popup", width: 230, height: 390,
+    const viewport = globalThis.window?.viewport_size?.()?.height ?? Infinity, zoom = Number(settings().zoom) || 1;
+    const items = 8 + (forkToken ? 1 : 0), note = row.live || row.remote || window()?.platform !== "macos";
+    openOverlay({ mod: "sessions-plus", kind: "popup", width: 230, height: Math.min(viewport / zoom * .85, actionsHeight(items, note)),
       props: { role: "actions", target: { ...row }, project: { root: row.cwd, on }, promptTarget: promptTarget || null, forkToken, node: this.p.node, stores: this.p.stores } });
   }
 
@@ -417,7 +419,10 @@ export default class SessionsPlus extends View {
       if (current.cwd !== menuContext.cwd || (current.on ?? null) !== (menuContext.on ?? null)) { this.error = "The project changed. Reopen Workspace tools for its current folder."; cx.notify(); return; }
       item.action(cx); cx.notify();
     };
-    return v_flex().id("sessions-tools-menu").w(220).max_h(340).min_h(0).overflow_y_scrollbar().p(5).gap(2).rounded(6).border_1().border_color(t.border).bg(t.popover || t.surface).text_color(t.foreground).text_size(TYPE.md).pr(16)
+    const rowHeight = 28, gap = 2, padding = 5, border = 1;
+    const viewport = globalThis.window?.viewport_size?.()?.height ?? Infinity, zoom = Number(settings().zoom) || 1;
+    const menuHeight = Math.min(340, viewport / zoom * 0.85, 2 * (padding + border) + items.length * rowHeight + (items.length - 1) * gap);
+    return v_flex().id("sessions-tools-menu").w(220).h(menuHeight).min_h(0).overflow_y_scrollbar().p(padding).gap(gap).rounded(6).border_1().border_color(t.border).bg(t.popover || t.surface).text_color(t.foreground).text_size(TYPE.md).pr(16)
       .on_key_down((event, cx) => {
         const key = String(event.key || "").toLowerCase();
         if (["down", "arrowdown", "up", "arrowup"].includes(key)) {
@@ -426,7 +431,7 @@ export default class SessionsPlus extends View {
         else return;
         cx.stop_propagation(); cx.notify();
       })
-      .children(items.map((item, index) => h_flex().id(item.id).h(28).px(7).gap(8).items_center().rounded(4).cursor_pointer()
+      .children(items.map((item, index) => h_flex().id(item.id).h(rowHeight).flex_none().px(7).gap(8).items_center().rounded(4).cursor_pointer()
         .when(this.panelMenu === "sessions-more-actions" && this.toolIndex === index, el => el.bg(t.selected))
         .hover(el => el.bg(t.hover)).tooltip(item.title).accessibility_label(item.title)
         .on_click((_event, cx) => { cx.stop_propagation(); choose(item, cx); })
@@ -434,6 +439,8 @@ export default class SessionsPlus extends View {
   }
 
   interruptedStrip(entries, t) {
+    const rowHeight = 25, gap = 3;
+    const listHeight = Math.min(136, entries.length * rowHeight + Math.max(0, entries.length - 1) * gap);
     const button = (id, label, action) => div().id(id).px(6).py(3).flex_none().rounded(4).text_size(TYPE.xs)
       .text_color(this.restoring ? t.dim : t.foreground)
       .when(!this.restoring, el => el.cursor_pointer().hover(el => el.bg(t.hover)).on_click((_event, cx) => action(cx))).child(label);
@@ -443,8 +450,8 @@ export default class SessionsPlus extends View {
         .child(div().flex_1().truncate().font_medium().text_size(TYPE.sm).child(`Interrupted · ${entries.length}`))
         .child(button("sessions-interrupted-resume-all", "Resume all", cx => this.resumeInterrupted(entries, cx, { background: true })))
         .child(button("sessions-interrupted-dismiss", "Dismiss", cx => this.dismissInterrupted(entries, cx))))
-      .child(v_flex().id("sessions-interrupted-list").max_h(136).gap(3).overflow_y_scrollbar()
-        .children(entries.map(entry => h_flex().id("sessions-interrupted-" + entry.key).h(25).flex_none().min_w(0).gap(5).items_center()
+      .child(v_flex().id("sessions-interrupted-list").h(listHeight).flex_none().gap(gap).overflow_y_scrollbar()
+        .children(entries.map(entry => h_flex().id("sessions-interrupted-" + entry.key).h(rowHeight).flex_none().min_w(0).gap(5).items_center()
           .child(div().flex_1().truncate().text_size(TYPE.sm).text_color(t.muted).tooltip(entry.cwd).child(interruptionTitle(entry, names)))
           .child(button("sessions-interrupted-resume-" + entry.key, "Resume", cx => this.resumeInterrupted([entry], cx))))));
   }

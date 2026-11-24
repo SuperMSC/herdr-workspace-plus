@@ -86,6 +86,14 @@ export function filterRows(rows, { cwd, remote = false, all = false, provider = 
     (provider === "all" || row.provider === provider) && (source === "all" || (row.origin || "unknown") === source) && (!search || [row.title, row.cwd, row.id, row.provider].some(value => String(value ?? "").toLocaleLowerCase().includes(search))));
 }
 
+// Heights include vertical padding. The note has two 14px lines.
+export const ACTION_MENU = { padding: 6, gap: 4, title: 26, row: 32, note: 28 };
+
+export function actionsHeight(count, note) {
+  const itemHeight = count * (ACTION_MENU.row + ACTION_MENU.gap);
+  return 2 * ACTION_MENU.padding + ACTION_MENU.title + itemHeight + (note ? ACTION_MENU.gap + ACTION_MENU.note : 0);
+}
+
 export function canFork(row) {
   return Boolean(!row?.remote && !row?.ambiguous && ["claude", "codex"].includes(row?.provider) && typeof row.id === "string" && UUID.test(row.id) &&
     typeof row.store === "string" && row.store.startsWith("/") && row.key === sessionKey(row));
