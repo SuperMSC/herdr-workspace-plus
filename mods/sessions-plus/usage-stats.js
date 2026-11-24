@@ -4,7 +4,7 @@ import { h_flex, v_flex, Input, InputState } from "gpui-base";
 import { appHome, exec, theme, shared, setShared, window, settings, openOverlay, closeOverlay } from "herdr";
 import { PROVIDERS, UUID, sessionKey } from "./model.js";
 import { providerIcon } from "./icons.js";
-import { RANGES, TOKEN_PROVIDERS, PLAN_PRICE_KEY, planPrice, planMultiple, usageResult, formatTokens, formatUsd, formatCount, shortModel, folderName } from "./usage-model.js";
+import { RANGES, TOKEN_PROVIDERS, PLAN_PRICE_KEY, planPrice, planMultiple, planLabel, usageResult, formatTokens, formatUsd, formatCount, shortModel, folderName } from "./usage-model.js";
 
 export const USAGE_RANGE_KEY = "sessions-plus.usage-range";
 const STALE_AFTER = 300000;
@@ -92,7 +92,10 @@ export default class UsageStats {
         .child(div().flex_1().min_w(0).truncate().tooltip(label).child(label)).child(field))
       .when(Boolean(editor?.error), el => el.child(div().text_color(t.ansi3).child(editor.error)))
       .when(multiple !== null, el => el.child(div().id(`usage-plan-multiple-${provider}`).text_color(t.muted)
-        .tooltip("Estimated API list-price value of local usage ÷ your plan price, prorated to the range. Not a bill.").child(`≈ ${multiple.toFixed(1)}× plan`)));
+        .tooltip(`$${multiple.cost.toFixed(2)} at API list prices vs $${multiple.plan.toFixed(2)} of plan for this range.\n` +
+          "Estimated API list-price value of local usage ÷ your plan price, prorated to the range. Not a bill." +
+          (multiple.floor ? "\nAt least: unpriced models or an incomplete read are left out, so the real value is higher." : ""))
+        .child(planLabel(multiple))));
   }
 
   colors(t) { return { claude: t.accent, codex: t.ansi6 || t.done || t.muted }; }

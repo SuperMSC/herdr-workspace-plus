@@ -4,6 +4,10 @@
 
 Native Herdr mods for files, Git changes, saved agent sessions, project navigation and account quota. The personal layout is named **Agent-Workspace**; runtime mod IDs remain `files-plus`, `sessions-plus`, `project-spaces` and `agents-plus`.
 
+## 0.16.2
+
+- **Plan price** shows a lower bound (`≥`) instead of nothing when a provider has unpriced models such as `codex-auto-review` or the read was incomplete. Below one plan's worth it reads as a share, such as `≥ 1.5% of plan`, and the tooltip gives the dollar amounts.
+
 ## 0.16.1
 
 - Fixed empty frames in the Sessions row **⋯** menu and the header **Workspace tools** popover. Both menus now size to their contents and scroll in smaller windows. The **Interrupted** session list also displays its rows and scrolls when needed.
@@ -11,7 +15,7 @@ Native Herdr mods for files, Git changes, saved agent sessions, project navigati
 ## 0.16.0
 
 - **Live context** appears beside exact local Claude Code and Codex sessions in Sessions, Agents Plus and the unified sidebar. The footer checks every 20 seconds while the window is active, and at once when it becomes active again, up to 40 agents and 8 MiB per check. Percentages warn at 80% and 90%. Unknown or exceeded windows show tokens. A successful check republishes an unchanged reading at most once per minute. Readings expire after two minutes without a new publication and are hidden in screenshot mode.
-- **Plan price** in Stats and Usage stats accepts an optional monthly USD price for each provider. The multiplier compares estimated API cost with that price, prorated for the seven-day view. Partial and unpriced results have no multiplier.
+- **Plan price** in Stats and Usage stats accepts an optional monthly USD price for each provider. The multiplier compares estimated API cost with that price, prorated for the seven-day view. With partial data or unpriced models (such as `codex-auto-review`) it shows a lower bound, `≥ N× plan`.
 - **Claude subagents** can expand beneath their parent in Agents Plus and the unified sidebar, up to 20 records per agent. Known states have labels. Clicking a record focuses the parent terminal.
 - **Fork** in the Sessions row menu uses the original directory and store of an exact local Claude Code or Codex session. It opens a new tab in the local space for that directory, or creates a space if there is no match. Sessions also matches transcript text once a three-character query settles for 600 ms. It searches up to 300 recent sessions within the current filters, with a 50-hit and 10-second limit. Partial searches are marked. No index or transcript text is cached.
 - **Interrupted sessions** in Sessions and Launch offer manual resume for retained local terminals whose root process changed and whose exact session is no longer running. Resume opens a new tab in the recorded local space if available, then falls back to a local space for the session directory or creates a new space. The recovered shell stays open. The footer retains up to 40 records for seven days. **Resume all** keeps the current focus.

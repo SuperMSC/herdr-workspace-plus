@@ -15,11 +15,21 @@ const { claudeRecord, codexRecord, freshState, summarize, rangeStarts, formatTok
 test("plan value uses the full monthly price or the prorated seven-day price and requires complete pricing", () => {
   const { planMultiple, planPrice } = usageModel;
   const values = { cost: 42, monthlyPrice: 10, range: "month", unpricedTokens: 0 };
-  assert.equal(planMultiple(values), 4.2);
-  assert.equal(planMultiple({ ...values, range: "7d", cost: 10 * (7 / 30.4375) * 2 }), 2);
-  assert.equal(planMultiple({ ...values, cost: 0 }), 0);
-  assert.equal(planMultiple({ ...values, partial: true }), null);
-  assert.equal(planMultiple({ ...values, unpricedTokens: 100 }), null);
+  const pick = result => result && { value: result.value, floor: result.floor };
+  assert.deepEqual(pick(planMultiple(values)), { value: 4.2, floor: false });
+  assert.deepEqual(pick(planMultiple({ ...values, range: "7d", cost: 10 * (7 / 30.4375) * 2 })), { value: 2, floor: false });
+  assert.deepEqual(pick(planMultiple({ ...values, cost: 0 })), { value: 0, floor: false });
+  // Partial reads and unpriced models (e.g. codex-auto-review) make the priced part a lower bound, not a reason to hide it.
+  assert.deepEqual(pick(planMultiple({ ...values, partial: true })), { value: 4.2, floor: true });
+  assert.deepEqual(pick(planMultiple({ ...values, unpricedTokens: 100 })), { value: 4.2, floor: true });
+  assert.equal(planMultiple({ ...values, range: "7d", cost: 3 }).plan, 10 * 7 / 30.4375);
+  // Light use reads as a share of the plan instead of "0.0×".
+  assert.equal(usageModel.planLabel({ value: 4.2, floor: false }), "≈ 4.2× plan");
+  assert.equal(usageModel.planLabel({ value: 12.34, floor: false }), "≈ 12× plan");
+  assert.equal(usageModel.planLabel({ value: 2.95 / 200, floor: true }), "≥ 1.5% of plan");
+  assert.equal(usageModel.planLabel({ value: 0.42, floor: false }), "≈ 42% of plan");
+  assert.equal(usageModel.planLabel({ value: 0.0004, floor: true }), "≥ 0.04% of plan");
+  assert.equal(planMultiple({ ...values, cost: 0, unpricedTokens: 100 }), null);
   for (const monthlyPrice of [undefined, null, "", 0, -20, 100001, Infinity, "0xff", true]) assert.equal(planMultiple({ ...values, monthlyPrice }), null);
   assert.equal(planPrice(" 100000 "), 100000);
   assert.equal(planPrice("19.95"), 19.95);
@@ -288,7 +298,8 @@ test("both Stats presentations save optional provider prices, validate edits, an
     assert.match(text(find(stats.render(f.cx), "usage-plan-multiple-claude")), /≈ 4\.2× plan/);
     assert.equal(find(stats.render(f.cx), "usage-plan-multiple-codex"), undefined);
     stats.data.limited = true;
-    assert.equal(find(stats.render(f.cx), "usage-plan-multiple-claude"), undefined);
+    assert.match(text(find(stats.render(f.cx), "usage-plan-multiple-claude")), /≥ 4\.2× plan/);
+    stats.data.limited = false;
     price().events.on_click({}, f.cx);
     editors[1].text = ""; editors[1].events.blur({}, f.cx);
     assert.deepEqual(f.state[usageModel.PLAN_PRICE_KEY], { codex: 20 });

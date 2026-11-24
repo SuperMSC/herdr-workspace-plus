@@ -196,11 +196,21 @@ export function planPrice(value) {
   return Number.isFinite(value) && value > 0 && value <= 100000 ? value : null;
 }
 
+/** Priced cost over the prorated plan price. With partial data or unpriced tokens the priced part is
+ *  only a lower bound (`floor`); a zero lower bound says nothing and is hidden. */
 export function planMultiple({ cost, monthlyPrice, range, partial = false, unpricedTokens = 0 }) {
   const price = planPrice(monthlyPrice);
-  if (price === null || !Object.hasOwn(RANGES, range) || partial || unpricedTokens > 0 || !Number.isFinite(cost) || cost < 0) return null;
-  const multiple = cost / (range === "7d" ? price * (7 / 30.4375) : price);
-  return Number.isFinite(multiple) ? multiple : null;
+  if (price === null || !Object.hasOwn(RANGES, range) || !Number.isFinite(cost) || cost < 0) return null;
+  const plan = range === "7d" ? price * (7 / 30.4375) : price, value = cost / plan, floor = Boolean(partial) || unpricedTokens > 0;
+  return Number.isFinite(value) && !(floor && value === 0) ? { value, floor, cost, plan } : null;
+}
+
+/** "≈ 4.2× plan" from one plan's worth up; below that a share, so light use never reads as "0.0×". */
+export function planLabel({ value, floor }) {
+  const sign = floor ? "≥" : "≈";
+  if (value >= 1) return `${sign} ${value.toFixed(value >= 10 ? 0 : 1)}× plan`;
+  const share = value * 100;
+  return `${sign} ${share >= 10 ? share.toFixed(0) : share >= 1 ? share.toFixed(1) : share.toFixed(2)}% of plan`;
 }
 // Grouped by hand: the GPUI script runtime need not ship locale data.
 export const formatCount = value => String(Math.round(Number(value) || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
