@@ -8,7 +8,8 @@ import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { PROVIDERS } from "./model.js";
-import { claudeRecord, codexRecord, freshState, retentionStart, summarize } from "./usage-model.js";
+import { claudeRecord, codexRecord, freshState, retentionStart, summarize, withAccountUsage } from "./usage-model.js";
+import { codexAccountUsage } from "./quota.mjs";
 import { PRICING_DATE } from "./usage-pricing.js";
 import { scan } from "./history.mjs";
 
@@ -161,7 +162,18 @@ export function collectUsage(options = {}) {
   return { ...summarize(files, { now, limited: state.limited, warnings: [...state.warnings], projectOf: projectRoots(), titles }), pricingDate: PRICING_DATE, cached: Boolean(dir) };
 }
 
+/** Local logs, then Codex's account-wide daily tokens over them. Without that reading, Codex stays local-only. */
+export async function collectUsageWithAccount(options = {}, { accountUsage = codexAccountUsage } = {}) {
+  const result = collectUsage(options);
+  if (options.account === false) return result;
+  let account;
+  try { account = await accountUsage({ store: options.stores?.codex }); } catch { account = { state: "unavailable", message: "Codex account usage could not be read." }; }
+  if (account?.state === "ok") return withAccountUsage(result, account.days, { now: result.generatedAt });
+  if (account?.reason !== "missing-cli") result.warnings.push(`${account?.message || "Codex account usage is unavailable."} Codex shows local logs only, which miss deleted and ephemeral sessions.`);
+  return result;
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  try { process.stdout.write(JSON.stringify(collectUsage(json(process.argv[2] || "{}") ?? {}))); }
+  try { process.stdout.write(JSON.stringify(await collectUsageWithAccount(json(process.argv[2] || "{}") ?? {}))); }
   catch (error) { process.stdout.write(JSON.stringify({ error: String(error.message || error) })); process.exitCode = 1; }
 }

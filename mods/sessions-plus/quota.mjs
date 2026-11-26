@@ -6,7 +6,7 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createHash } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
-import { claudeWindows, codexWindows, agyWindows } from "./quota-model.js";
+import { claudeWindows, codexWindows, codexUsageDays, agyWindows } from "./quota-model.js";
 
 const parse = text => { try { return JSON.parse(text); } catch { return null; } };
 const MAX = 512 * 1024;
@@ -64,7 +64,8 @@ function authenticationError(error) {
   return /\b(?:not (?:authenticated|logged in|signed in)|(?:chatgpt )?authentication (?:is )?required|requires? (?:chatgpt )?authentication)\b/i.test(message);
 }
 
-export async function codexQuota({ executable = command("codex"), spawnProcess = spawn, temp = tmpdir(), store = process.env.CODEX_HOME } = {}) {
+/** One read-only app-server account request. `done` turns its result into the reply; `what` names it in messages. */
+async function codexRequest(method, done, what, { executable = command("codex"), spawnProcess = spawn, temp = tmpdir(), store = process.env.CODEX_HOME } = {}) {
   if (!executable) return unavailable("codex", "Install and sign in to Codex, then refresh.", { reason: "missing-cli" });
   const scratch = mkdtempSync(join(temp, "herdr-quota-codex-"));
   try {
@@ -78,31 +79,31 @@ export async function codexQuota({ executable = command("codex"), spawnProcess =
         killTimer = setTimeout(() => child?.kill("SIGKILL"), 1200);
         if (!child) { clearTimeout(killTimer); resolveResult(result); }
       };
-      const timer = setTimeout(() => { child?.kill("SIGTERM"); finish(unavailable("codex", "Codex quota query timed out. Try again later.")); }, 18000);
+      const timer = setTimeout(() => { child?.kill("SIGTERM"); finish(unavailable("codex", `Codex ${what} query timed out. Try again later.`)); }, 18000);
       try {
         child = spawnProcess(executable, ["-c", `log_dir=${JSON.stringify(scratch)}`, "-c", "analytics.enabled=false", "app-server", "--stdio"], {
           stdio: ["pipe", "pipe", "pipe"], cwd: scratch, env: { ...process.env, ...(store ? { CODEX_HOME: store } : {}) },
         });
-      } catch (error) { finish(unavailable("codex", "Could not start the Codex quota reader.", error.code === "ENOENT" ? { reason: "missing-cli" } : {})); return; }
+      } catch (error) { finish(unavailable("codex", `Could not start the Codex ${what} reader.`, error.code === "ENOENT" ? { reason: "missing-cli" } : {})); return; }
       const send = value => { if (!child.stdin.destroyed) child.stdin.write(JSON.stringify(value) + "\n"); };
       child.stdin.on("error", () => {});
       child.stdout.setEncoding?.("utf8");
       child.stderr.on("data", () => {});
-      child.on("error", error => { finish(unavailable("codex", "Could not start the Codex quota reader.", error.code === "ENOENT" ? { reason: "missing-cli" } : {})); clearTimeout(killTimer); resolveResult(result); });
-      child.on("close", () => { clearTimeout(timer); clearTimeout(killTimer); resolveResult(result ?? unavailable("codex", "Codex did not return quota information.")); });
+      child.on("error", error => { finish(unavailable("codex", `Could not start the Codex ${what} reader.`, error.code === "ENOENT" ? { reason: "missing-cli" } : {})); clearTimeout(killTimer); resolveResult(result); });
+      child.on("close", () => { clearTimeout(timer); clearTimeout(killTimer); resolveResult(result ?? unavailable("codex", `Codex did not return ${what} information.`)); });
       child.stdout.on("data", chunk => {
         bytes += Buffer.byteLength(chunk);
-        if (bytes > MAX) { child.kill("SIGTERM"); finish(unavailable("codex", "Codex quota response was too large.")); return; }
+        if (bytes > MAX) { child.kill("SIGTERM"); finish(unavailable("codex", `Codex ${what} response was too large.`)); return; }
         buffer += chunk.toString("utf8");
         while (buffer.includes("\n")) {
           const end = buffer.indexOf("\n"), record = parse(buffer.slice(0, end)); buffer = buffer.slice(end + 1);
           if (result || !record) continue;
           if (record.id === 1) {
-            if (record.error) { finish(unavailable("codex", "Codex could not initialize its quota reader.")); continue; }
+            if (record.error) { finish(unavailable("codex", `Codex could not initialize its ${what} reader.`)); continue; }
             send({ method: "initialized", params: {} });
-            send({ id: 2, method: "account/rateLimits/read", params: {} });
+            send({ id: 2, method, params: {} });
           } else if (record.id === 2) {
-            finish(record.error ? unavailable("codex", "Codex could not refresh account quota.", authenticationError(record.error) ? { reason: "signed-out" } : {}) : reading("codex", codexWindows(record.result)));
+            finish(record.error ? unavailable("codex", `Codex could not refresh account ${what}.`, authenticationError(record.error) ? { reason: "signed-out" } : {}) : done(record.result));
           } else if (record.id !== undefined && record.method) {
             // Never log in, approve work or provide externally managed credentials.
             send({ id: record.id, error: { code: -32601, message: "Read-only quota client" } });
@@ -113,6 +114,14 @@ export async function codexQuota({ executable = command("codex"), spawnProcess =
     });
   } finally { rmSync(scratch, { recursive: true, force: true }); }
 }
+
+export const codexQuota = (options = {}) => codexRequest("account/rateLimits/read", result => reading("codex", codexWindows(result)), "quota", options);
+
+/** Account-wide daily Codex tokens, including sessions deleted or never written locally. Only dates and counts are kept. */
+export const codexAccountUsage = (options = {}) => codexRequest("account/usage/read", result => {
+  const days = codexUsageDays(result);
+  return days.length ? { provider: "codex", state: "ok", days, updatedAt: Date.now() } : unavailable("codex", "Codex reported no daily token usage for this account.");
+}, "usage", options);
 
 export function supportsAgyUsage(version) {
   const parts = /(?:^|\s)v?(\d+)\.(\d+)\.(\d+)(?:\s|$)/.exec(version.trim());

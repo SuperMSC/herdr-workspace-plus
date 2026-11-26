@@ -93,7 +93,7 @@ export default class UsageStats {
       .when(Boolean(editor?.error), el => el.child(div().text_color(t.ansi3).child(editor.error)))
       .when(multiple !== null, el => el.child(div().id(`usage-plan-multiple-${provider}`).text_color(t.muted)
         .tooltip(`$${multiple.cost.toFixed(2)} at API list prices vs $${multiple.plan.toFixed(2)} of plan for this range.\n` +
-          "Estimated API list-price value of local usage ÷ your plan price, prorated to the range. Not a bill." +
+          (totals.account ? "Estimated API list-price value of your Codex account tokens ÷ your plan price, prorated to the range. Not a bill." : "Estimated API list-price value of local usage ÷ your plan price, prorated to the range. Not a bill.") +
           (multiple.floor ? "\nAt least: unpriced models or an incomplete read are left out, so the real value is higher." : ""))
         .child(planLabel(multiple))));
   }
@@ -139,20 +139,46 @@ export default class UsageStats {
     }));
   }
 
+  /** Codex with account totals: account tokens, then what local logs still hold. Same row count as the other cards. */
+  accountRows(t, provider, totals) {
+    const account = totals.account, tokens = totals.tokens;
+    return [
+      div().id(`usage-account-${provider}`).text_size(TYPE.sm).text_color(t.muted).truncate()
+        .tooltip("Reported by your Codex account for this range, including sessions deleted from this Mac, run with --ephemeral, or used on other devices.\n" +
+          `Account data through ${account.through ?? "—"}; later days (usually today) use local logs.`)
+        .child(`${formatTokens(account.tokens)} tokens · Codex account`),
+      div().id(`usage-fresh-${provider}`).text_size(TYPE.sm).text_color(t.muted).truncate()
+        .tooltip("Only sessions whose logs are still on this Mac. Requests, sessions, models, projects and the token split below come from these logs.")
+        .child(`Local logs ${formatTokens(tokens.total)} · ${formatCount(totals.requests)} requests · ${formatCount(totals.sessions)} sessions`),
+      div().id(`usage-tokens-${provider}`).text_size(TYPE.xs).text_color(t.dim).truncate()
+        .tooltip(`Local logs\nInput ${formatCount(tokens.input)}\nOutput ${formatCount(tokens.output)}\nCache read ${formatCount(tokens.cacheRead)}\nCache write ${formatCount(tokens.cacheWrite)}`)
+        .child(`In ${formatTokens(tokens.input)} · Out ${formatTokens(tokens.output)} · Cache read ${formatTokens(tokens.cacheRead)} · Cache write ${formatTokens(tokens.cacheWrite)}`),
+    ];
+  }
+
+  costTooltip(totals) {
+    const account = totals.account;
+    if (!account) return "Estimated at API list prices; not what a subscription bills";
+    if (account.rate === null) return "No local Codex logs to estimate a price from: the cost covers local logs only.";
+    return `Estimated: Codex account tokens × the average API list price per token of local Codex logs ($${(account.rate * 1e6).toFixed(3)} per 1M tokens).\n` +
+      `Local logs alone: ${formatUsd(account.localCost)}. Not what a subscription bills.`;
+  }
+
   card(t, provider, totals, days, from, range) {
     const name = provider === "claude" ? "Claude Code" : PROVIDERS[provider];
     const top = totals.models[0], tokens = totals.tokens;
     return v_flex().id(`usage-card-${provider}`).when(this.compact, el => el.flex_none()).when(!this.compact, el => el.flex_1()).min_w(0).p(10).gap(6).rounded(8).border_1().border_color(t.border)
       .child(h_flex().min_w(0).items_center().gap(8).child(providerIcon(provider, 21).flex_none())
         .child(div().flex_1().min_w(0).truncate().font_semibold().child(name))
-        .child(div().id(`usage-cost-${provider}`).flex_none().text_size(TYPE.lg).font_semibold().tooltip("Estimated at API list prices; not what a subscription bills").child(formatUsd(totals.cost))))
-      .child(div().text_size(TYPE.sm).text_color(t.muted).child(`${formatTokens(tokens.total)} tokens · ${formatCount(totals.requests)} requests · ${formatCount(totals.sessions)} sessions`))
+        .child(div().id(`usage-cost-${provider}`).flex_none().text_size(TYPE.lg).font_semibold().tooltip(this.costTooltip(totals)).child(`${totals.account && totals.account.rate !== null ? "≈ " : ""}${formatUsd(totals.cost)}`)))
+      .when(Boolean(totals.account), el => el.children(this.accountRows(t, provider, totals)))
+      .when(!totals.account, el => el.child(div().text_size(TYPE.sm).text_color(t.muted).child(`${formatTokens(tokens.total)} tokens · ${formatCount(totals.requests)} requests · ${formatCount(totals.sessions)} sessions`))
       .child(div().id(`usage-fresh-${provider}`).text_size(TYPE.sm).text_color(t.muted).truncate()
         .tooltip("Input + output + cache write. Cache reads re-use earlier context and cost far less per token.")
         .child(`${formatTokens(tokens.input + tokens.output + tokens.cacheWrite)} tokens excluding cache reads`))
       .child(div().id(`usage-tokens-${provider}`).text_size(TYPE.xs).text_color(t.dim).truncate()
         .tooltip(`Input ${formatCount(tokens.input)}\nOutput ${formatCount(tokens.output)}\nCache read ${formatCount(tokens.cacheRead)}\nCache write ${formatCount(tokens.cacheWrite)}`)
-        .child(`In ${formatTokens(tokens.input)} · Out ${formatTokens(tokens.output)} · Cache read ${formatTokens(tokens.cacheRead)} · Cache write ${formatTokens(tokens.cacheWrite)}`))
+        .child(`In ${formatTokens(tokens.input)} · Out ${formatTokens(tokens.output)} · Cache read ${formatTokens(tokens.cacheRead)} · Cache write ${formatTokens(tokens.cacheWrite)}`)))
       .when(this.compact && Boolean(top), el => el.child(div().text_size(TYPE.xs).text_color(t.dim).truncate().child(`Top model ${shortModel(top.model)} · ${formatUsd(top.cost)}`)))
       // Always one price line, so Claude Code and Codex cards keep the same rows.
       .child(div().id(`usage-priced-${provider}`).text_size(TYPE.xs).text_color(totals.unpricedTokens > 0 ? t.ansi3 : t.dim).truncate()
@@ -175,10 +201,12 @@ export default class UsageStats {
   }
 
   footer(t) {
-    const unpriced = this.data?.unpriced ?? [];
+    const unpriced = this.data?.unpriced ?? [], account = Boolean(this.data?.account?.codex);
     return div().flex_none().when(this.compact, el => el.pl(2).pr(10)).text_size(TYPE.xs).text_color(t.dim)
-      .tooltip(["Claude Code and Codex logs on this Mac. Cost is an estimate at API list prices, including cache reads and writes, fast mode and long-context rates.", "Subscription plans are not billed this way.", unpriced.length ? `No listed price: ${unpriced.join(", ")}` : ""].filter(Boolean).join("\n"))
-      .child(`Estimated at API list prices (${this.data?.pricingDate ?? "—"}) · local logs · not a bill`);
+      .tooltip(["Claude Code and Codex logs on this Mac. Cost is an estimate at API list prices, including cache reads and writes, fast mode and long-context rates.",
+        account ? "Codex tokens come from your Codex account, which also counts sessions deleted locally; its cost scales them by the average local price per token. Models, projects and sessions are local logs only." : "",
+        "Subscription plans are not billed this way.", unpriced.length ? `No listed price: ${unpriced.join(", ")}` : ""].filter(Boolean).join("\n"))
+      .child(`Estimated at API list prices (${this.data?.pricingDate ?? "—"}) · ${account ? "local logs + Codex account" : "local logs"} · not a bill`);
   }
 
   table(t, title, rows) { return v_flex().flex_none().gap(5).child(div().font_semibold().child(title)).children(rows); }

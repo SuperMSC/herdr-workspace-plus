@@ -7,10 +7,10 @@ import test from "node:test";
 import { PROVIDERS, UUID, sessionKey } from "../mods/sessions-plus/model.js";
 import { PRICES, priceFor, eventCost, normalizeModel } from "../mods/sessions-plus/usage-pricing.js";
 import * as usageModel from "../mods/sessions-plus/usage-model.js";
-import { collectUsage, projectRoots } from "../mods/sessions-plus/usage-stats.mjs";
+import { collectUsage, collectUsageWithAccount, projectRoots } from "../mods/sessions-plus/usage-stats.mjs";
 import { launcherRows } from "../mods/sessions-plus/launcher-model.js";
 
-const { claudeRecord, codexRecord, freshState, summarize, rangeStarts, formatTokens, formatUsd, formatCount, usageResult } = usageModel;
+const { claudeRecord, codexRecord, freshState, summarize, rangeStarts, formatTokens, formatUsd, formatCount, usageResult, withAccountUsage } = usageModel;
 
 test("plan value uses the full monthly price or the prorated seven-day price and requires complete pricing", () => {
   const { planMultiple, planPrice } = usageModel;
@@ -353,4 +353,66 @@ test("session history titles skip slash-command and harness turns", async () => 
     const rows = scan({ home: root, stores: { claude: store, codex: join(root, "codex"), agy: join(root, "agy") } }).rows;
     assert.equal(rows.find(row => row.id === claudeId).title, "Plan the usage dashboard");
   } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+/** Local Codex logs: 200K uncached gpt-6.2-sol input tokens ($0.40, under the long-context threshold) on each of the 21st and the 22nd (today). */
+function pricedCodex() {
+  const codex = freshState();
+  codexRecord({ type: "session_meta", payload: { id: codexId, cwd: "/work/api", source: "cli" } }, codex);
+  codexRecord({ type: "turn_context", payload: { turn_id: "t1", model: "gpt-6.2-sol" } }, codex);
+  codexRecord(usageRecord("resp_1", "t1", { input_tokens: 200000, cached_input_tokens: 0, output_tokens: 0 }, 21), codex);
+  codexRecord(usageRecord("resp_2", "t1", { input_tokens: 200000, cached_input_tokens: 0, output_tokens: 0 }, 22), codex);
+  return { ...summarize([{ provider: "codex", store: "/store/codex", events: codex.events, meta: codex }], { now: NOW }), pricingDate: "2026-11-22" };
+}
+const accountDays = [{ date: "2026-11-01", tokens: 10000000 }, { date: "2026-11-20", tokens: 5000000 }, { date: "2026-11-21", tokens: 3000000 }, { date: "2026-11-22", tokens: 100000 }];
+
+test("Codex account days replace local tokens day by day and cost scales by the local price per token", () => {
+  const local = pricedCodex(), result = withAccountUsage(local, accountDays);
+  const near = (actual, expected) => assert(Math.abs(actual - expected) < 1e-9, `${actual} ≉ ${expected}`);
+  near(local.ranges["7d"].providers.codex.cost, 0.8);
+  const week = result.ranges["7d"].providers.codex, month = result.ranges.month.providers.codex;
+  // 20th and 21st from the account; the 22nd keeps its larger local count; the 1st is outside the week.
+  assert.equal(week.account.tokens, 8200000); assert.equal(week.account.accountDays, 2); assert.equal(week.account.localTokens, 400000);
+  near(week.account.rate, 2e-6); assert.equal(week.account.through, "2026-11-22");
+  near(week.cost, 16.4); near(month.cost, 36.4); assert.equal(month.account.tokens, 18200000); near(result.ranges.month.cost, 36.4);
+  // Local breakdown, requests and sessions stay as read.
+  assert.equal(week.requests, 2); assert.equal(week.tokens.total, 400000); assert.equal(week.sessions, 1);
+  const day = date => result.days.find(row => row.date === date).providers.codex;
+  assert.equal(day("2026-11-20").requests, 0); assert.equal(day("2026-11-20").tokens, 5000000); near(day("2026-11-20").cost, 10);
+  assert.equal(day("2026-11-21").tokens, 3000000); assert.equal(day("2026-11-21").requests, 1);
+  assert.equal(day("2026-11-22").tokens, 200000); near(day("2026-11-22").cost, 0.4);
+  assert.equal(result.account.codex.through, "2026-11-22"); near(result.account.codex.rate, 2e-6);
+  assert.doesNotThrow(() => usageResult(result));
+  // Without local Codex logs no price can be estimated: tokens still come from the account, cost stays local.
+  const empty = withAccountUsage(summarize([], { now: NOW }), accountDays);
+  assert.equal(empty.ranges.month.providers.codex.account.tokens, 18100000); assert.equal(empty.ranges.month.providers.codex.account.rate, null);
+  assert.equal(empty.ranges.month.providers.codex.cost, 0);
+});
+
+test("the helper adds account usage when Codex answers and warns, except for a missing CLI, when it does not", async t => {
+  const root = mkdtempSync(join(tmpdir(), "usage-account-test-")); t.after(() => rmSync(root, { recursive: true, force: true }));
+  const options = { now: NOW, home: root, cache: false, stores: { claude: join(root, "claude"), codex: join(root, "codex") } }, stores = [];
+  const ok = await collectUsageWithAccount(options, { accountUsage: async ({ store }) => { stores.push(store); return { state: "ok", days: accountDays }; } });
+  assert.deepEqual(stores, [join(root, "codex")]); assert.equal(ok.ranges.month.providers.codex.account.tokens, 18100000); assert.deepEqual(ok.warnings, []);
+  const failed = await collectUsageWithAccount(options, { accountUsage: async () => ({ state: "unavailable", message: "Codex usage query timed out. Try again later." }) });
+  assert.equal(failed.account, undefined); assert.match(failed.warnings.join("\n"), /timed out.*local logs only/);
+  const thrown = await collectUsageWithAccount(options, { accountUsage: async () => { throw new Error("boom"); } });
+  assert.match(thrown.warnings.join("\n"), /could not be read/);
+  const missing = await collectUsageWithAccount(options, { accountUsage: async () => ({ state: "unavailable", reason: "missing-cli", message: "Install" }) });
+  assert.deepEqual(missing.warnings, []);
+  const off = await collectUsageWithAccount({ ...options, account: false }, { accountUsage: () => assert.fail("account: false must not query") });
+  assert.equal(off.account, undefined);
+});
+
+test("a Codex card with account usage shows account tokens, local logs and an approximate cost", async () => {
+  const f = uiFixture(withAccountUsage(pricedCodex(), accountDays)), Stats = view("usage-stats", f.deps), stats = new Stats();
+  stats.init({ compact: true }, f.cx); await f.settle();
+  const tree = stats.render(f.cx);
+  assert.match(text(find(tree, "usage-account-codex")), /8\.2M tokens · Codex account/);
+  assert.match(text(find(tree, "usage-fresh-codex")), /Local logs 400K · 2 requests · 1 sessions/);
+  assert.match(text(find(tree, "usage-cost-codex")), /^≈ \$16\.40$/);
+  assert.match(find(tree, "usage-cost-codex").attributes.tooltip, /\$2\.000 per 1M tokens[\s\S]*Local logs alone: \$0\.80/);
+  assert.match(text(tree), /local logs \+ Codex account/);
+  // Claude keeps its usual rows and plain cost.
+  assert.equal(find(tree, "usage-account-claude"), undefined); assert.match(text(find(tree, "usage-fresh-claude")), /excluding cache reads/);
 });

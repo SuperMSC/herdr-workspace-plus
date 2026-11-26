@@ -34,6 +34,15 @@ export function codexWindows(data) {
     return row ? [row] : [];
   }));
 }
+/** Daily account tokens from Codex `account/usage/read`: `[{ date: "YYYY-MM-DD", tokens }]`, oldest first. Nothing else is kept. */
+export function codexUsageDays(data) {
+  const days = new Map();
+  for (const bucket of Array.isArray(data?.dailyUsageBuckets) ? data.dailyUsageBuckets.slice(-400) : []) {
+    const date = typeof bucket?.startDate === "string" ? /^(\d{4}-\d{2}-\d{2})(?:$|T)/.exec(bucket.startDate)?.[1] : null;
+    if (date && finite(bucket.tokens) && bucket.tokens >= 0) days.set(date, Math.round(bucket.tokens));
+  }
+  return [...days].sort(([a], [b]) => a < b ? -1 : 1).map(([date, tokens]) => ({ date, tokens }));
+}
 export function agyWindows(envelope) {
   if (envelope?.status !== "SUCCESS" || envelope.command?.name !== "usage" || !Array.isArray(envelope.command.data?.groups)) return null;
   return envelope.command.data.groups.flatMap(group => {

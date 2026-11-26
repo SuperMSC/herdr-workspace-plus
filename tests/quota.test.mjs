@@ -5,8 +5,8 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "n
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { spawn } from "node:child_process";
-import { claudeCredential, claudeQuota, fetchClaude, codexQuota, agyQuota, supportsAgyUsage } from "../mods/sessions-plus/quota.mjs";
-import { claudeWindows, codexWindows, agyWindows, resetTime, percentage, resetLabel, quotaWarning, quotaPace, paceLabel } from "../mods/sessions-plus/quota-model.js";
+import { claudeCredential, claudeQuota, fetchClaude, codexQuota, codexAccountUsage, agyQuota, supportsAgyUsage } from "../mods/sessions-plus/quota.mjs";
+import { claudeWindows, codexWindows, codexUsageDays, agyWindows, resetTime, percentage, resetLabel, quotaWarning, quotaPace, paceLabel } from "../mods/sessions-plus/quota-model.js";
 import { PROVIDERS } from "../mods/sessions-plus/model.js";
 
 const agyReply = { status: "SUCCESS", command: { name: "usage", data: { groups: [{ name: "Gemini", buckets: [
@@ -425,4 +425,25 @@ test("an explicitly blocked version also pauses automatic reads when a prior rea
   f.tick(300000); f.refresh(true);
   assert.deepEqual(f.calls.slice(6).map(call => call.provider), ["claude", "codex"]);
   await f.finish();
+});
+
+test("Codex account usage keeps only valid daily dates and counts, oldest first", () => {
+  assert.deepEqual(codexUsageDays({ summary: { lifetimeTokens: 99 }, dailyUsageBuckets: [
+    { startDate: "2026-11-25", tokens: 760.4 }, { startDate: "2026-11-24T00:00:00Z", tokens: 524 }, { startDate: "2026-11-25", tokens: 761 },
+    { startDate: "yesterday", tokens: 5 }, { startDate: "2026-11-23", tokens: -1 }, { startDate: "2026-11-22", tokens: "7" }, null,
+  ] }), [{ date: "2026-11-24", tokens: 524 }, { date: "2026-11-25", tokens: 761 }]);
+  assert.deepEqual(codexUsageDays({ summary: {} }), []); assert.deepEqual(codexUsageDays(null), []);
+});
+
+test("Codex account usage sends only initialize and usage-read and returns daily counts without the summary", async t => {
+  const root = mkdtempSync(join(tmpdir(), "quota-usage-test-")); t.after(() => rmSync(root, { recursive: true, force: true }));
+  const file = join(root, "fixture.mjs"), record = join(root, "requests.jsonl");
+  writeFileSync(file, `import{createInterface}from'node:readline';import{appendFileSync}from'node:fs';\nconst lines=createInterface({input:process.stdin});for await(const line of lines){const r=JSON.parse(line);appendFileSync(${JSON.stringify(record)},JSON.stringify(r)+'\\n');if(r.id===1)console.log(JSON.stringify({id:1,result:{}}));if(r.id===2)console.log(JSON.stringify({id:2,result:{summary:{lifetimeTokens:16026718965},dailyUsageBuckets:[{startDate:'2026-11-25',tokens:760635586}]}}));}\n`);
+  const result = await codexAccountUsage({ executable: "/fixture/codex", temp: root, spawnProcess: (_p, args, options) => spawn(process.execPath, [file], options) });
+  assert.equal(result.state, "ok"); assert.deepEqual(result.days, [{ date: "2026-11-25", tokens: 760635586 }]);
+  assert(!JSON.stringify(result).includes("16026718965"));
+  assert.deepEqual(readFileSync(record, "utf8").trim().split("\n").map(line => JSON.parse(line).method), ["initialize", "initialized", "account/usage/read"]);
+  assert(!readdirSync(root).some(n => n.startsWith("herdr-quota-codex-")));
+  const missing = await codexAccountUsage({ executable: null, spawnProcess: () => assert.fail("must not launch") });
+  assert.equal(missing.reason, "missing-cli");
 });

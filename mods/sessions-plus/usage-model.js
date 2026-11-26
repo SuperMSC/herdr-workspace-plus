@@ -128,10 +128,14 @@ export function summarize(files, { now = Date.now(), limited = false, warnings =
   const dayIndex = new Map(days.map((day, index) => [day.date, index]));
   const ranges = {};
   for (const range of Object.keys(RANGES)) ranges[range] = { from: starts[range], providers: {}, projects: new Map(), sessions: new Map() };
-  const unpriced = new Set();
+  const unpriced = new Set(), byDay = {};
   for (const provider of TOKEN_PROVIDERS) for (const event of unique[provider].values()) {
     const cost = eventCost(provider, event), tokens = totalTokens(event);
     if (cost === null) unpriced.add(`${PROVIDERS[provider]} · ${event.m}`);
+    if (event.t <= now) {
+      const slot = (byDay[provider] ??= {})[localDay(event.t)] ??= { cost: 0, tokens: 0 };
+      slot.cost += cost ?? 0; slot.tokens += tokens;
+    }
     const day = dayIndex.get(localDay(event.t));
     if (day !== undefined && event.t >= starts.chart) {
       const slot = days[day].providers[provider] ??= { cost: 0, tokens: 0, requests: 0 };
@@ -158,7 +162,8 @@ export function summarize(files, { now = Date.now(), limited = false, warnings =
     }
   }
   const byWeight = (a, b) => b.cost - a.cost || b.tokens - a.tokens;
-  const result = { generatedAt: now, ranges: {}, days, unpriced: [...unpriced].sort(), limited, warnings };
+  // Local tokens and cost per day for every retained day, so account totals can replace them later.
+  const result = { generatedAt: now, ranges: {}, days, byDay, unpriced: [...unpriced].sort(), limited, warnings };
   for (const [range, bucket] of Object.entries(ranges)) {
     const providers = {};
     for (const provider of TOKEN_PROVIDERS) {
@@ -174,6 +179,38 @@ export function summarize(files, { now = Date.now(), limited = false, warnings =
     };
   }
   return result;
+}
+
+/**
+ * Replace Codex token totals with the account's daily totals (`[{ date, tokens }]`), which also count sessions
+ * deleted locally or run with --ephemeral. Each day takes the larger of the account and local counts, so a day the
+ * account has not reported yet (usually today) keeps its local logs. Cost is an estimate: account tokens times the
+ * average API list price per token of all retained local Codex logs. Models, projects and sessions stay local.
+ */
+export function withAccountUsage(result, accountDays, { now = result.generatedAt ?? Date.now() } = {}) {
+  const local = result.byDay?.codex ?? {}, server = new Map((accountDays ?? []).map(day => [day.date, day.tokens]));
+  let localCost = 0, localTokens = 0;
+  for (const day of Object.values(local)) { localCost += day.cost; localTokens += day.tokens; }
+  const rate = localTokens > 0 ? localCost / localTokens : null;
+  const dayValue = date => {
+    const own = local[date] ?? { cost: 0, tokens: 0 }, tokens = server.get(date);
+    return Number.isFinite(tokens) && tokens > own.tokens ? { tokens, cost: rate === null ? own.cost : tokens * rate, account: true } : { ...own, account: false };
+  };
+  const ranges = {};
+  for (const [range, view] of Object.entries(result.ranges)) {
+    const codex = view.providers.codex, total = { tokens: 0, cost: 0, accountDays: 0 };
+    for (const day = new Date(view.from); +day <= now; day.setDate(day.getDate() + 1)) {
+      const value = dayValue(localDay(+day)); total.tokens += value.tokens; total.cost += value.cost; if (value.account) total.accountDays++;
+    }
+    const account = { tokens: total.tokens, localTokens: codex.tokens.total, localCost: codex.cost, rate, through: [...server.keys()].sort().at(-1) ?? null, accountDays: total.accountDays };
+    const providers = { ...view.providers, codex: { ...codex, cost: rate === null ? codex.cost : total.cost, account } };
+    ranges[range] = { ...view, providers, cost: TOKEN_PROVIDERS.reduce((sum, provider) => sum + providers[provider].cost, 0) };
+  }
+  const days = result.days.map(day => {
+    const value = dayValue(day.date); if (!value.account) return day;
+    return { ...day, providers: { ...day.providers, codex: { requests: 0, ...day.providers.codex, tokens: value.tokens, cost: value.cost } } };
+  });
+  return { ...result, ranges, days, account: { codex: { through: [...server.keys()].sort().at(-1) ?? null, rate } } };
 }
 
 export function formatTokens(value) {
